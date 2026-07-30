@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Install SBCL and Quicklisp
+        run: |
+          sudo apt-get update --quiet
+          sudo apt-get install --yes --quiet sbcl curl git >/dev/null
+          curl --fail --silent --show-error --output quicklisp.lisp \
+            https://beta.quicklisp.org/quicklisp.lisp
+          sbcl --non-interactive \
+            --load quicklisp.lisp \
+            --eval '(quicklisp-quickstart:install :path #p"/home/runner/quicklisp/")'
+          git clone --quiet --depth 1 https://github.com/rabbibotton/clog.git \
+            /home/runner/quicklisp/local-projects/clog
+
+      - name: Load systems and run tests
+        run: |
+          sbcl --non-interactive \
+            --load /home/runner/quicklisp/setup.lisp \
+            --eval '(ql:quickload (list :clog :jsown :sento :bordeaux-threads))' \
+            --eval '(asdf:load-asd (truename "quasar.asd"))' \
+            --eval '(asdf:test-system :quasar)'
+
+      - name: Validate browser adapters
+        run: |
+          node --check static/quasar-control-plane.js
+          node --check frontend-overlay/src/lib/control-plane.js
