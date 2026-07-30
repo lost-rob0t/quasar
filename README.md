@@ -35,13 +35,25 @@ inside Cytoscape; committed operations cross to Lisp.
 ```sh
 git clone --recurse-submodules https://github.com/lost-rob0t/quasar.git
 cd quasar
+bash scripts/prepare-frontend.sh
 ```
 
-The frontend submodule is pinned so the full UI does not silently drift.
+The frontend submodule is pinned so the full UI does not silently drift. The
+preparation script copies the control-plane client into the pinned frontend and
+adds one side-effect import to `src/app/main.tsx`; it does not remove or replace
+any existing component.
 
 ## Run the UI during migration
 
-Build or run the frontend independently, then point the CLOG host at it:
+Start the preserved frontend:
+
+```sh
+cd frontend
+npm ci
+npm run dev
+```
+
+Then start the Common Lisp host:
 
 ```lisp
 (ql:quickload '(:clog :jsown :sento))
@@ -52,28 +64,33 @@ Build or run the frontend independently, then point the CLOG host at it:
  :port 8080)
 ```
 
-Open `http://127.0.0.1:8080`. The React application is hosted in a full-viewport frame. Copy or import
-`frontend-overlay/src/lib/control-plane.js` during the frontend adapter migration;
-it uses `postMessage` when the Vite dev server is cross-origin and the direct host
-API when production is same-origin.
+Open `http://127.0.0.1:8080`. The React application is hosted in a full-viewport
+frame. `frontend/src/lib/control-plane.js` uses `postMessage` when the Vite dev
+server is cross-origin and the direct host API when production is same-origin.
 
 ## Browser API
 
+Inside the frontend:
+
 ```js
-await window.QuasarControlPlane.capabilities();
-await window.QuasarControlPlane.snapshot();
-await window.QuasarControlPlane.apply({
+await window.QuasarControlPlaneClient.capabilities();
+await window.QuasarControlPlaneClient.snapshot();
+await window.QuasarControlPlaneClient.apply({
   type: "document.save",
   payload: { _id: "person:1", dtype: "person", name: "Example" }
 });
-await window.QuasarControlPlane.starlangStatus();
+await window.QuasarControlPlaneClient.starlangStatus();
 ```
+
+Inside the CLOG host window the equivalent API is
+`window.QuasarControlPlane`.
 
 ## Current slice
 
 Implemented:
 
 - exact Quasar UI preserved as a pinned submodule;
+- idempotent frontend bridge injection at the real UI bootstrap;
 - CLOG browser/session host;
 - structured command/result/event protocol v1;
 - single-writer Sento control-plane actor;
