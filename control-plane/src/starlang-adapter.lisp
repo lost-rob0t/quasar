@@ -12,8 +12,8 @@
   (register-command
    plane
    "starlang.status"
-   (lambda (payload)
-     (declare (ignore payload))
+   (lambda (payload envelope)
+     (declare (ignore payload envelope))
      (json-object
       (cons "available" (starlang-available-p))
       (cons "implementation" "common-lisp")
@@ -21,13 +21,18 @@
   (register-command
    plane
    "starlang.load"
-   (lambda (payload)
+   (lambda (payload envelope)
+     (declare (ignore envelope))
      (let ((loader (package-function "STAR-LANG.API" "LOAD-STAR-RUNTIME"))
            (source (json-value payload "source")))
        (unless loader
-         (error "StarLang is not loaded. Load the starlang-prototype system first."))
+         (error 'quasar.protocol:quasar-error
+                :code "control-plane.unavailable"
+                :message "StarLang is not loaded. Load the starlang-prototype system first."))
        (unless (stringp source)
-         (error "starlang.load requires a string source."))
+         (error 'quasar.protocol:quasar-error
+                :code "protocol.invalid-envelope"
+                :message "starlang.load requires a string source."))
        (let ((graph (funcall loader source)))
          (json-object
           (cons "loaded" t)
