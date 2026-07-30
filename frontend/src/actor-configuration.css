@@ -1,0 +1,73 @@
+.actor-configuration-host {
+  margin: 1rem 0;
+}
+
+.actor-configuration-panel {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-2) 78%, transparent);
+}
+
+.actor-configuration-panel > .section-heading {
+  margin-bottom: 0;
+}
+
+.actor-configuration-panel h2,
+.actor-configuration-panel h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+}
+
+.actor-configuration-panel p {
+  margin: 0.35rem 0 0;
+}
+
+.actor-config-group {
+  display: grid;
+  gap: 0.8rem;
+  padding: 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--panel) 86%, transparent);
+}
+
+.actor-config-group > .section-heading {
+  align-items: flex-start;
+  margin-bottom: 0;
+}
+
+.actor-config-advanced {
+  border-top: 1px solid var(--line);
+}
+
+.actor-config-advanced > summary {
+  padding: 0.8rem 0 0.1rem;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.actor-config-advanced .form-grid {
+  margin-top: 0.8rem;
+}
+
+.actor-configuration-panel textarea.code-editor {
+  min-height: 10rem;
+  resize: vertical;
+}
+
+@media (max-width: 720px) {
+  .actor-configuration-panel {
+    padding: 0.75rem;
+  }
+
+  .actor-config-group {
+    padding: 0.7rem;
+  }
+}

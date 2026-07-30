@@ -1,0 +1,26 @@
+@media (max-width: 850px) {
+  .simple-document-editor .field-picker-options {
+    position: static;
+    max-height: min(42dvh, 320px);
+    margin-top: 0.35rem;
+  }
+
+  .simple-editor-form > .editor-save-bar {
+    position: static;
+    bottom: auto;
+    z-index: auto;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    margin: 0;
+    padding: 0.8rem 1rem;
+    border: 0;
+    border-top: 1px solid var(--line);
+    border-radius: 0;
+    background: #091727;
+    backdrop-filter: none;
+  }
+
+  .simple-editor-form > .editor-save-bar .button {
+    min-width: 0;
+    white-space: nowrap;
+  }
+}
