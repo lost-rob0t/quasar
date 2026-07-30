@@ -67,7 +67,7 @@
     (setf (control-plane-actor-system plane)
           (sento.actor-system:make-actor-system))
     (setf (control-plane-command-actor plane)
-          (sento.actor:actor-of
+          (sento.actor-context:actor-of
            (control-plane-actor-system plane)
            :name "quasar-control-plane"
            :receive (lambda (message)
