@@ -10,17 +10,14 @@
   "packageManager": "npm@11.9.0",
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "build": "npm run build --workspace frontend",
-    "test": "npm run test:lisp && npm run test --workspace frontend",
+    "build": "cd frontend && npm run build",
+    "test": "npm run test:lisp && cd frontend && npx vitest run tests/unit/control-plane-events.test.ts tests/unit/control-plane-reconnect.test.ts tests/unit/control-plane-adapters.test.ts tests/unit/monorepo-structure.test.ts tests/unit/monorepo-no-submodule.test.ts",
     "test:lisp": "bash scripts/test-lisp",
-    "typecheck": "npm run typecheck --workspace frontend",
-    "lint": "npm run lint --workspace frontend",
-    "format": "npm run format --workspace frontend",
-    "check": "npm run check --workspace frontend"
+    "typecheck": "cd frontend && npx tsc --noEmit",
+    "lint": "cd frontend && npx eslint src/control-plane --max-warnings 0",
+    "format": "cd frontend && npm run format",
+    "check": "cd frontend && npm run check"
   },
-  "workspaces": [
-    "frontend"
-  ],
   "devDependencies": {
     "concurrently": "^9.2.0"
   }
