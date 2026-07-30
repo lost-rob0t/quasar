@@ -1,0 +1,359 @@
+.dashboard-page {
+  width: 100%;
+}
+
+.dashboard-hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.graph-entry-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 1.4rem;
+  min-height: 260px;
+  padding: clamp(1.4rem, 3vw, 2.4rem);
+  overflow: hidden;
+  border: 1px solid #0ea5e9;
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 92% 14%, #38bdf833, transparent 18rem),
+    linear-gradient(145deg, #0c4a6e, #0b192a 68%);
+  color: var(--text);
+  box-shadow:
+    0 24px 70px #0005,
+    0 0 42px #0ea5e921;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.graph-entry-card:hover {
+  transform: translateY(-2px);
+  border-color: #7dd3fc;
+  color: var(--white);
+  box-shadow:
+    0 30px 85px #0007,
+    0 0 55px #38bdf82b;
+}
+
+.graph-entry-icon {
+  display: grid;
+  place-items: center;
+  width: 86px;
+  height: 86px;
+  border: 1px solid #7dd3fc66;
+  border-radius: 22px;
+  background: #06101d80;
+  color: #bae6fd;
+}
+
+.graph-entry-card h2 {
+  margin-bottom: 0.7rem;
+  font-size: clamp(2rem, 4vw, 3.2rem);
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.graph-entry-card p {
+  max-width: 66ch;
+  margin-bottom: 1.2rem;
+  color: #c5ddf3;
+  line-height: 1.6;
+}
+
+.graph-entry-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #e0f2fe;
+  font-weight: 800;
+}
+
+.review-summary-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 260px;
+  padding: 1.35rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: linear-gradient(145deg, #10233a, #0b192a);
+}
+
+.review-summary-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.review-summary-heading h2 {
+  margin: 0;
+}
+
+.review-summary-heading > strong {
+  color: #86efac;
+  white-space: nowrap;
+}
+
+.review-meter {
+  height: 12px;
+  margin: 1.25rem 0;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #34141b;
+}
+
+.review-meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #15803d, #4ade80);
+}
+
+.review-summary-counts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.7rem;
+}
+
+.review-summary-counts > div {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #071423;
+}
+
+.review-summary-counts > div:first-child svg {
+  color: var(--success);
+}
+
+.review-summary-counts > div:last-child svg {
+  color: var(--warning);
+}
+
+.review-summary-counts span {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.review-summary-counts strong {
+  grid-column: 1 / -1;
+  color: var(--white);
+  font-size: 1.7rem;
+}
+
+.review-summary-card > p {
+  margin: auto 0 0;
+  padding-top: 1rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.dashboard-section {
+  margin: 2rem 0;
+}
+
+.dashboard-section-heading {
+  align-items: flex-end;
+}
+
+.dashboard-section-heading .eyebrow {
+  margin-bottom: 0.3rem;
+}
+
+.dashboard-section-heading h2 {
+  margin: 0;
+  font-size: 1.45rem;
+}
+
+.reviewed-stats-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.stat-card small {
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
+.stat-card-unreviewed {
+  border-color: #92400e;
+  background: linear-gradient(145deg, #3f2511, #17131a);
+}
+
+.stat-card-unreviewed svg {
+  color: #fbbf24;
+}
+
+.unreviewed-section {
+  padding: 1.2rem;
+  border: 1px solid #713f12;
+  border-radius: 14px;
+  background: #451a031f;
+}
+
+.unreviewed-eyebrow {
+  color: #fbbf24;
+}
+
+.unreviewed-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.42fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.unreviewed-layout .stat-card,
+.unreviewed-layout .panel {
+  margin: 0;
+}
+
+.distribution-unreviewed {
+  border-color: #713f12;
+  background: linear-gradient(145deg, #2b1b11, #10131a);
+}
+
+.distribution-unreviewed .bar i {
+  background: linear-gradient(90deg, #b45309, #fbbf24);
+}
+
+.dashboard-empty {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #0b192a;
+}
+
+.graph-review-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: -0.2rem 0 0.85rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid #92400e;
+  border-radius: 9px;
+  background: #451a034d;
+  color: #fde68a;
+  font-size: 0.8rem;
+}
+
+.graph-stage {
+  position: relative;
+}
+
+.graph-empty-state {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.65rem;
+  padding: 2rem;
+  background: #030914d9;
+  text-align: center;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.graph-empty-state h2,
+.graph-empty-state p {
+  margin: 0;
+}
+
+.graph-empty-state .button {
+  margin-top: 0.3rem;
+  pointer-events: auto;
+}
+
+.selection-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.review-badge {
+  display: inline-flex;
+  padding: 0.2rem 0.48rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.review-badge-reviewed {
+  border-color: #15803d;
+  color: #86efac;
+}
+
+.review-badge-unreviewed {
+  border-color: #b45309;
+  color: #fcd34d;
+}
+
+.inspector-dataset {
+  display: block;
+  margin-top: 0.45rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.graph-form-note {
+  margin: 0;
+  font-size: 0.75rem;
+}
+
+@media (max-width: 1250px) {
+  .reviewed-stats-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 950px) {
+  .dashboard-hero-grid,
+  .unreviewed-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .graph-entry-card {
+    min-height: 220px;
+  }
+}
+
+@media (max-width: 700px) {
+  .graph-entry-card {
+    grid-template-columns: 1fr;
+  }
+
+  .graph-entry-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+  }
+
+  .review-summary-heading {
+    display: block;
+  }
+
+  .review-summary-heading > strong {
+    display: block;
+    margin-top: 0.5rem;
+  }
+
+  .reviewed-stats-grid,
+  .review-summary-counts {
+    grid-template-columns: 1fr;
+  }
+}

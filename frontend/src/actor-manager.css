@@ -1,0 +1,373 @@
+.agent-hub-menu {
+  display: inline-flex;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+  padding: 0.3rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #071423;
+}
+
+.agent-hub-menu button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.agent-hub-menu button:hover,
+.agent-hub-menu button.active {
+  border-color: #1c5276;
+  background: #0c4a6e55;
+  color: var(--white);
+}
+
+.actor-studio-heading {
+  align-items: flex-start;
+}
+
+.actor-studio-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.actor-browser,
+.actor-editor-panel {
+  margin: 0;
+}
+
+.actor-browser {
+  align-self: start;
+  max-height: calc(100vh - 190px);
+  overflow: hidden;
+}
+
+.actor-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #071423;
+  color: var(--muted);
+}
+
+.actor-search:focus-within {
+  border-color: var(--accent-2);
+}
+
+.actor-search input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+}
+
+.actor-browser-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 0.15rem 0.55rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.actor-record-list {
+  display: grid;
+  gap: 0.35rem;
+  max-height: calc(100vh - 310px);
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.actor-record-list > button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.68rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.actor-record-list > button:hover,
+.actor-record-list > button.active {
+  border-color: #1c5276;
+  background: #0c4a6e44;
+}
+
+.actor-record-list strong,
+.actor-record-list small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.actor-record-list small {
+  margin-top: 0.18rem;
+  color: var(--muted);
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.68rem;
+}
+
+.actor-record-list em {
+  color: #7892aa;
+  font-size: 0.65rem;
+  font-style: normal;
+  text-transform: uppercase;
+}
+
+.actor-editor-heading {
+  align-items: flex-start;
+}
+
+.actor-editor-heading h2 {
+  margin-bottom: 0.2rem;
+}
+
+.actor-editor-heading span {
+  color: var(--muted);
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.72rem;
+}
+
+.actor-studio-banner,
+.actor-editor-status,
+.actor-security-note {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 0.75rem 0.85rem;
+}
+
+.actor-studio-banner {
+  margin-bottom: 0.85rem;
+  border-color: #7c5b20;
+  background: #4d350d55;
+  color: #f7d99b;
+}
+
+.actor-editor-tabs {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.8rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.actor-editor-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.6rem 0.75rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  text-transform: capitalize;
+}
+
+.actor-editor-tabs button:hover,
+.actor-editor-tabs button.active {
+  border-bottom-color: var(--accent);
+  color: var(--white);
+}
+
+.actor-code-field,
+.actor-config-editor {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.actor-code-field > span,
+.actor-config-toolbar > span {
+  color: #c8d8e8;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.actor-config-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.actor-code-editor {
+  width: 100%;
+  min-height: 520px;
+  resize: vertical;
+  padding: 1rem;
+  border: 1px solid #223a56;
+  border-radius: 10px;
+  outline: 0;
+  background: #030914;
+  color: #cfe2f7;
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  tab-size: 2;
+}
+
+.actor-code-editor:focus {
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 3px #0ea5e91a;
+}
+
+.actor-code-editor:read-only {
+  color: #8da3b8;
+  background: #07111e;
+}
+
+.actor-runtime-config {
+  display: grid;
+  gap: 1rem;
+}
+
+.actor-runtime-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #071423;
+}
+
+.actor-runtime-toggle input {
+  margin-top: 0.18rem;
+}
+
+.actor-runtime-toggle strong,
+.actor-runtime-toggle small {
+  display: block;
+}
+
+.actor-runtime-toggle small {
+  margin-top: 0.25rem;
+  color: var(--muted);
+}
+
+.actor-security-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  border-color: #7c5b20;
+  background: #4d350d44;
+}
+
+.actor-security-note p {
+  margin: 0.25rem 0 0;
+  color: #d9c69e;
+}
+
+.actor-runtime-details {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.5fr) 1fr;
+  gap: 0;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+.actor-runtime-details dt,
+.actor-runtime-details dd {
+  margin: 0;
+  padding: 0.7rem 0.8rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.actor-runtime-details dt {
+  color: var(--muted);
+  background: #071423;
+}
+
+.actor-runtime-details dd {
+  color: var(--white);
+}
+
+.actor-runtime-details dt:last-of-type,
+.actor-runtime-details dd:last-of-type {
+  border-bottom: 0;
+}
+
+.actor-editor-status {
+  margin-top: 0.85rem;
+  color: var(--muted);
+}
+
+.actor-editor-status.success {
+  border-color: #166534;
+  color: #bbf7d0;
+}
+
+.actor-editor-status.error {
+  border-color: #9f1239;
+  color: #fecdd3;
+}
+
+.actor-editor-status.running {
+  border-color: #0369a1;
+  color: #bae6fd;
+}
+
+@media (max-width: 920px) {
+  .actor-studio-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .actor-browser {
+    max-height: none;
+  }
+
+  .actor-record-list {
+    max-height: 280px;
+  }
+
+  .actor-code-editor {
+    min-height: 420px;
+  }
+}
+
+@media (max-width: 640px) {
+  .agent-hub-menu {
+    display: flex;
+    width: 100%;
+  }
+
+  .agent-hub-menu button {
+    flex: 1;
+  }
+
+  .actor-studio-heading,
+  .actor-editor-heading {
+    align-items: stretch;
+  }
+
+  .actor-code-editor {
+    min-height: 360px;
+  }
+
+  .actor-runtime-details {
+    grid-template-columns: 1fr;
+  }
+
+  .actor-runtime-details dt,
+  .actor-runtime-details dd {
+    border-bottom: 1px solid var(--line);
+  }
+}

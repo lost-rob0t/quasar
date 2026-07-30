@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
+
+# Find OpenSSL for CFFI-based systems (NixOS compatibility)
+openssl_lib="$(nix-store -q --requisites /nix/var/nix/profiles/default 2>/dev/null | grep -m1 'openssl' || true)"
+if [[ -n "${openssl_lib}" && -d "${openssl_lib}/lib" ]]; then
+  export LD_LIBRARY_PATH="${openssl_lib}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
+
+cd "$repo_root"
+
+sbcl --non-interactive \
+  --eval '(setf asdf:*central-registry* nil)' \
+  --eval '(asdf:clear-configuration)' \
+  --eval '(ql:quickload (list :jsown :sento :bordeaux-threads) :silent t)' \
+  --eval '(asdf:load-asd (truename "systems/quasar-control.asd"))' \
+  --eval '(asdf:load-asd (truename "systems/quasar-starlang.asd"))' \
+  --eval '(asdf:load-asd (truename "systems/quasar-tests.asd"))' \
+  --eval '(asdf:test-system :quasar-tests)'

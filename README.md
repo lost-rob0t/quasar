@@ -1,102 +1,227 @@
 # Quasar
 
-Quasar is the Common Lisp control plane and CLOG WebSocket host for the existing
-Quasar investigation workspace.
-
-The browser UI is preserved as the `frontend/` git submodule, pinned to
-`lost-rob0t/quasar-ui`. React, Cytoscape, the mobile shell, documents, graphs,
-datasets, imports, settings, themes, agents, research nodes, statistics, and the
-PWA remain browser features. Durable or privileged operations move behind one
-versioned command channel owned by Common Lisp.
+Quasar is a self-contained monorepo containing the complete React/Vite UI, the
+Common Lisp control plane, the CLOG host, and StarLang integration. No submodule
+or separate repository clone is required.
 
 ## Architecture
 
 ```text
-quasar-ui (React/Vite/Cytoscape)
+frontend/ (React/Vite/Cytoscape, tracked files)
+  frontend/src/control-plane/  ← typed WebSocket client (client.ts, protocol.ts, events.ts, reconnect.ts)
         |
-        | versioned command envelopes
-        | carried over the CLOG WebSocket bridge
+        | quasar.control.v1 command/event envelopes over WebSocket
         v
 Quasar Common Lisp control plane
+  control-plane/src/protocol.lisp     ← v1 envelope decode/encode, stable error codes
+  control-plane/src/workspace.lisp    ← canonical workspace state, documents, graphs, nodes, edges
+  control-plane/src/store.lisp        ← persistence boundary (in-memory default, CouchDB-ready)
+  control-plane/src/control-plane.lisp ← Sento single-writer actor, command dispatch, events
+  control-plane/src/websocket-server.lisp ← typed WebSocket transport
+  control-plane/src/clog-host.lisp    ← CLOG static host (session lifecycle)
+  control-plane/src/starlang-adapter.lisp ← restricted StarLang adapter
+  systems/quasar-*.asd                ← ASDF system definitions
         |
         +-- single-writer actor
-        +-- canonical workspace state
+        +-- canonical workspace state (documents, graphs, nodes, edges)
         +-- command registry and capability discovery
+        +-- atomic transactions with rollback
+        +-- authoritative event broadcast
         +-- StarLang adapter
         +-- future CouchDB/RabbitMQ/Brave/MCP adapters
 ```
 
-CLOG hosts the browser session and transports commands. It does **not** recreate
-every React component as a CLOG object. High-frequency graph interaction remains
-inside Cytoscape; committed operations cross to Lisp.
+CLOG hosts the browser session and serves static assets. It does **not** recreate
+every React component as a CLOG object. The typed WebSocket server is the command
+transport. High-frequency graph interaction (drag, zoom, pan) remains in
+Cytoscape; committed operations cross to Lisp.
 
-## Checkout
+## Repository layout
+
+```text
+quasar/
+├── frontend/             ← React/Vite/Cytoscape UI (tracked files, no submodule)
+│   ├── src/
+│   │   ├── control-plane/ ← typed WS client (client.ts, protocol.ts, events.ts, reconnect.ts, adapters.ts)
+│   │   ├── app/           ← main.tsx imports initializeControlPlane() directly
+│   │   ├── components/    ← graph, mobile, agents, research, etc.
+│   │   ├── lib/           ← db, operations, graph-workspaces, actors, etc.
+│   │   └── ...
+│   ├── package.json
+│   ├── vite.config.ts
+│   └── ...
+├── control-plane/         ← Common Lisp sources
+│   ├── src/               ← protocol, workspace, store, control-plane, websocket-server, clog-host, starlang
+│   └── tests/             ← control-plane tests
+├── systems/               ← ASDF system definitions
+│   ├── quasar-control.asd
+│   ├── quasar-web.asd
+│   ├── quasar-starlang.asd
+│   └── quasar-tests.asd
+├── scripts/               ← dev runner, test-lisp, run-control-plane, run-production
+├── static/                ← CLOG static assets
+├── docs/                   ← architecture and UI migration ledger
+├── flake.nix               ← Nix development environment
+├── package.json            ← root monorepo commands
+└── README.md
+```
+
+## Quick start
 
 ```sh
-git clone --recurse-submodules https://github.com/lost-rob0t/quasar.git
+git clone https://github.com/lost-rob0t/quasar.git
 cd quasar
-bash scripts/prepare-frontend.sh
-```
 
-The frontend submodule is pinned so the full UI does not silently drift. The
-preparation script copies the control-plane client into the pinned frontend and
-adds one side-effect import to `src/app/main.tsx`; it does not remove or replace
-any existing component.
+# Development shell (NixOS or Nix)
+nix develop
 
-## Run the UI during migration
+# Install frontend dependencies
+npm install
 
-Start the preserved frontend:
-
-```sh
-cd frontend
-npm ci
+# Start the full development stack (Lisp control plane + WebSocket + CLOG + Vite)
 npm run dev
+
+# Or run individual pieces
+./scripts/run-control-plane   # Lisp control plane + WS + CLOG
+cd frontend && npx vite         # Vite dev server only
 ```
 
-Then start the Common Lisp host:
+## Root commands
+
+```bash
+npm run dev       # Start all services (supervised, signal-forwarding)
+npm run build     # Build the frontend for production
+npm run test      # Run Lisp + frontend tests
+npm run test:lisp  # Run Lisp tests only
+npm run typecheck  # TypeScript typecheck
+npm run lint       # ESLint
+npm run format     # Prettier
+```
+
+## Protocol
+
+Every command is a JSON object with the `quasar.control.v1` protocol:
+
+```json
+{
+  "protocol": "quasar.control.v1",
+  "id": "unique-request-id",
+  "command": "graph.node.create",
+  "payload": {},
+  "metadata": {
+    "client": "quasar-ui",
+    "workspace": "workspace-id"
+  }
+}
+```
+
+Successful response:
+
+```json
+{
+  "protocol": "quasar.control.v1",
+  "id": "unique-request-id",
+  "status": "ok",
+  "result": {}
+}
+```
+
+Error response:
+
+```json
+{
+  "protocol": "quasar.control.v1",
+  "id": "unique-request-id",
+  "status": "error",
+  "error": {
+    "code": "graph.invalid-reference",
+    "message": "The referenced node does not exist.",
+    "details": {}
+  }
+}
+```
+
+### Implemented commands
+
+- `system.capabilities`
+- `workspace.snapshot`
+- `workspace.transaction`
+- `document.list`, `document.get`, `document.create`, `document.update`, `document.delete`
+- `graph.snapshot`
+- `graph.node.create`, `graph.node.update`, `graph.node.delete`
+- `graph.edge.create`, `graph.edge.update`, `graph.edge.delete`
+- `starlang.status`, `starlang.load`
+
+### Authoritative events
+
+- `workspace.revision.changed`
+- `document.created`, `document.updated`, `document.deleted`
+- `graph.node.created`, `graph.node.updated`, `graph.node.deleted`
+- `graph.edge.created`, `graph.edge.updated`, `graph.edge.deleted`
+
+Each event includes protocol, event name, workspace ID, revision, operation ID,
+and payload. All connected clients (including the initiator) receive events. The
+frontend deduplicates by operation ID and revision.
+
+## Frontend integration
+
+The React app imports the control-plane client directly:
+
+```typescript
+import { initializeControlPlane } from "./control-plane";
+
+initializeControlPlane();
+```
+
+The client is a typed WebSocket client in `frontend/src/control-plane/` with:
+
+- Request correlation by ID
+- Command timeout
+- Bounded exponential backoff reconnection
+- Event subscription with deduplication by operation ID and revision
+- Optimistic update + rollback helpers
+- Adapters for document and graph CRUD
+
+## Persistence boundary
+
+The control plane owns durable state through a store abstraction:
 
 ```lisp
-(ql:quickload '(:clog :jsown :sento))
-(asdf:load-system :quasar)
-(quasar.app:start
- :frontend-url "http://127.0.0.1:5173/quasar-ui/"
- :host "127.0.0.1"
- :port 8080)
+(defgeneric load-workspace (store workspace-id))
+(defgeneric save-workspace (store workspace))
+(defgeneric append-operation (store workspace-id operation))
 ```
 
-Open `http://127.0.0.1:8080`. The React application is hosted in a full-viewport
-frame. `frontend/src/lib/control-plane.js` uses `postMessage` when the Vite dev
-server is cross-origin and the direct host API when production is same-origin.
-
-## Browser API
-
-Inside the frontend:
-
-```js
-await window.QuasarControlPlaneClient.capabilities();
-await window.QuasarControlPlaneClient.snapshot();
-await window.QuasarControlPlaneClient.apply({
-  type: "document.save",
-  payload: { _id: "person:1", dtype: "person", name: "Example" }
-});
-await window.QuasarControlPlaneClient.starlangStatus();
-```
-
-Inside the CLOG host window the equivalent API is
-`window.QuasarControlPlane`.
+The default in-memory implementation is suitable for development and tests.
+CouchDB integration replaces the implementation, not the protocol.
 
 ## Current slice
 
 Implemented:
 
-- exact Quasar UI preserved as a pinned submodule;
-- idempotent frontend bridge injection at the real UI bootstrap;
-- CLOG browser/session host;
-- structured command/result/event protocol v1;
-- single-writer Sento control-plane actor;
-- in-memory canonical workspace with document, graph, and settings operations;
-- capability discovery;
-- optional StarLang command registration;
-- tests and CI.
+- Complete React UI as tracked files (no submodule)
+- v1 protocol envelope with structured ok/error and stable error codes
+- Sento single-writer actor; all mutations through the actor
+- Document CRUD, graph node/edge CRUD
+- Atomic `workspace.transaction` with isolated candidate state and rollback
+- Authoritative event broadcast to all clients
+- Typed WebSocket server (websocket-driver)
+- Typed WebSocket client in the frontend (client.ts, reconnect, events, adapters)
+- Direct `initializeControlPlane()` import in `main.tsx`
+- Store abstraction with in-memory default (CouchDB-ready)
+- Monorepo CI assertions (no submodule, no overlay, no injection script)
+- Nix development environment (SBCL, Node, OpenSSL, Chromium)
+- Root `npm run dev` supervised dev stack
+
+Remaining (documented transitional adapters):
+
+- Actor and research lifecycle → control-plane actors
+- Import/commit/abort with progress events
+- CouchDB sync adapter
+- RabbitMQ ingest adapter
+- Brave search, URL retrieval, MCP adapters
+- StarLang compile/load/run contracts
+- Full Playwright parity coverage
+- Frontend mutation adapters wiring into store.jsx
 
 The complete UI binding ledger is in [`docs/UI-MIGRATION.md`](docs/UI-MIGRATION.md).

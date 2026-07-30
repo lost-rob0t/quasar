@@ -1,0 +1,154 @@
+.graph-editor-field {
+  position: relative;
+  min-width: 0;
+}
+
+.graph-editor-field > .field,
+.graph-editor-field > .dtype-data-field {
+  margin: 0;
+}
+
+.graph-editor-field-remove {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+.predicate-similar-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.predicate-similar-list small {
+  width: 100%;
+  color: var(--muted);
+  font-size: 0.64rem;
+}
+
+.predicate-similar-list code {
+  padding: 0.2rem 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface);
+  font-size: 0.62rem;
+}
+
+.graph-reference-readonly .validation-error,
+.graph-document-select .validation-error,
+.predicate-autocomplete .validation-error,
+.graph-editor-field .validation-error {
+  margin: 0.25rem 0 0;
+}
+
+body.graph-editor-open .mobile-gesture-root,
+body.graph-editor-open .graph-mode-actions,
+body.graph-editor-open .graph-canvas-actions,
+body.graph-editor-open .graph-mobile-primary-actions,
+body.graph-editor-open .agent-float {
+  z-index: 8 !important;
+  pointer-events: none !important;
+}
+
+.graph-context-menu.canvas-actions.radial-root
+  > :is(button, a)[role="menuitem"]:not([data-radial-bridge]) {
+  display: none !important;
+}
+
+.graph-context-menu.canvas-actions.radial-root > .radial-category[data-radial-slot="create"] {
+  top: 0;
+  left: 76px;
+}
+
+.graph-context-menu.canvas-actions.radial-root > .radial-category[data-radial-slot="graph"] {
+  top: 85px;
+  right: 0;
+  left: auto;
+}
+
+.graph-context-menu.canvas-actions.radial-root > .radial-category[data-radial-slot="layout"] {
+  top: auto;
+  bottom: 0;
+  left: 76px;
+}
+
+.graph-context-menu.canvas-actions.radial-root > .radial-category[data-radial-slot="ingest"] {
+  top: 85px;
+  left: 0;
+}
+
+.radial-action-submenu {
+  position: absolute;
+  z-index: 4;
+  top: 24px;
+  left: 236px;
+  display: grid;
+  gap: 0.25rem;
+  width: min(260px, calc(100vw - 252px));
+  max-height: min(440px, 72dvh);
+  padding: 0.45rem;
+  overflow-y: auto;
+  border: 1px solid color-mix(in srgb, var(--line) 72%, var(--accent));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  box-shadow: 0 18px 44px #000b;
+  backdrop-filter: blur(14px);
+}
+
+.radial-action-submenu > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.25rem 0.35rem;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.radial-action-submenu > header button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.radial-action-submenu > button[role="menuitem"] {
+  position: static !important;
+  display: block !important;
+  width: 100% !important;
+  height: auto !important;
+  min-height: 38px;
+  padding: 0.45rem 0.55rem !important;
+  border: 1px solid transparent !important;
+  border-radius: 7px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--text) !important;
+  text-align: left !important;
+}
+
+.radial-action-submenu > button[role="menuitem"]:hover,
+.radial-action-submenu > button[role="menuitem"]:focus-visible {
+  border-color: var(--accent) !important;
+  background: color-mix(in srgb, var(--panel-2) 72%, var(--accent)) !important;
+  outline: none;
+}
+
+@media (max-width: 850px) {
+  .custom-predicate-form .graph-relation-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .radial-action-submenu {
+    position: fixed;
+    inset: auto 0.55rem 0.55rem 0.55rem;
+    width: auto;
+    max-height: 58dvh;
+  }
+}

@@ -1,0 +1,94 @@
+.graph-select-search {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.55rem 0.55rem 0;
+  min-height: 42px;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--muted);
+}
+
+.graph-select-search:focus-within {
+  border-color: var(--accent);
+}
+
+.graph-select-search input {
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+}
+
+.graph-select-search input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.graph-select-search button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.graph-select-search button:hover,
+.graph-select-search button:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--panel-2) 70%, var(--accent));
+  color: var(--text);
+}
+
+.graph-pwa-install {
+  position: absolute;
+  right: 0.7rem;
+  bottom: 0.7rem;
+  z-index: 19;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 42px;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--line) 76%, var(--accent));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  color: var(--text);
+  box-shadow: 0 8px 28px #0008;
+  font-size: 0.7rem;
+  font-weight: 750;
+  backdrop-filter: blur(12px);
+}
+
+.graph-pwa-install:hover,
+.graph-pwa-install:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--panel-2) 72%, var(--accent));
+  color: var(--white);
+}
+
+@media (max-width: 850px) {
+  .graph-pwa-install {
+    right: 0.5rem;
+    bottom: max(4.5rem, calc(env(safe-area-inset-bottom) + 4rem));
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .graph-pwa-install span {
+    display: none;
+  }
+}
