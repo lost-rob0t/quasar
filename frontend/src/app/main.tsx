@@ -15,6 +15,7 @@ import { QuasarProvider } from "../store.jsx";
 import { registerServiceWorker } from "../lib/service-worker-registration.js";
 import { initializeTheme } from "../lib/themes.js";
 import { routerBasename } from "./base-path";
+import { initializeControlPlane } from "../control-plane";
 import "../styles.css";
 import "../dashboard.css";
 import "../dashboard-theme.css";
@@ -34,6 +35,7 @@ import "../melissa-actors.css";
 import "../actor-configuration.css";
 
 initializeTheme();
+initializeControlPlane();
 
 const rootElement = document.getElementById("root");
 

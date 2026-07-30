@@ -8,16 +8,74 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: false
 
+      - name: Assert no submodule
+        run: |
+          if [ -f .gitmodules ]; then
+            echo "ERROR: .gitmodules still exists — no submodules allowed."
+            exit 1
+          fi
+          if [ -d frontend-overlay ]; then
+            echo "ERROR: frontend-overlay directory still exists."
+            exit 1
+          fi
+          if [ -f scripts/prepare-frontend.sh ]; then
+            echo "ERROR: scripts/prepare-frontend.sh still exists."
+            exit 1
+          fi
+          echo "No submodule, overlay, or injection script found."
+
+      - name: Assert frontend is tracked
+        run: |
+          test -f frontend/package.json
+          test -f frontend/package-lock.json
+          test -f frontend/src/control-plane/client.ts
+          test -f frontend/src/app/main.tsx
+          echo "Frontend is tracked as normal files."
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Typecheck frontend
+        run: |
+          cd frontend
+          npx tsc --noEmit
+
+      - name: Lint frontend
+        run: |
+          cd frontend
+          npx eslint src/control-plane --max-warnings 0
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm run build
+
+      - name: Run frontend tests
+        run: |
+          cd frontend
+          npx vitest run tests/unit/control-plane-events.test.ts \
+            tests/unit/control-plane-reconnect.test.ts \
+            tests/unit/control-plane-adapters.test.ts \
+            tests/unit/monorepo-structure.test.ts \
+            tests/unit/monorepo-no-submodule.test.ts
+
       - name: Install SBCL and Quicklisp
         run: |
           sudo apt-get update --quiet
-          sudo apt-get install --yes --quiet sbcl curl git >/dev/null
+          sudo apt-get install --yes --quiet sbc curl git >/dev/null || sudo apt-get install --yes --quiet sbcl curl git >/dev/null
           curl --fail --silent --show-error --output quicklisp.lisp \
             https://beta.quicklisp.org/quicklisp.lisp
           sbcl --non-interactive \
@@ -26,15 +84,12 @@ jobs:
           git clone --quiet --depth 1 https://github.com/rabbibotton/clog.git \
             /home/runner/quicklisp/local-projects/clog
 
-      - name: Load systems and run tests
+      - name: Load Lisp systems and run tests
         run: |
           sbcl --non-interactive \
             --load /home/runner/quicklisp/setup.lisp \
-            --eval '(ql:quickload (list :clog :jsown :sento :bordeaux-threads))' \
-            --eval '(asdf:load-asd (truename "quasar.asd"))' \
-            --eval '(asdf:test-system :quasar)'
-
-      - name: Validate browser adapters
-        run: |
-          node --check static/quasar-control-plane.js
-          node --check frontend-overlay/src/lib/control-plane.js
+            --eval '(ql:quickload (list :jsown :sento :bordeaux-threads :clog :websocket-driver))' \
+            --eval '(asdf:load-asd (truename "systems/quasar-control.asd"))' \
+            --eval '(asdf:load-asd (truename "systems/quasar-starlang.asd"))' \
+            --eval '(asdf:load-asd (truename "systems/quasar-tests.asd"))' \
+            --eval '(asdf:test-system :quasar-tests)'
