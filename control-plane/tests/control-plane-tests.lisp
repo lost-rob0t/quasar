@@ -47,14 +47,33 @@
 (defun error-code (response)
   (jsown:val (jsown:val (parsed response) "error") "code"))
 
+(defun make-doc (id &optional (dtype "person"))
+  (quasar.protocol:json-object
+   (cons "_id" id)
+   (cons "dtype" dtype)))
+
+(defun make-node (graph-id node-id &optional document-id)
+  (let ((node (quasar.protocol:json-object
+               (cons "graphId" graph-id)
+               (cons "id" node-id))))
+    (when document-id
+      (quasar.protocol:object-set node "documentId" document-id))
+    node))
+
+(defun make-edge (graph-id edge-id source target)
+  (quasar.protocol:json-object
+   (cons "graphId" graph-id)
+   (cons "id" edge-id)
+   (cons "source" source)
+   (cons "target" target)))
+
 ;;; --- Protocol tests ---
 
 (defun test-protocol-decode ()
   (let* ((envelope (quasar.protocol:decode-command
-                    (make-envelope "document.list" (quasar.protocol:empty-object)))))
+                     (make-envelope "document.list" (quasar.protocol:empty-object)))))
     (check (string= (quasar.protocol:command-envelope-id envelope) "test-1"))
     (check (string= (quasar.protocol:command-envelope-command envelope) "document.list")))
-  ;; Bad protocol version
   (handler-case
       (quasar.protocol:decode-command
        (quasar.protocol:encode
@@ -70,7 +89,6 @@
       (declare (ignore args))
       (incf *failures*)
       (format *error-output* "~&FAIL: bad protocol did not signal~%")))
-  ;; Malformed envelope
   (handler-case
       (quasar.protocol:decode-command "not json at all")
     (quasar.protocol:quasar-error (c)
@@ -89,6 +107,21 @@
                  (quasar.protocol:encode-error
                   "1" "workspace.not-found" "nope"))))
 
+(defun test-clone-json ()
+  (let* ((original (quasar.protocol:json-object
+                    (cons "nodes" (quasar.protocol:json-array
+                                   (quasar.protocol:json-object
+                                    (cons "id" "n1")
+                                    (cons "position" (quasar.protocol:json-object
+                                                       (cons "x" 10) (cons "y" 20))))))))
+         (clone (quasar.protocol:clone-json original)))
+    (check (eq (quasar.protocol:object-p clone) t))
+    (let ((orig-node (first (rest (quasar.protocol:json-value original "nodes"))))
+          (clone-node (first (rest (quasar.protocol:json-value clone "nodes")))))
+      (check (not (eq orig-node clone-node)))
+      (check (not (eq (quasar.protocol:json-value orig-node "position")
+                      (quasar.protocol:json-value clone-node "position")))))))
+
 ;;; --- Workspace tests ---
 
 (defun test-workspace-revision ()
@@ -98,53 +131,40 @@
      workspace
      (quasar.protocol:json-object
       (cons "type" "document.create")
-      (cons "payload"
-            (quasar.protocol:json-object
-             (cons "_id" "person:1")
-             (cons "dtype" "person")))))
+      (cons "payload" (make-doc "person:1"))))
     (check (= 0 (workspace-revision workspace)))))
 
 ;;; --- Document CRUD ---
 
 (defun test-document-crud ()
   (let ((workspace (make-workspace :id "crud-test")))
-    ;; create
     (quasar.workspace:apply-document-create
-     workspace
-     (quasar.protocol:json-object
-      (cons "_id" "person:crud")
-      (cons "dtype" "person")))
-    (check (gethash "person:crud" (quasar.workspace:workspace-documents workspace)))
-    ;; update
-    (quasar.workspace:apply-document-update
-     workspace
-     (quasar.protocol:json-object
-      (cons "_id" "person:crud")
-      (cons "dtype" "person")
-      (cons "data" (quasar.protocol:json-object (cons "note" "updated")))))
-    (check (string= "updated"
-                    (jsown:val
-                     (jsown:val
-                      (gethash "person:crud"
-                               (quasar.workspace:workspace-documents workspace))
-                      "data")
-                     "note")))
-    ;; delete
-    (quasar.workspace:apply-document-delete
-     workspace
-     (quasar.protocol:json-object (cons "id" "person:crud")))
-    (check (null (gethash "person:crud"
-                          (quasar.workspace:workspace-documents workspace))))))
+     workspace (make-doc "person:crud"))
+    (check (gethash "person:crud" (workspace-documents workspace)))
+    (let ((applied (quasar.workspace:apply-document-update
+                    workspace (quasar.protocol:json-object
+                               (cons "_id" "person:crud")
+                               (cons "dtype" "person")
+                               (cons "data" (quasar.protocol:json-object (cons "note" "updated")))))))
+      (check (string= "updated"
+                      (jsown:val
+                       (jsown:val
+                        (gethash "person:crud" (workspace-documents workspace))
+                        "data")
+                       "note")))
+      (check (quasar.protocol:json-value (applied-op-result applied) "previous")))
+    (let ((applied (quasar.workspace:apply-document-delete
+                    workspace (quasar.protocol:json-object (cons "id" "person:crud")))))
+      (check (null (gethash "person:crud" (workspace-documents workspace))))
+      (check (quasar.protocol:json-value (applied-op-result applied) "previous")))))
 
 (defun test-document-not-found ()
   (let ((workspace (make-workspace :id "nf-test")))
     (handler-case
         (quasar.workspace:apply-document-delete
-         workspace
-         (quasar.protocol:json-object (cons "id" "nope")))
+         workspace (quasar.protocol:json-object (cons "id" "nope")))
       (quasar.protocol:quasar-error (c)
-        (check (string= (quasar.protocol:quasar-error-code c)
-                       "document.not-found")))
+        (check (string= (quasar.protocol:quasar-error-code c) "document.not-found")))
       (:no-error (&rest args)
         (declare (ignore args))
         (incf *failures*)
@@ -154,141 +174,402 @@
   (let ((workspace (make-workspace :id "inv-test")))
     (handler-case
         (quasar.workspace:apply-document-create
-         workspace
-         (quasar.protocol:json-object (cons "dtype" "person")))
+         workspace (quasar.protocol:json-object (cons "dtype" "person")))
       (quasar.protocol:quasar-error (c)
         (check (string= (quasar.protocol:quasar-error-code c) "document.invalid")))
       (:no-error (&rest args)
         (declare (ignore args))
         (incf *failures*)
-        (format *error-output* "~&FAIL: invalid doc did not signal~%")))))
+        (format *error-output* "~&FAIL: invalid doc did not signal~%")))
+    (handler-case
+        (quasar.workspace:apply-document-create
+         workspace (quasar.protocol:json-object (cons "_id" "x")))
+      (quasar.protocol:quasar-error (c)
+        (check (string= (quasar.protocol:quasar-error-code c) "document.invalid")))
+      (:no-error (&rest args)
+        (declare (ignore args))
+        (incf *failures*)
+        (format *error-output* "~&FAIL: missing dtype did not signal~%")))))
 
 ;;; --- Graph node CRUD ---
 
 (defun test-node-crud ()
   (let ((workspace (make-workspace :id "node-test")))
+    (quasar.workspace:apply-document-create workspace (make-doc "person:1"))
     (quasar.workspace:apply-node-create
-     workspace
-     (quasar.protocol:json-object
-      (cons "graphId" "g1")
-      (cons "id" "node-1")
-      (cons "documentId" "person:1")))
-    (let ((graph (quasar.workspace:workspace-graph workspace "g1")))
+     workspace (make-node "g1" "node-1" "person:1"))
+    (let ((graph (workspace-graph workspace "g1")))
       (check graph)
-      (check (quasar.workspace:graph-node graph "node-1")))
-    ;; update
-    (quasar.workspace:apply-node-update
-     workspace
-     (quasar.protocol:json-object
-      (cons "graphId" "g1")
-      (cons "id" "node-1")
-      (cons "position" (quasar.protocol:json-object
-                         (cons "x" 10) (cons "y" 20)))))
-    (let ((node (quasar.workspace:graph-node
-                 (quasar.workspace:workspace-graph workspace "g1") "node-1")))
-      (check (= 10 (jsown:val (jsown:val node "position") "x"))))
-    ;; delete
-    (quasar.workspace:apply-node-delete
-     workspace
-     (quasar.protocol:json-object
-      (cons "graphId" "g1")
-      (cons "id" "node-1")))
-    (check (null (quasar.workspace:graph-node
-                  (quasar.workspace:workspace-graph workspace "g1") "node-1")))))
+      (check (graph-node graph "node-1")))
+    (let ((applied (quasar.workspace:apply-node-update
+                    workspace (make-node "g1" "node-1" "person:1"))))
+      (quasar.protocol:object-set (quasar.protocol:json-value (applied-op-result applied) "updated")
+                                   "position" (quasar.protocol:json-object (cons "x" 10) (cons "y" 20))))
+    (let ((applied (quasar.workspace:apply-node-delete
+                    workspace (make-node "g1" "node-1"))))
+      (check (null (graph-node (workspace-graph workspace "g1") "node-1")))
+      (check (quasar.protocol:json-value (applied-op-result applied) "previous")))))
 
 (defun test-node-not-found ()
   (let ((workspace (make-workspace :id "nnf-test")))
     (handler-case
         (quasar.workspace:apply-node-delete
-         workspace
-         (quasar.protocol:json-object
-          (cons "graphId" "g1")
-          (cons "id" "ghost")))
+         workspace (make-node "g1" "ghost"))
       (quasar.protocol:quasar-error (c)
-        (check (string= (quasar.protocol:quasar-error-code c)
-                       "graph.node-not-found")))
+        (check (string= (quasar.protocol:quasar-error-code c) "graph.node-not-found")))
       (:no-error (&rest args)
         (declare (ignore args))
         (incf *failures*)
         (format *error-output* "~&FAIL: missing node delete did not signal~%")))))
 
+(defun test-node-invalid-document-ref ()
+  (let ((workspace (make-workspace :id "nir-test")))
+    (handler-case
+        (quasar.workspace:apply-node-create
+         workspace (make-node "g1" "n1" "nonexistent:doc"))
+      (quasar.protocol:quasar-error (c)
+        (check (string= (quasar.protocol:quasar-error-code c) "graph.invalid-reference")))
+      (:no-error (&rest args)
+        (declare (ignore args))
+        (incf *failures*)
+        (format *error-output* "~&FAIL: node ref to missing doc did not signal~%")))))
+
 ;;; --- Graph edge CRUD ---
 
 (defun test-edge-crud ()
   (let ((workspace (make-workspace :id "edge-test")))
-    (quasar.workspace:apply-node-create
-     workspace
-     (quasar.protocol:json-object (cons "graphId" "ge") (cons "id" "a")))
-    (quasar.workspace:apply-node-create
-     workspace
-     (quasar.protocol:json-object (cons "graphId" "ge") (cons "id" "b")))
-    (quasar.workspace:apply-edge-create
-     workspace
-     (quasar.protocol:json-object
-      (cons "graphId" "ge")
-      (cons "id" "e1")
-      (cons "source" "a")
-      (cons "target" "b")))
-    (let ((graph (quasar.workspace:workspace-graph workspace "ge")))
-      (check (quasar.workspace:graph-edge graph "e1")))
-    ;; delete
-    (quasar.workspace:apply-edge-delete
-     workspace
-     (quasar.protocol:json-object
-      (cons "graphId" "ge") (cons "id" "e1")))
-    (check (null (quasar.workspace:graph-edge
-                  (quasar.workspace:workspace-graph workspace "ge") "e1")))))
+    (quasar.workspace:apply-node-create workspace (make-node "ge" "a"))
+    (quasar.workspace:apply-node-create workspace (make-node "ge" "b"))
+    (let ((applied (quasar.workspace:apply-edge-create
+                    workspace (make-edge "ge" "e1" "a" "b"))))
+      (check (graph-edge (workspace-graph workspace "ge") "e1"))
+      (check (quasar.protocol:json-value (applied-op-result applied) "created")))
+    (let ((applied (quasar.workspace:apply-edge-delete
+                    workspace (make-edge "ge" "e1" "a" "b"))))
+      (check (null (graph-edge (workspace-graph workspace "ge") "e1")))
+      (check (quasar.protocol:json-value (applied-op-result applied) "previous")))))
 
 (defun test-edge-invalid-reference ()
   (let ((workspace (make-workspace :id "eir-test")))
-    (quasar.workspace:apply-node-create
-     workspace
-     (quasar.protocol:json-object (cons "graphId" "gir") (cons "id" "a")))
+    (quasar.workspace:apply-node-create workspace (make-node "gir" "a"))
     (handler-case
         (quasar.workspace:apply-edge-create
-         workspace
-         (quasar.protocol:json-object
-          (cons "graphId" "gir")
-          (cons "id" "bad")
-          (cons "source" "a")
-          (cons "target" "nonexistent")))
+         workspace (make-edge "gir" "bad" "a" "nonexistent"))
       (quasar.protocol:quasar-error (c)
-        (check (string= (quasar.protocol:quasar-error-code c)
-                       "graph.invalid-reference")))
+        (check (string= (quasar.protocol:quasar-error-code c) "graph.invalid-reference")))
       (:no-error (&rest args)
         (declare (ignore args))
         (incf *failures*)
         (format *error-output* "~&FAIL: bad edge ref did not signal~%")))))
 
+;;; --- Node deletion removes dangling edges ---
+
+(defun test-node-delete-removes-edges ()
+  (let ((workspace (make-workspace :id "nde-test")))
+    (quasar.workspace:apply-node-create workspace (make-node "g" "a"))
+    (quasar.workspace:apply-node-create workspace (make-node "g" "b"))
+    (quasar.workspace:apply-edge-create workspace (make-edge "g" "e1" "a" "b"))
+    (quasar.workspace:apply-edge-create workspace (make-edge "g" "e2" "b" "a"))
+    (let ((applied (quasar.workspace:apply-node-delete workspace (make-node "g" "a"))))
+      (check (null (graph-node (workspace-graph workspace "g") "a")))
+      (check (null (graph-edge (workspace-graph workspace "g") "e1")))
+      (check (null (graph-edge (workspace-graph workspace "g") "e2")))
+      (let ((removed (quasar.protocol:json-value (applied-op-result applied) "removedEdges")))
+        (check (= 2 (length (rest removed))))))))
+
+;;; --- Document deletion blocked when referenced by graph ---
+
+(defun test-document-delete-blocked-by-graph ()
+  (let ((workspace (make-workspace :id "ddb-test")))
+    (quasar.workspace:apply-document-create workspace (make-doc "person:ref"))
+    (quasar.workspace:apply-node-create workspace (make-node "g" "n1" "person:ref"))
+    (handler-case
+        (quasar.workspace:apply-document-delete
+         workspace (quasar.protocol:json-object (cons "id" "person:ref")))
+      (quasar.protocol:quasar-error (c)
+        (check (string= (quasar.protocol:quasar-error-code c) "graph.invalid-reference")))
+      (:no-error (&rest args)
+        (declare (ignore args))
+        (incf *failures*)
+        (format *error-output* "~&FAIL: doc delete with graph ref did not signal~%")))
+    (check (gethash "person:ref" (workspace-documents workspace)))))
+
+;;; --- Duplicate ID rejection ---
+
+(defun test-duplicate-id-rejection ()
+  (let ((workspace (make-workspace :id "dup-test")))
+    (quasar.workspace:apply-document-create workspace (make-doc "person:dup"))
+    (handler-case
+        (quasar.workspace:apply-document-create workspace (make-doc "person:dup"))
+      (quasar.protocol:quasar-error (c)
+        (check (string= (quasar.protocol:quasar-error-code c) "document.invalid")))
+      (:no-error (&rest args)
+        (declare (ignore args))
+        (incf *failures*)
+        (format *error-output* "~&FAIL: duplicate doc did not signal~%")))
+    (quasar.workspace:apply-node-create workspace (make-node "g" "n1"))
+    (handler-case
+        (quasar.workspace:apply-node-create workspace (make-node "g" "n1"))
+      (quasar.protocol:quasar-error (c)
+        (check (string= (quasar.protocol:quasar-error-code c) "graph.invalid-reference")))
+      (:no-error (&rest args)
+        (declare (ignore args))
+        (incf *failures*)
+        (format *error-output* "~&FAIL: duplicate node did not signal~%")))))
+
 ;;; --- Transaction rollback ---
 
 (defun test-transaction-rollback ()
   (let ((workspace (make-workspace :id "tx-test")))
+    (quasar.workspace:apply-document-create workspace (make-doc "existing:1"))
     (let ((candidate (make-workspace :id "tx-test")))
+      (copy-workspace-state-for-test workspace candidate)
       (handler-case
-          (progn
-            (quasar.workspace:commit-operations
-             candidate
-             (list
-              (quasar.protocol:json-object
-               (cons "type" "document.create")
-               (cons "payload"
-                     (quasar.protocol:json-object (cons "_id" "tx-1"))))
-              (quasar.protocol:json-object
-               (cons "type" "document.create")
-               (cons "payload"
-                     (quasar.protocol:json-object (cons "_id" "tx-1")))))))
+          (quasar.workspace:commit-operations
+           candidate
+           (list
+            (quasar.protocol:json-object
+             (cons "type" "document.create")
+             (cons "payload" (make-doc "tx-new")))
+            (quasar.protocol:json-object
+             (cons "type" "document.create")
+             (cons "payload" (make-doc "tx-new")))))
         (quasar.protocol:quasar-error (c)
-          (check (string= (quasar.protocol:quasar-error-code c)
-                         "document.invalid")))
+          (check (string= (quasar.protocol:quasar-error-code c) "document.invalid")))
         (:no-error (&rest args)
           (declare (ignore args))
           (incf *failures*)
           (format *error-output* "~&FAIL: dup in tx did not signal~%")))
-      ;; Candidate should have the first doc but NOT the second duplicate.
-      ;; Transaction caller is expected to discard the candidate on failure.
-      (check (gethash "tx-1" (quasar.workspace:workspace-documents candidate))))
-  t))
+      (check (null (gethash "tx-new" (workspace-documents workspace))))
+      (check (gethash "existing:1" (workspace-documents workspace))))))
+
+(defun copy-workspace-state-for-test (source target)
+  "Same as control-plane's copy-workspace-state, but callable from tests."
+  (setf (workspace-revision target) (workspace-revision source))
+  (clrhash (workspace-documents target))
+  (clrhash (workspace-graphs target))
+  (clrhash (workspace-settings target))
+  (loop for key being the hash-keys of (workspace-documents source)
+        using (hash-value value)
+        do (setf (gethash key (workspace-documents target))
+                 (quasar.protocol:clone-json value)))
+  (loop for key being the hash-keys of (workspace-graphs source)
+        using (hash-value value)
+        do (setf (gethash key (workspace-graphs target))
+                 (quasar.protocol:clone-json value)))
+  (loop for key being the hash-keys of (workspace-settings source)
+        using (hash-value value)
+        do (setf (gethash key (workspace-settings target))
+                 (quasar.protocol:clone-json value))))
+
+;;; --- Transaction isolation: graph deep copy ---
+
+(defun test-transaction-graph-isolation ()
+  (let ((workspace (make-workspace :id "tx-graph-test")))
+    (quasar.workspace:apply-node-create workspace (make-node "g" "a"))
+    (quasar.workspace:apply-node-create workspace (make-node "g" "b"))
+    (quasar.workspace:apply-edge-create workspace (make-edge "g" "e1" "a" "b"))
+    (let ((candidate (make-workspace :id "tx-graph-test")))
+      (copy-workspace-state-for-test workspace candidate)
+      (handler-case
+          (quasar.workspace:commit-operations
+           candidate
+           (list (quasar.protocol:json-object
+                  (cons "type" "graph.node.create")
+                  (cons "payload" (make-node "g" "c")))))
+        (error ()
+          (incf *failures*)
+          (format *error-output* "~&FAIL: valid graph txn should not signal~%")))
+      (let ((orig-graph (workspace-graph workspace "g"))
+            (cand-graph (workspace-graph candidate "g")))
+        (check (not (eq orig-graph cand-graph)))
+        (check (not (eq (quasar.protocol:json-value orig-graph "nodes")
+                        (quasar.protocol:json-value cand-graph "nodes"))))
+        (check (= 2 (length (rest (quasar.protocol:json-value orig-graph "nodes")))))
+        (check (= 3 (length (rest (quasar.protocol:json-value cand-graph "nodes")))))
+        (check (= 1 (length (rest (quasar.protocol:json-value orig-graph "edges")))))
+        (check (= 1 (length (rest (quasar.protocol:json-value cand-graph "edges")))))))))
+
+;;; --- Transaction rollback: graph unchanged after failure ---
+
+(defun test-transaction-graph-rollback ()
+  (let ((workspace (make-workspace :id "tx-gr-test")))
+    (quasar.workspace:apply-node-create workspace (make-node "g" "a"))
+    (quasar.workspace:apply-node-create workspace (make-node "g" "b"))
+    (quasar.workspace:apply-edge-create workspace (make-edge "g" "e1" "a" "b"))
+    (let ((orig-nodes-json (quasar.protocol:encode
+                            (quasar.protocol:json-value
+                             (workspace-graph workspace "g") "nodes")))
+          (orig-edges-json (quasar.protocol:encode
+                            (quasar.protocol:json-value
+                             (workspace-graph workspace "g") "edges")))
+          (orig-revision (workspace-revision workspace)))
+      (let ((candidate (make-workspace :id "tx-gr-test")))
+        (copy-workspace-state-for-test workspace candidate)
+        (handler-case
+            (quasar.workspace:commit-operations
+             candidate
+             (list
+              (quasar.protocol:json-object
+               (cons "type" "graph.node.create")
+               (cons "payload" (make-node "g" "c")))
+              (quasar.protocol:json-object
+               (cons "type" "graph.node.delete")
+               (cons "payload" (make-node "g" "nonexistent")))))
+          (quasar.protocol:quasar-error ()
+            nil)
+          (:no-error (&rest args)
+            (declare (ignore args))
+            (incf *failures*)
+            (format *error-output* "~&FAIL: tx with bad node delete should signal~%"))))
+      (check (string= orig-nodes-json
+                      (quasar.protocol:encode
+                       (quasar.protocol:json-value
+                        (workspace-graph workspace "g") "nodes"))))
+      (check (string= orig-edges-json
+                      (quasar.protocol:encode
+                       (quasar.protocol:json-value
+                        (workspace-graph workspace "g") "edges"))))
+      (check (= orig-revision (workspace-revision workspace))))))
+
+;;; --- Inverse round-trip tests ---
+
+(defun test-inverse-round-trip-document ()
+  (let ((workspace (make-workspace :id "inv-doc-test")))
+    (let ((applied (quasar.workspace:apply-document-create
+                    workspace (make-doc "person:rt"))))
+      (check (gethash "person:rt" (workspace-documents workspace)))
+      (let ((inverse (applied-op-inverse applied)))
+        (quasar.workspace:dispatch-operation workspace inverse))
+      (check (null (gethash "person:rt" (workspace-documents workspace)))))))
+
+(defun test-inverse-round-trip-node ()
+  (let ((workspace (make-workspace :id "inv-node-test")))
+    (let ((applied (quasar.workspace:apply-node-create
+                    workspace (make-node "g" "n1"))))
+      (let ((inverse (applied-op-inverse applied)))
+        (quasar.workspace:dispatch-operation workspace inverse))
+      (check (null (graph-node (workspace-graph workspace "g") "n1"))))))
+
+(defun test-inverse-round-trip-edge ()
+  (let ((workspace (make-workspace :id "inv-edge-test")))
+    (quasar.workspace:apply-node-create workspace (make-node "g" "a"))
+    (quasar.workspace:apply-node-create workspace (make-node "g" "b"))
+    (let ((applied (quasar.workspace:apply-edge-create
+                    workspace (make-edge "g" "e1" "a" "b"))))
+      (let ((inverse (applied-op-inverse applied)))
+        (quasar.workspace:dispatch-operation workspace inverse))
+      (check (null (graph-edge (workspace-graph workspace "g") "e1"))))))
+
+(defun test-inverse-round-trip-update ()
+  (let ((workspace (make-workspace :id "inv-upd-test")))
+    (let ((original (make-doc "person:upd")))
+      (quasar.workspace:apply-document-create workspace original)
+      (let ((updated (quasar.protocol:json-object
+                      (cons "_id" "person:upd")
+                      (cons "dtype" "person")
+                      (cons "data" (quasar.protocol:json-object (cons "note" "changed"))))))
+        (let ((applied (quasar.workspace:apply-document-update workspace updated)))
+          (let ((inverse (applied-op-inverse applied)))
+            (quasar.workspace:dispatch-operation workspace inverse))
+          (check (null (quasar.protocol:json-value
+                        (gethash "person:upd" (workspace-documents workspace))
+                        "data"))))))))
+
+;;; --- Persistence / store tests ---
+
+(defun test-store-roundtrip ()
+  (let ((store (quasar.store:make-memory-store))
+        (workspace (make-workspace :id "store-test")))
+    (quasar.workspace:apply-document-create workspace (make-doc "person:store"))
+    (quasar.store:save-workspace store workspace)
+    (let ((loaded (quasar.store:load-workspace store "store-test")))
+      (check loaded)
+      (check (gethash "person:store" (workspace-documents loaded))))))
+
+(defun test-store-journal ()
+  (let ((store (quasar.store:make-memory-store)))
+    (quasar.store:append-operation store "ws-1"
+                                   (quasar.protocol:json-object (cons "type" "document.create")))
+    (quasar.store:append-operation store "ws-1"
+                                   (quasar.protocol:json-object (cons "type" "document.delete")))
+    (check (= 2 (length (quasar.store:store-journal-entries store "ws-1"))))))
+
+(defun test-store-restart-restore ()
+  (let* ((store (quasar.store:make-memory-store))
+         (workspace (make-workspace :id "restart-test")))
+    (quasar.workspace:apply-document-create workspace (make-doc "person:restart"))
+    (quasar.store:save-workspace store workspace)
+    (let ((loaded (quasar.store:load-workspace store "restart-test")))
+      (check loaded)
+      (check (gethash "person:restart" (workspace-documents loaded)))
+      (quasar.store:save-workspace store loaded)
+      (let ((reloaded (quasar.store:load-workspace store "restart-test")))
+        (check (gethash "person:restart" (workspace-documents reloaded)))))))
+
+;;; --- Control-plane persistence integration ---
+
+(defun test-control-plane-persistence ()
+  (let ((plane (make-control-plane)))
+    (start-control-plane plane)
+    (unwind-protect
+         (progn
+           (call-command
+            plane
+            (make-envelope "document.create"
+                           (make-doc "person:persist")
+                           :id "cp-1"))
+           (sleep 0.1)
+           (let ((loaded (quasar.store:load-workspace
+                          (control-plane-store plane) "default")))
+             (check loaded)
+             (when loaded
+               (check (gethash "person:persist"
+                               (workspace-documents loaded))))))
+      (stop-control-plane plane))))
+
+;;; --- Transaction event sequencing ---
+
+(defun test-transaction-event-sequencing ()
+  (let ((plane (make-control-plane)))
+    (setf *events-box* (cons nil nil))
+    (start-control-plane plane)
+    (let ((sub-id (quasar.control-plane:subscribe plane (event-collector))))
+      (unwind-protect
+           (let* ((tx-response
+                    (call-command
+                     plane
+                     (make-envelope "workspace.transaction"
+                                    (quasar.protocol:json-object
+                                     (cons "operations"
+                                           (quasar.protocol:json-array
+                                            (quasar.protocol:json-object
+                                             (cons "type" "document.create")
+                                             (cons "payload" (make-doc "person:tx1")))
+                                            (quasar.protocol:json-object
+                                             (cons "type" "document.create")
+                                             (cons "payload" (make-doc "person:tx2"))))))
+                                    :id "tx-seq-1")))
+                  (tx-status (status tx-response)))
+             (check (string= tx-status "ok"))
+             (sleep 0.5)
+             (let ((events (car *events-box*)))
+               (check (>= (length events) 2))
+               (when (>= (length events) 2)
+                 (let* ((parsed-events (mapcar #'jsown:parse events))
+                        (txn-ids (remove-duplicates
+                                   (mapcar (lambda (e)
+                                             (quasar.protocol:json-value e "transactionId"))
+                                           parsed-events)
+                                   :test #'string=))
+                        (op-ids (mapcar (lambda (e)
+                                          (quasar.protocol:json-value e "operationId"))
+                                        parsed-events)))
+                   (check (= 1 (length txn-ids)))
+                   (check (= (length op-ids)
+                             (length (remove-duplicates op-ids :test #'string=))))))))
+        (quasar.control-plane:unsubscribe plane sub-id)
+        (stop-control-plane plane)))))
 
 ;;; --- Unknown command / dispatch ---
 
@@ -317,14 +598,13 @@
                      plane
                      (make-envelope
                       "document.create"
-                      (quasar.protocol:json-object
-                       (cons "_id" "dispatch-1")
-                       (cons "dtype" "person"))
+                      (make-doc "dispatch-1")
                       :id "dc-1")))
                   (parsed-result (result response)))
              (check (string= (status response) "ok"))
              (check (string= (jsown:val parsed-result "event") "document.created"))
-             ;; Allow the actor to process broadcast
+             (check (jsown:val parsed-result "operationId"))
+             (check (jsown:val parsed-result "revision"))
              (sleep 0.1)
              (check (some (lambda (e)
                             (search "\"event\":\"document.created\"" e))
@@ -339,10 +619,7 @@
          (progn
            (call-command
             plane
-            (make-envelope "document.create"
-                           (quasar.protocol:json-object
-                            (cons "_id" "snap-1") (cons "dtype" "person"))
-                           :id "s-1"))
+            (make-envelope "document.create" (make-doc "snap-1") :id "s-1"))
            (sleep 0.1)
            (let ((response (call-command
                              plane
@@ -361,9 +638,7 @@
            (call-command
             plane
             (make-envelope "graph.node.create"
-                           (quasar.protocol:json-object
-                            (cons "graphId" "gsnap")
-                            (cons "id" "gn-1"))
+                           (make-node "gsnap" "gn-1")
                            :id "gs-1"))
            (sleep 0.1)
            (let ((response (call-command
@@ -381,15 +656,31 @@
         *events-box* (cons nil nil))
   (test-protocol-decode)
   (test-protocol-encode)
+  (test-clone-json)
   (test-workspace-revision)
   (test-document-crud)
   (test-document-not-found)
   (test-document-invalid)
   (test-node-crud)
   (test-node-not-found)
+  (test-node-invalid-document-ref)
   (test-edge-crud)
   (test-edge-invalid-reference)
+  (test-node-delete-removes-edges)
+  (test-document-delete-blocked-by-graph)
+  (test-duplicate-id-rejection)
   (test-transaction-rollback)
+  (test-transaction-graph-isolation)
+  (test-transaction-graph-rollback)
+  (test-inverse-round-trip-document)
+  (test-inverse-round-trip-node)
+  (test-inverse-round-trip-edge)
+  (test-inverse-round-trip-update)
+  (test-store-roundtrip)
+  (test-store-journal)
+  (test-store-restart-restore)
+  (test-control-plane-persistence)
+  (test-transaction-event-sequencing)
   (test-unknown-command)
   (test-dispatch-document-create)
   (test-dispatch-snapshot)

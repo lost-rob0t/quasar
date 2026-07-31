@@ -1,39 +1,40 @@
 (defpackage #:quasar.protocol
   (:use #:cl)
-  (:export
-   #:+protocol-version+
-   #:quasar-error
-   #:quasar-error-code
-   #:quasar-error-message
-   #:quasar-error-details
-   #:make-quasar-error
-   #:command-envelope
-   #:command-envelope-id
-   #:command-envelope-command
-   #:command-envelope-payload
-   #:command-envelope-client
-   #:command-envelope-workspace
-   #:make-command-envelope
-   #:decode-command
-   #:encode
-   #:encode-event
-   #:encode-result
-   #:encode-error
-   #:quasar-error-to-envelope
-   #:json-object
-   #:json-array
-   #:json-value
-   #:json-get
-   #:object-p
-   #:array-p
-   #:object-keys
-   #:object-set
-   #:empty-object
-   #:empty-array
-   #:ensure-string
-   #:ensure-object
-   #:ensure-array
-   #:ensure-object-id))
+   (:export
+    #:+protocol-version+
+    #:quasar-error
+    #:quasar-error-code
+    #:quasar-error-message
+    #:quasar-error-details
+    #:make-quasar-error
+    #:command-envelope
+    #:command-envelope-id
+    #:command-envelope-command
+    #:command-envelope-payload
+    #:command-envelope-client
+    #:command-envelope-workspace
+    #:make-command-envelope
+    #:decode-command
+    #:encode
+    #:encode-event
+    #:encode-result
+    #:encode-error
+    #:quasar-error-to-envelope
+    #:json-object
+    #:json-array
+    #:json-value
+    #:json-get
+    #:object-p
+    #:array-p
+    #:object-keys
+    #:object-set
+    #:empty-object
+    #:empty-array
+    #:ensure-string
+    #:ensure-object
+    #:ensure-array
+    #:ensure-object-id
+    #:clone-json))
 
 (defpackage #:quasar.store
   (:use #:cl)
@@ -42,12 +43,13 @@
                 #:json-array
                 #:json-value)
   (:export
-   #:workspace-store
-   #:memory-store
-   #:make-memory-store
-   #:load-workspace
-   #:save-workspace
-   #:append-operation))
+    #:workspace-store
+    #:memory-store
+    #:make-memory-store
+    #:load-workspace
+    #:save-workspace
+    #:append-operation
+    #:store-journal-entries))
 
 (defpackage #:quasar.workspace
   (:use #:cl)
@@ -58,37 +60,41 @@
                 #:empty-object
                  #:ensure-string
                  #:ensure-object
+                 #:ensure-array
+                 #:clone-json
+                 #:object-set
                  #:quasar-error)
   (:export
-   #:workspace
-   #:make-workspace
-   #:workspace-id
-   #:workspace-revision
-   #:workspace-documents
-   #:workspace-graphs
-   #:workspace-settings
-   #:workspace-graph
-   #:workspace-snapshot
-   #:graph-snapshot
-   #:graph-node
-   #:graph-edge
-   #:graph-nodes
-   #:graph-edges
-   #:dispatch-operation
-   #:commit-operations
-   #:apply-document-create
-   #:apply-document-update
-   #:apply-document-delete
-   #:apply-node-create
-   #:apply-node-update
-   #:apply-node-delete
-   #:apply-edge-create
-   #:apply-edge-update
-   #:apply-edge-delete
-   #:applied-op
-   #:applied-op-event
-   #:applied-op-result
-   #:applied-op-inverse))
+    #:workspace
+    #:make-workspace
+    #:workspace-id
+    #:workspace-revision
+    #:workspace-documents
+    #:workspace-graphs
+    #:workspace-settings
+    #:workspace-journal
+    #:workspace-graph
+    #:workspace-snapshot
+    #:graph-snapshot
+    #:graph-node
+    #:graph-edge
+    #:graph-nodes
+    #:graph-edges
+    #:dispatch-operation
+    #:commit-operations
+    #:apply-document-create
+    #:apply-document-update
+    #:apply-document-delete
+    #:apply-node-create
+    #:apply-node-update
+    #:apply-node-delete
+    #:apply-edge-create
+    #:apply-edge-update
+    #:apply-edge-delete
+    #:applied-op
+    #:applied-op-event
+    #:applied-op-result
+    #:applied-op-inverse))
 
 (defpackage #:quasar.control-plane
   (:use #:cl)
@@ -98,10 +104,15 @@
                 #:encode-result
                 #:encode-error
                 #:quasar-error-to-envelope
+                #:quasar-error
                 #:json-object
                 #:json-array
                 #:json-value
                 #:empty-object
+                #:object-set
+                #:clone-json
+                #:ensure-array
+                #:ensure-string
                 #:command-envelope
                 #:command-envelope-id
                 #:command-envelope-command
@@ -120,28 +131,28 @@
                 #:graph-snapshot
                 #:dispatch-operation
                 #:commit-operations
-                #:apply-document-create
                 #:applied-op-event
-                #:applied-op-result)
+                #:applied-op-result
+                #:applied-op-inverse)
   (:import-from #:quasar.store
                 #:make-memory-store
                 #:load-workspace
                 #:save-workspace
                 #:append-operation)
   (:export
-   #:control-plane
-   #:make-control-plane
-   #:start-control-plane
-   #:stop-control-plane
-   #:register-command
-   #:submit-command
-   #:submit-decoded
-   #:subscribe
-   #:unsubscribe
-   #:broadcast-event
-   #:control-plane-capabilities
-   #:control-plane-workspaces
-   #:control-plane-store))
+    #:control-plane
+    #:make-control-plane
+    #:start-control-plane
+    #:stop-control-plane
+    #:register-command
+    #:submit-command
+    #:submit-decoded
+    #:subscribe
+    #:unsubscribe
+    #:broadcast-event
+    #:control-plane-capabilities
+    #:control-plane-workspaces
+    #:control-plane-store))
 
 (defpackage #:quasar.starlang
   (:use #:cl)
@@ -226,20 +237,47 @@
                 #:encode-result
                 #:encode
                 #:json-object
+                #:json-array
                 #:json-value
+                #:empty-object
+                #:object-set
+                #:clone-json
                 #:quasar-error
                 #:make-command-envelope)
   (:import-from #:quasar.workspace
                 #:make-workspace
                 #:workspace-revision
+                #:workspace-documents
+                #:workspace-graphs
+                #:workspace-settings
                 #:workspace-snapshot
+                #:workspace-graph
+                #:graph-node
+                #:graph-edge
                 #:dispatch-operation
                 #:commit-operations
-                #:graph-node
-                #:graph-edge)
+                #:apply-document-create
+                #:apply-document-update
+                #:apply-document-delete
+                #:apply-node-create
+                #:apply-node-delete
+                #:apply-edge-create
+                #:apply-edge-delete
+                #:applied-op-result
+                #:applied-op-inverse)
+  (:import-from #:quasar.store
+                #:make-memory-store
+                #:load-workspace
+                #:save-workspace
+                #:append-operation
+                #:store-journal-entries)
   (:import-from #:quasar.control-plane
                 #:make-control-plane
                 #:start-control-plane
                 #:stop-control-plane
-                #:submit-decoded)
+                #:submit-decoded
+                #:submit-command
+                #:subscribe
+                #:unsubscribe
+                #:control-plane-store)
   (:export #:run-tests))

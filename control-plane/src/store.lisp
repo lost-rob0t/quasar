@@ -50,5 +50,11 @@ CouchDB integration replaces this implementation, not the protocol."))
     (vector-push-extend operation journal))
   operation)
 
+(defun store-journal-entries (store workspace-id)
+  "Return the journal entries for WORKSPACE-ID as a list, or NIL if absent."
+  (let ((journal (gethash workspace-id (memory-store-journals store))))
+    (when journal
+      (coerce journal 'list))))
+
 (defun make-memory-store ()
   (make-instance 'memory-store))

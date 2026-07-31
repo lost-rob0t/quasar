@@ -12,6 +12,9 @@ fi
 
 cd "$repo_root"
 
+output_file="$(mktemp)"
+trap 'rm -f "$output_file"' EXIT
+
 sbcl --non-interactive \
   --eval '(setf asdf:*central-registry* nil)' \
   --eval '(asdf:clear-configuration)' \
@@ -19,4 +22,10 @@ sbcl --non-interactive \
   --eval '(asdf:load-asd (truename "systems/quasar-control.asd"))' \
   --eval '(asdf:load-asd (truename "systems/quasar-starlang.asd"))' \
   --eval '(asdf:load-asd (truename "systems/quasar-tests.asd"))' \
-  --eval '(asdf:test-system :quasar-tests)'
+  --eval '(asdf:test-system :quasar-tests)' 2>&1 | tee "$output_file"
+
+# Fail on undefined-function warnings or unexpected ERRORs from quasar code.
+if grep -iE '(undefined.*function|UNDEFINED-FUNCTION|; caught.*ERROR.*condition)' "$output_file" | grep -ivE '(quicklisp|sento|bordeaux|jsown)'; then
+  echo "FAIL: undefined function warnings detected." >&2
+  exit 1
+fi

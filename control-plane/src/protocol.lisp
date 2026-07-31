@@ -20,7 +20,15 @@
   (and (consp value) (eq (car value) :obj)))
 
 (defun array-p (value)
-  (and (consp value) (eq (car value) :array)))
+  "Return T if VALUE is a JSON array.
+Handles two representations:
+  - Our convention: (:array . elements)
+  - JSOWN native (from jsown:parse): a plain list of elements where the
+    first element is neither the :OBJ keyword (object) nor a string
+    (key-value pair)."
+  (and (consp value)
+       (not (eq (car value) :obj))
+       (not (stringp (car value)))))
 
 (defun object-keys (object)
   (mapcar #'car (rest object)))
@@ -28,6 +36,21 @@
 (defun object-set (object key value)
   (setf (jsown:val object key) value)
   object)
+
+(defun clone-json (value)
+  "Deep-clone a JSOWN value (object, array, or scalar).
+  Objects (:obj . pairs) and arrays (:array . elements) are recursively
+  copied; scalars (strings, numbers, T, NIL) are returned as-is because
+  they are immutable in Common Lisp."
+  (cond
+    ((object-p value)
+     (cons :obj
+           (loop for (key . val) in (rest value)
+                 collect (cons key (clone-json val)))))
+    ((array-p value)
+     (cons :array
+           (mapcar #'clone-json (rest value))))
+    (t value)))
 
 (define-condition quasar-error (error)
   ((code :initarg :code :reader quasar-error-code)
@@ -140,17 +163,41 @@
           (cons "message" message)
           (cons "details" (or details (empty-object)))))))
 
-(defun event-envelope (event workspace-id revision operation-id payload)
-  (json-object
-   (cons "protocol" +protocol-version+)
-   (cons "event" event)
-   (cons "workspace" workspace-id)
-   (cons "revision" revision)
-   (cons "operationId" operation-id)
-   (cons "payload" payload)))
+(defun event-envelope (event workspace-id revision operation-id payload
+                       &key transaction-id event-index)
+  (let ((obj (json-object
+              (cons "protocol" +protocol-version+)
+              (cons "event" event)
+              (cons "workspace" workspace-id)
+              (cons "revision" revision)
+              (cons "operationId" operation-id)
+              (cons "payload" payload))))
+    (when transaction-id
+      (object-set obj "transactionId" transaction-id))
+    (when event-index
+      (object-set obj "eventIndex" event-index))
+    obj))
+
+(defun normalize-for-encoding (value)
+  "Convert :array-tagged values to plain lists for jsown:to-json.
+  JSOWN objects use (:obj . pairs) which jsown:to-json handles natively,
+  but our json-array constructor uses (:array . elements) which
+  jsown:to-json does not understand — it would serialize :array as a
+  string element. This function strips the :array tag, producing a plain
+  list that jsown:to-json serializes as a JSON array."
+  (cond
+    ((and (consp value) (eq (car value) :array))
+     (mapcar #'normalize-for-encoding (rest value)))
+    ((object-p value)
+     (cons :obj
+           (loop for (key . val) in (rest value)
+                 collect (cons key (normalize-for-encoding val)))))
+    ((consp value)
+     (mapcar #'normalize-for-encoding value))
+    (t value)))
 
 (defun encode (object)
-  (jsown:to-json object))
+  (jsown:to-json (normalize-for-encoding object)))
 
 (defun encode-result (id result)
   (encode (result-envelope id result)))
@@ -158,8 +205,10 @@
 (defun encode-error (id code message &optional details)
   (encode (error-envelope id code message details)))
 
-(defun encode-event (event workspace-id revision operation-id payload)
-  (encode (event-envelope event workspace-id revision operation-id payload)))
+(defun encode-event (event workspace-id revision operation-id payload
+                     &key transaction-id event-index)
+  (encode (event-envelope event workspace-id revision operation-id payload
+          :transaction-id transaction-id :event-index event-index)))
 
 (defun quasar-error-to-envelope (id condition)
   (encode-error id
