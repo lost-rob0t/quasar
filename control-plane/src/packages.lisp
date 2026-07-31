@@ -199,11 +199,12 @@
                 #:subscribe
                 #:broadcast-event)
   (:export
-   #:*frontend-url*
-   #:*last-session*
-   #:start-ui
-   #:stop-ui
-   #:broadcast-event))
+    #:*frontend-url*
+    #:*last-session*
+    #:frontend-asset-path
+    #:start-ui
+    #:stop-ui
+    #:broadcast-event))
 
 (defpackage #:quasar.app
   (:use #:cl)
