@@ -39,6 +39,8 @@ export interface EventEnvelope {
   workspace: string;
   revision: number;
   operationId: string;
+  transactionId?: string;
+  eventIndex?: number;
   payload: Record<string, unknown>;
 }
 

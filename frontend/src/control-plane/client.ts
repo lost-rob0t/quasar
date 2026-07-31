@@ -15,6 +15,13 @@ const DEFAULT_WS_URL =
     ? `ws://${window.location.hostname}:8081`
     : "ws://127.0.0.1:8081";
 
+export interface ConnectionState {
+  connected: boolean;
+  attempts: number;
+}
+
+type ConnectionListener = (state: ConnectionState) => void;
+
 interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (error: ControlPlaneError) => void;
@@ -24,6 +31,7 @@ interface PendingRequest {
 export interface ControlPlaneClient {
   send<T = unknown>(command: string, payload?: Record<string, unknown>): Promise<T>;
   subscribe(handler: EventHandler, eventNames?: string[]): () => void;
+  onConnectionStateChange(listener: ConnectionListener): () => void;
   snapshot(): Promise<unknown>;
   transaction(operations: unknown[], expectedRevision?: number): Promise<unknown>;
   documentCreate(doc: Record<string, unknown>): Promise<unknown>;
@@ -52,21 +60,51 @@ function nextId(): string {
 export function createControlPlaneClient(url: string = DEFAULT_WS_URL): ControlPlaneClient {
   const eventBus: EventBus = createEventBus();
   const pending = new Map<string, PendingRequest>();
+  const connectionListeners = new Set<ConnectionListener>();
   let ws: WebSocket | null = null;
   let workspaceId = "default";
   let revision = 0;
   let disposed = false;
 
+  function notifyConnectionState(state: ConnectionState): void {
+    for (const listener of connectionListeners) {
+      try {
+        listener(state);
+      } catch {
+        // Listener errors must not break notification.
+      }
+    }
+  }
+
   const reconnect: ReconnectManager = createReconnectManager(
     () => connect(),
     (state) => {
-      for (const handler of stateChangeHandlers) {
-        handler(state);
-      }
+      notifyConnectionState({ connected: state.connected, attempts: state.attempts });
     }
   );
 
-  const stateChangeHandlers = new Set<(state: { connected: boolean; attempts: number }) => void>();
+  function rejectAllPending(reason: string): void {
+    for (const req of pending.values()) {
+      clearTimeout(req.timer);
+      req.reject(new ControlPlaneError("control-plane.unavailable", reason));
+    }
+    pending.clear();
+  }
+
+  async function resnapshotAfterReconnect(): Promise<void> {
+    try {
+      const snap = await send("workspace.snapshot");
+      if (snap && typeof snap === "object" && "revision" in snap) {
+        const r = snap as Record<string, unknown>;
+        if (typeof r.revision === "number") {
+          revision = r.revision;
+          eventBus.setRevision(revision);
+        }
+      }
+    } catch {
+      // Snapshot may fail if the workspace was lost; non-fatal.
+    }
+  }
 
   function connect(): void {
     if (disposed) return;
@@ -79,6 +117,7 @@ export function createControlPlaneClient(url: string = DEFAULT_WS_URL): ControlP
 
     ws.onopen = () => {
       reconnect.markConnected();
+      resnapshotAfterReconnect();
     };
 
     ws.onmessage = (event) => {
@@ -92,6 +131,7 @@ export function createControlPlaneClient(url: string = DEFAULT_WS_URL): ControlP
 
     ws.onclose = () => {
       ws = null;
+      rejectAllPending("WebSocket connection closed.");
       if (!disposed) {
         reconnect.markDisconnected();
       }
@@ -216,6 +256,13 @@ export function createControlPlaneClient(url: string = DEFAULT_WS_URL): ControlP
     return eventBus.subscribe(handler, eventNames);
   }
 
+  function onConnectionStateChange(listener: ConnectionListener): () => void {
+    connectionListeners.add(listener);
+    return () => {
+      connectionListeners.delete(listener);
+    };
+  }
+
   function getConnected(): boolean {
     return ws !== null && ws.readyState === WebSocket.OPEN;
   }
@@ -235,12 +282,9 @@ export function createControlPlaneClient(url: string = DEFAULT_WS_URL): ControlP
       ws.close();
       ws = null;
     }
-    for (const req of pending.values()) {
-      clearTimeout(req.timer);
-      req.reject(new ControlPlaneError("control-plane.unavailable", "Client disposed."));
-    }
-    pending.clear();
+    rejectAllPending("Client disposed.");
     eventBus.reset();
+    connectionListeners.clear();
   }
 
   reconnect.start();
@@ -249,6 +293,7 @@ export function createControlPlaneClient(url: string = DEFAULT_WS_URL): ControlP
   return {
     send,
     subscribe,
+    onConnectionStateChange,
     snapshot,
     transaction,
     documentCreate,

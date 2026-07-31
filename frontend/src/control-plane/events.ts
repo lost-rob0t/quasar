@@ -30,10 +30,10 @@ export function createEventBus() {
     if (event.operationId) {
       seenOperations.add(event.operationId);
     }
-    if (event.revision && event.revision <= lastRevision) {
+    if (event.revision && event.revision < lastRevision) {
       return;
     }
-    if (event.revision) {
+    if (event.revision && event.revision > lastRevision) {
       lastRevision = event.revision;
     }
     for (const sub of subscriptions.values()) {
@@ -57,7 +57,11 @@ export function createEventBus() {
     lastRevision = rev;
   }
 
-  return { subscribe, dispatch, reset, setRevision };
+  function getRevision(): number {
+    return lastRevision;
+  }
+
+  return { subscribe, dispatch, reset, setRevision, getRevision };
 }
 
 export type EventBus = ReturnType<typeof createEventBus>;

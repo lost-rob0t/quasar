@@ -12,6 +12,7 @@ import {
   databaseInfo,
   ensureStarIntelViews,
   exportDocuments,
+  getDocument,
   getSettings,
   getWorkspace,
   listDocuments,
@@ -23,6 +24,16 @@ import {
   queryViewCounts,
   watchDocuments
 } from "./lib/db";
+import {
+  cpDocumentCreate,
+  cpDocumentUpdate,
+  cpDocumentDelete,
+  cpSnapshot,
+  cpTransaction,
+  isControlPlaneConnected,
+  ControlPlaneError
+} from "./control-plane/mutations";
+import { getControlPlane } from "./control-plane/client";
 import { importFiles } from "./lib/importer";
 import { applyOperation, operation, saveDocumentBatch } from "./lib/operations";
 import {
@@ -68,6 +79,7 @@ export function QuasarProvider({ children }) {
     rejected: 0
   });
   const [history, setHistory] = useState({ undo: [], redo: [] });
+  const [controlPlaneStatus, setControlPlaneStatus] = useState({ connected: false, attempts: 0 });
   const [researchRunState, setResearchRunState] = useState({});
   const syncRef = useRef(null);
   const queueRef = useRef(null);
@@ -93,6 +105,10 @@ export function QuasarProvider({ children }) {
       onDocuments: (nextDocuments) => setDocuments(nextDocuments),
       onError: (error) => setNotice({ kind: "error", message: error.message })
     });
+    const cpClient = getControlPlane();
+    const unsubConn = cpClient?.onConnectionStateChange((state) => {
+      setControlPlaneStatus(state);
+    });
     Promise.all([source.initial, getSettings(), getWorkspace(), ensureStarIntelViews()])
       .then(([, nextSettings, nextWorkspace]) => {
         if (!active) return;
@@ -107,6 +123,7 @@ export function QuasarProvider({ children }) {
     return () => {
       active = false;
       source.stop();
+      unsubConn?.();
       syncRef.current?.cancel?.();
       queueRef.current?.cancel?.();
       researchRunnerRef.current?.dispose?.();
@@ -121,6 +138,39 @@ export function QuasarProvider({ children }) {
 
   const execute = useCallback(
     async (command, label = command.type) => {
+      if (command?.type === "save-document" && isControlPlaneConnected()) {
+        const doc = command.document;
+        const existing = await getDocument(doc._id);
+        let result;
+        if (existing) {
+          result = await cpDocumentUpdate(doc);
+        } else {
+          result = await cpDocumentCreate(doc);
+        }
+        await refresh();
+        const inverse = existing ? operation.save(existing) : operation.remove(doc._id);
+        record({ label, inverse, redo: command });
+        return result;
+      }
+      if (command?.type === "remove-document" && isControlPlaneConnected()) {
+        const existing = await getDocument(command.id);
+        const result = await cpDocumentDelete(command.id);
+        await refresh();
+        const inverse = existing ? operation.save(existing) : null;
+        record({ label, inverse, redo: command });
+        return result;
+      }
+      if (command?.type === "batch" && isControlPlaneConnected()) {
+        const ops = (command.operations || []).map((op) => {
+          if (op.type === "save-document") return { type: "document.create", payload: op.document };
+          if (op.type === "remove-document") return { type: "document.delete", payload: { id: op.id } };
+          return op;
+        });
+        const result = await cpTransaction(ops);
+        await refresh();
+        record({ label, inverse: null, redo: command });
+        return result;
+      }
       const applied = await applyOperation(command);
       record({ label, inverse: applied.inverse, redo: command });
       await refresh();
@@ -648,10 +698,7 @@ export function QuasarProvider({ children }) {
       syncStatus,
       serverStatus,
       queueStatus,
-      researchRunState,
-      history,
-      canUndo: history.undo.length > 0,
-      canRedo: history.redo.length > 0,
+      controlPlaneStatus,
       execute,
       executeBatch,
       undo,
@@ -699,6 +746,7 @@ export function QuasarProvider({ children }) {
       syncStatus,
       serverStatus,
       queueStatus,
+      controlPlaneStatus,
       history,
       execute,
       executeBatch,
