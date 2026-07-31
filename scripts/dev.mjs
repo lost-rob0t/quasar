@@ -2,13 +2,22 @@
 import { spawn, spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { createRequire } from "node:module";
 
 const repoRoot = new URL("../", import.meta.url).pathname;
-const frontendDir = `${repoRoot}frontend`;
+const frontendDir = join(repoRoot, "frontend");
+const rootNodeModules = join(repoRoot, "node_modules");
+const requireFromFrontend = createRequire(join(frontendDir, "package.json"));
 
 const processes = [];
 let exiting = false;
 const emitter = new EventEmitter();
+
+function fail(msg) {
+  console.error(`\n[dev] ${msg}`);
+  process.exit(1);
+}
 
 function findOpenSsl() {
   try {
@@ -28,6 +37,57 @@ function findOpenSsl() {
     // Nix not available, skip.
   }
   return null;
+}
+
+function resolveFromFrontend(spec) {
+  try {
+    return requireFromFrontend.resolve(spec);
+  } catch {
+    return null;
+  }
+}
+
+function validateDependencies() {
+  // Root node_modules must exist (npm ci installs the workspace root here).
+  if (!existsSync(rootNodeModules)) {
+    fail(`Missing root node_modules (${rootNodeModules}).\n  Run: npm ci`);
+  }
+
+  // Vite and the React plugin must be resolvable from the frontend package.
+  // With npm workspaces they are typically hoisted into the root node_modules,
+  // so resolve via Node's module resolution rather than assuming a path. Use the
+  // bare specifier (not a /package.json subpath) because some packages restrict
+  // their "exports" map and do not expose ./package.json.
+  const resolvable = ["vite", "@vitejs/plugin-react"];
+  for (const label of resolvable) {
+    const found = resolveFromFrontend(label);
+    if (!found) {
+      fail(
+        `Missing required dependency: ${label}.\n` +
+          `  Could not resolve "${label}" from ${frontendDir}.\n` +
+          `  Run: npm ci`,
+      );
+    }
+  }
+
+  if (!existsSync(join(frontendDir, "package.json"))) {
+    fail(`frontend/package.json not found at ${frontendDir}.`);
+  }
+
+  if (!existsSync(join(repoRoot, "package-lock.json"))) {
+    fail(`Root package-lock.json not found. Run: npm install`);
+  }
+}
+
+function validateExecutables() {
+  const sbclOk = spawnSync("sbcl", ["--version"], { encoding: "utf-8", timeout: 5000 });
+  if (sbclOk.status !== 0) {
+    fail("sbcl not found on PATH. Install SBCL to run the Lisp control plane.");
+  }
+  const npmOk = spawnSync("npm", ["--version"], { encoding: "utf-8", timeout: 5000 });
+  if (npmOk.status !== 0) {
+    fail("npm not found on PATH. Install Node.js to run the frontend dev server.");
+  }
 }
 
 function startProcess(name, command, args, options = {}) {
@@ -99,14 +159,18 @@ function shutdown(exitCode = 0) {
 process.on("SIGINT", () => shutdown(0));
 process.on("SIGTERM", () => shutdown(0));
 
+// --- Validation phase ---
+console.log("Starting Quasar development stack...");
+console.log(`  repository: ${repoRoot}`);
+
+validateExecutables();
+validateDependencies();
+
 const opensslLib = findOpenSsl();
 const env = { ...process.env };
 if (opensslLib) {
   env.LD_LIBRARY_PATH = `${opensslLib}:${env.LD_LIBRARY_PATH ?? ""}`;
 }
-
-console.log("Starting Quasar development stack...");
-console.log(`  repository: ${repoRoot}`);
 
 // Start the Lisp control plane + WebSocket server + CLOG host
 startProcess(
@@ -123,15 +187,15 @@ startProcess(
     "--eval", "(asdf:load-system :quasar-web)",
     "--eval", "(quasar.app:start :open-browser-p nil)",
   ],
-  { env }
+  { env },
 );
 
-// Start the Vite dev server
+// Start the Vite dev server using the tracked frontend package (no npx)
 startProcess(
   "vite",
-  "npx",
-  ["vite", "--port", "5173", "--host"],
-  { cwd: frontendDir, env }
+  "npm",
+  ["run", "dev", "--", "--port", "5173", "--host"],
+  { cwd: frontendDir, env },
 );
 
 console.log("\n  control-plane: ws://127.0.0.1:8081  (WebSocket)");

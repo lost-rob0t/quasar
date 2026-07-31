@@ -42,28 +42,21 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: "npm"
 
-      - name: Install frontend dependencies
-        run: |
-          cd frontend
-          npm ci
+      - name: Install all dependencies (root workspace)
+        run: npm ci
 
       - name: Typecheck frontend
-        run: |
-          cd frontend
-          npx tsc --noEmit
+        run: npm run typecheck
 
       - name: Lint frontend
-        run: |
-          cd frontend
-          npx eslint src/control-plane --max-warnings 0
+        run: npm run lint
 
       - name: Build frontend
-        run: |
-          cd frontend
-          npm run build
+        run: npm run build
 
-      - name: Run frontend tests
+      - name: Run frontend control-plane tests
         run: |
           cd frontend
           npx vitest run tests/unit/control-plane-events.test.ts \
@@ -91,5 +84,26 @@ jobs:
             --eval '(ql:quickload (list :jsown :sento :bordeaux-threads :clog :websocket-driver))' \
             --eval '(asdf:load-asd (truename "systems/quasar-control.asd"))' \
             --eval '(asdf:load-asd (truename "systems/quasar-starlang.asd"))' \
+            --eval '(asdf:load-asd (truename "systems/quasar-web.asd"))' \
             --eval '(asdf:load-asd (truename "systems/quasar-tests.asd"))' \
+            --eval '(ql:quickload :quasar-web)' \
             --eval '(asdf:test-system :quasar-tests)'
+
+      - name: Web stack smoke test (load, start, stop)
+        run: |
+          sbcl --non-interactive \
+            --load /home/runner/quicklisp/setup.lisp \
+            --eval '(ql:quickload :quasar-web)' \
+            --eval '
+              (let ((asset-dir (quasar.ui:frontend-asset-path)))
+                (unless (probe-file asset-dir)
+                  (format t "ERROR: frontend-asset-path does not resolve: ~a~%" asset-dir)
+                  (sb-ext:quit :unix-status 1))
+                (format t "frontend-asset-path resolves to ~a~%" asset-dir))
+              (quasar.app:start :open-browser-p nil)
+              (sleep 1)
+              (unless (quasar.ws:websocket-server-started-p quasar.app:*websocket-server*)
+                (format t "ERROR: websocket server did not start~%")
+                (sb-ext:quit :unix-status 1))
+              (quasar.app:stop)
+              (format t "web smoke test ok~%")'

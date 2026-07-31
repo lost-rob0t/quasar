@@ -7,7 +7,7 @@
                 (host "127.0.0.1")
                 (port 8080)
                 (ws-port 8081)
-                (frontend-url "/frontend/")
+                (frontend-url "/")
                 (open-browser-p nil))
   (when *control-plane*
     (stop))

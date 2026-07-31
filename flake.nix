@@ -41,7 +41,7 @@
               export XDG_CACHE_HOME="''${XDG_CACHE_HOME:-$HOME/.cache}"
               mkdir -p "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME"
               echo "Quasar monorepo dev environment ready"
-              echo "  nix develop && npm install && npm run dev"
+              echo "  nix develop && npm ci && npm run dev"
             '';
           };
         });

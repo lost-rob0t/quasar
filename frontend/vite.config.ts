@@ -1,10 +1,12 @@
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import { loadEnv } from "vite";
 import { configDefaults, defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { normalizeBasePath } from "./src/app/base-path";
 
-const eventsPolyfill = fileURLToPath(new URL("./node_modules/events/events.js", import.meta.url));
+const require = createRequire(import.meta.url);
+const eventsPolyfill = require.resolve("events/events.js");
 const cryptoPolyfill = fileURLToPath(new URL("./src/shims/node-crypto.js", import.meta.url));
 
 export default defineConfig(({ mode }) => {

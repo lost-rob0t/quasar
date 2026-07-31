@@ -75,27 +75,31 @@ cd quasar
 # Development shell (NixOS or Nix)
 nix develop
 
-# Install frontend dependencies
-npm install
+# Install all monorepo dependencies (root + frontend workspace)
+npm ci
 
 # Start the full development stack (Lisp control plane + WebSocket + CLOG + Vite)
 npm run dev
 
 # Or run individual pieces
-./scripts/run-control-plane   # Lisp control plane + WS + CLOG
-cd frontend && npx vite         # Vite dev server only
+./scripts/run-control-plane             # Lisp control plane + WS + CLOG
+npm --prefix frontend run dev -- --port 5173 --host  # Vite dev server only
 ```
 
 ## Root commands
 
+All commands run from the repository root using npm workspaces:
+
 ```bash
-npm run dev       # Start all services (supervised, signal-forwarding)
-npm run build     # Build the frontend for production
-npm run test      # Run Lisp + frontend tests
-npm run test:lisp  # Run Lisp tests only
-npm run typecheck  # TypeScript typecheck
-npm run lint       # ESLint
-npm run format     # Prettier
+npm ci             # Install all dependencies (root + frontend workspace)
+npm run dev        # Start all services (supervised, signal-forwarding)
+npm run build      # Build the frontend for production
+npm run test       # Run Lisp + frontend unit/integration tests
+npm run test:lisp   # Run Lisp tests only
+npm run test:e2e   # Run Playwright E2E tests
+npm run typecheck   # TypeScript typecheck
+npm run lint        # ESLint (full frontend)
+npm run format      # Prettier
 ```
 
 ## Protocol

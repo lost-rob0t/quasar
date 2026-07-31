@@ -9,11 +9,12 @@
    (acceptor :initform nil :accessor websocket-server-acceptor)
    (connections :initform (make-hash-table :test #'equal)
                 :reader websocket-server-connections)
+   (subscriber-id :initform nil :accessor websocket-server-subscriber-id)
    (started-p :initform nil :accessor websocket-server-started-p))
   (:documentation
    "WebSocket server carrying quasar.control.v1 envelopes both directions.
-   CLOG keeps its own host role; this endpoint is the typed command stream
-   between the React frontend and the control-plane actor."))
+    CLOG keeps its own host role; this endpoint is the typed command stream
+    between the React frontend and the control-plane actor."))
 
 (defun make-websocket-server (plane &key (host "127.0.0.1") (port 8081))
   (make-instance 'websocket-server :plane plane :host host :port port))
@@ -25,14 +26,45 @@
 
 (defvar *resource* nil)
 
+(defun protocol-error-envelope (id code)
+  (quasar.protocol:encode
+   (quasar.protocol:json-object
+    (cons "protocol" quasar.protocol:+protocol-version+)
+    (cons "id" (or id ""))
+    (cons "status" "error")
+    (cons "error"
+          (quasar.protocol:json-object
+           (cons "code" code))))))
+
+(defun safe-decode-id (message)
+  "Try to extract the envelope ID from a possibly-malformed message.
+Returns NIL if the message cannot be parsed or has no ID."
+  (handler-case
+      (let ((object (jsown:parse message)))
+        (quasar.protocol:json-value object "id"))
+    (error () nil)))
+
 (defun handle-text-message (server connection message)
   (let ((plane (websocket-server-plane server)))
-    (quasar.control-plane:submit-command
-     plane
-     message
-     (lambda (response)
-       (ignore-errors
-         (wsd:send-text connection response))))))
+    (handler-case
+        (quasar.control-plane:submit-command
+         plane
+         message
+         (lambda (response)
+           (ignore-errors
+             (wsd:send-text connection response))))
+      (quasar.protocol:quasar-error (condition)
+        (ignore-errors
+          (wsd:send-text connection
+                         (quasar.protocol:quasar-error-to-envelope
+                          (safe-decode-id message)
+                          condition))))
+      (error ()
+        (ignore-errors
+          (wsd:send-text connection
+                         (protocol-error-envelope
+                          (safe-decode-id message)
+                          "protocol.invalid-envelope"))))))
 
 (defun deliver-event (server encoded)
   (loop for connection being the hash-values of (websocket-server-connections server)
@@ -71,6 +103,7 @@
 
 (defun stop-websocket-server (server)
   (when (websocket-server-started-p server)
+    (detach-subscriber server)
     (when (websocket-server-acceptor server)
       (ignore-errors
         (wsd:close-listener (websocket-server-acceptor server))))
@@ -81,7 +114,21 @@
   t)
 
 (defun attach-subscriber (server)
-  (quasar.control-plane:subscribe
-   (websocket-server-plane server)
-   (lambda (encoded)
-     (deliver-event server encoded))))
+  "Subscribe the WebSocket server to control-plane events.
+Retains the subscriber ID so it can be unsubscribed during shutdown.
+Returns the subscriber ID."
+  (unless (websocket-server-subscriber-id server)
+    (setf (websocket-server-subscriber-id server)
+          (quasar.control-plane:subscribe
+           (websocket-server-plane server)
+           (lambda (encoded)
+             (deliver-event server encoded)))))
+  (websocket-server-subscriber-id server))
+
+(defun detach-subscriber (server)
+  "Unsubscribe the WebSocket server from control-plane events if subscribed."
+  (when (websocket-server-subscriber-id server)
+    (quasar.control-plane:unsubscribe
+     (websocket-server-plane server)
+     (websocket-server-subscriber-id server))
+    (setf (websocket-server-subscriber-id server) nil)))

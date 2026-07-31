@@ -8,15 +8,19 @@
     "node": ">=22.12.0"
   },
   "packageManager": "npm@11.9.0",
+  "workspaces": [
+    "frontend"
+  ],
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "build": "cd frontend && npm run build",
-    "test": "npm run test:lisp && cd frontend && npx vitest run tests/unit/control-plane-events.test.ts tests/unit/control-plane-reconnect.test.ts tests/unit/control-plane-adapters.test.ts tests/unit/monorepo-structure.test.ts tests/unit/monorepo-no-submodule.test.ts",
+    "build": "npm --prefix frontend run build",
+    "test": "npm run test:lisp && npm --prefix frontend run test:unit && npm --prefix frontend run test:integration",
     "test:lisp": "bash scripts/test-lisp",
-    "typecheck": "cd frontend && npx tsc --noEmit",
-    "lint": "cd frontend && npx eslint src/control-plane --max-warnings 0",
-    "format": "cd frontend && npm run format",
-    "check": "cd frontend && npm run check"
+    "test:e2e": "npm --prefix frontend run test:e2e",
+    "typecheck": "npm --prefix frontend run typecheck",
+    "lint": "npm --prefix frontend run lint",
+    "format": "npm --prefix frontend run format",
+    "check": "npm --prefix frontend run check"
   },
   "devDependencies": {
     "concurrently": "^9.2.0"
