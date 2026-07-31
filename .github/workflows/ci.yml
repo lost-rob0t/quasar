@@ -49,7 +49,7 @@ jobs:
 
       - name: Prepare and validate pinned frontend
         run: |
-          bash scripts/prepare-frontend.sh
           npm --prefix frontend ci
-          npm --prefix frontend run typecheck
+          bash scripts/prepare-frontend.sh
+          npm --prefix frontend run check
           VITE_BASE_PATH=/quasar-ui/ npm --prefix frontend run build
