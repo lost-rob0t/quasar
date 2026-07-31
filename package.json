@@ -14,15 +14,18 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "npm --prefix frontend run build",
+    "smoke": "node scripts/smoke-startup.mjs",
     "test": "npm run test:lisp && npm --prefix frontend run test:unit && npm --prefix frontend run test:integration",
     "test:lisp": "bash scripts/test-lisp",
     "test:e2e": "npm --prefix frontend run test:e2e",
+    "test:integration:stack": "node scripts/smoke-startup.mjs",
     "typecheck": "npm --prefix frontend run typecheck",
     "lint": "npm --prefix frontend run lint",
     "format": "npm --prefix frontend run format",
     "check": "npm --prefix frontend run check"
   },
   "devDependencies": {
-    "concurrently": "^9.2.0"
+    "concurrently": "^9.2.0",
+    "ws": "^8.21.1"
   }
 }
