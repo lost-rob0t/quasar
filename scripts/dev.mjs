@@ -172,6 +172,14 @@ if (opensslLib) {
   env.LD_LIBRARY_PATH = `${opensslLib}:${env.LD_LIBRARY_PATH ?? ""}`;
 }
 
+// Isolate ASDF source registry from user-local CL projects (e.g. Lem's qlot)
+// that may provide incompatible versions of named-readtables or other deps.
+const homeDir = process.env.HOME || "/home/unseen";
+env.CL_SOURCE_REGISTRY =
+  `(:source-registry (:tree "${homeDir}/quicklisp/local-projects/")` +
+  ` (:tree "${homeDir}/quicklisp/dists/quicklisp/software/")` +
+  ` (:tree "${repoRoot}systems/") :ignore-inherited-configuration)`;
+
 // Start the Lisp control plane + WebSocket server + CLOG host
 startProcess(
   "control-plane",

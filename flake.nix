@@ -39,6 +39,7 @@
               export TEMP="/tmp"
               export XDG_CONFIG_HOME="''${XDG_CONFIG_HOME:-$HOME/.config}"
               export XDG_CACHE_HOME="''${XDG_CACHE_HOME:-$HOME/.cache}"
+              export CL_SOURCE_REGISTRY="(:source-registry (:tree \"$HOME/quicklisp/local-projects/\") (:tree \"$HOME/quicklisp/dists/quicklisp/software/\") (:tree \"$PWD/systems/\") :ignore-inherited-configuration)"
               mkdir -p "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME"
               echo "Quasar monorepo dev environment ready"
               echo "  nix develop && npm ci && npm run dev"

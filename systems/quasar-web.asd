@@ -7,6 +7,7 @@
                "quasar-starlang"
                "bordeaux-threads"
                "clog"
+               "clack"
                "websocket-driver")
   :serial t
   :pathname "../control-plane/src/"

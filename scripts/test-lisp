@@ -4,6 +4,10 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
 
+# Isolate ASDF source registry from user-local CL projects (e.g. Lem's qlot)
+# that may provide incompatible versions of named-readtables or other deps.
+export CL_SOURCE_REGISTRY="(:source-registry (:tree \"$HOME/quicklisp/local-projects/\") (:tree \"$HOME/quicklisp/dists/quicklisp/software/\") (:tree \"$repo_root/systems/\") :ignore-inherited-configuration)"
+
 # Find OpenSSL for CFFI-based systems (NixOS compatibility)
 openssl_lib="$(nix-store -q --requisites /nix/var/nix/profiles/default 2>/dev/null | grep -m1 'openssl' || true)"
 if [[ -n "${openssl_lib}" && -d "${openssl_lib}/lib" ]]; then

@@ -184,7 +184,7 @@
           (wsd:send-text connection
                          (protocol-error-envelope
                           (safe-decode-id message)
-                          "protocol.invalid-envelope"))))))
+                          "protocol.invalid-envelope")))))))
 
 (defun deliver-event (server encoded)
   "Deliver an event only to connections subscribed to the event's workspace.
@@ -205,35 +205,35 @@
 
 (defun start-websocket-server (server)
   (unless (websocket-server-started-p server)
-    (let* ((plane (websocket-server-plane server))
-           (resource (make-instance 'quasar-resource
-                                     :plane plane
-                                     :server server)))
-      (setf *resource* resource)
-      (let ((handler
-              (lambda (connection)
-                (let* ((connection-id
-                         (format nil "conn-~36R" (random most-positive-fixnum)))
-                       (conn (make-instance 'ws-connection
-                                            :id connection-id
-                                            :ws connection
-                                            :session-id (random-session-id))))
-                  (setf (gethash connection-id
-                                (websocket-server-connections server))
-                        conn)
-                  (setf (wsd:on-message connection)
-                        (lambda (message)
-                          (handle-text-message server conn message)))
-                  (setf (wsd:on-close connection)
-                        (lambda (&rest args)
-                          (declare (ignore args))
-                          (remhash connection-id
-                                   (websocket-server-connections server))))))))
+    (let* ((plane (websocket-server-plane server)))
+      (setf *resource* t)
+      (let ((app
+              (lambda (env)
+                (let ((ws (wsd:make-server env)))
+                  (let* ((connection-id
+                          (format nil "conn-~36R" (random most-positive-fixnum)))
+                         (conn (make-instance 'ws-connection
+                                              :id connection-id
+                                              :ws ws
+                                              :session-id (random-session-id))))
+                    (setf (gethash connection-id
+                                  (websocket-server-connections server))
+                          conn)
+                    (wsd:on ws :message
+                            (lambda (message)
+                              (handle-text-message server conn message)))
+                    (wsd:on ws :close
+                            (lambda (&rest args)
+                              (declare (ignore args))
+                              (remhash connection-id
+                                       (websocket-server-connections server))))
+                    (wsd:start-connection ws))
+                  #'identity))))
         (setf (websocket-server-acceptor server)
-              (wsd:make-server handler))
-        (wsd:start-listening (websocket-server-acceptor server)
+              (clack:clackup app
                              :host (websocket-server-host server)
-                             :port (websocket-server-port server))
+                             :port (websocket-server-port server)
+                             :use-default-middlewares nil))
         (setf (websocket-server-started-p server) t))))
   server)
 
@@ -242,7 +242,7 @@
     (detach-subscriber server)
     (when (websocket-server-acceptor server)
       (ignore-errors
-        (wsd:close-listener (websocket-server-acceptor server))))
+        (clack:stop (websocket-server-acceptor server))))
     (clrhash (websocket-server-connections server))
     (setf (websocket-server-acceptor server) nil
           (websocket-server-started-p server) nil

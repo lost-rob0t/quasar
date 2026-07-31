@@ -179,12 +179,13 @@
                  #:subscribe
                  #:unsubscribe)
   (:export
-   #:websocket-server
-   #:make-websocket-server
-   #:start-websocket-server
-   #:stop-websocket-server
-   #:attach-subscriber
-   #:detach-subscriber))
+    #:websocket-server
+    #:make-websocket-server
+    #:start-websocket-server
+    #:stop-websocket-server
+    #:websocket-server-started-p
+    #:attach-subscriber
+    #:detach-subscriber))
 
 (defpackage #:quasar.ui
   (:use #:cl)

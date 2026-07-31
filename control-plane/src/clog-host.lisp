@@ -1,6 +1,6 @@
 (in-package #:quasar.ui)
 
-(defparameter *frontend-url* "/frontend/")
+(defparameter *frontend-url* "/")
 (defvar *last-session* nil)
 (defvar *sessions* (make-hash-table :test #'equal))
 
@@ -10,8 +10,8 @@
    (plane :initarg :plane :reader session-plane))
   (:documentation
    "A CLOG browser session. CLOG owns hosting and serving the built frontend
-   and provides session identity. Typed command traffic crosses the separate
-   WebSocket server (quasar.ws); CLOG is no longer the command transport."))
+    and provides session identity. Typed command traffic crosses the separate
+    WebSocket server (quasar.ws); CLOG is no longer the command transport."))
 
 (defun random-session-id ()
   (format nil "session-~36R-~36R"
@@ -35,31 +35,6 @@ broke production asset serving."
                    (parent-directory
                     (asdf:system-source-directory :quasar-web))))
 
-(defun serve-frontend-asset (path asset-root)
-  "Serve a single asset from ASSET-ROOT for the request PATH.
-The SPA entry point (index.html) is served when the path is empty or points at
-the frontend URL root, so client-side routing history works in production."
-  (let* ((trimmed (string-left-trim "/" path))
-         (full (if (string= trimmed "")
-                   (merge-pathnames "index.html" asset-root)
-                   (merge-pathnames trimmed asset-root))))
-    (when (probe-file full)
-      (clog:serve-file full))))
-
-(defun install-static-routes (body)
-  "Register CLOG static file routes for the built frontend assets so a single
-production process can serve the UI without a separate web server. The route is
-registered at *FRONTEND-URL* so CLOG and Vite agree on the same base path."
-  (declare (ignore body))
-  (let ((asset-root (frontend-asset-path)))
-    (when (probe-file asset-root)
-      (let ((route (if (string= *frontend-url* "/")
-                       "/"
-                       (string-right-trim "/" *frontend-url*))))
-        (setf (clog:get-on-path route)
-              (lambda (path)
-                (serve-frontend-asset path asset-root)))))))
-
 (defun install-host (body plane)
   (let ((session
           (make-instance 'ui-session
@@ -72,11 +47,14 @@ registered at *FRONTEND-URL* so CLOG and Vite agree on the same base path."
 
 (defun start-ui (plane &key (host "127.0.0.1") (port 8080) (open-browser-p t))
   (declare (ignore plane))
-  (clog:initialize (lambda (body)
-                     (install-static-routes body)
-                     (install-host body plane))
-                   :host host
-                   :port port)
+  (let ((asset-root (frontend-asset-path)))
+    (clog:initialize
+     (lambda (body)
+       (install-host body plane))
+     :host host
+     :port port
+     :static-root (when (probe-file asset-root)
+                    (namestring asset-root))))
   (when open-browser-p
     (clog:open-browser))
   t)
@@ -91,5 +69,5 @@ registered at *FRONTEND-URL* so CLOG and Vite agree on the same base path."
 (defun broadcast-event (name payload)
   (declare (ignore name payload))
   "Event broadcast is owned by the WebSocket server. This stub remains for
-backward compatibility while CLOG keeps its host role."
+  backward compatibility while CLOG keeps its host role."
   t)
