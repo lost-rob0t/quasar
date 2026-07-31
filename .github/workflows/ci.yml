@@ -8,11 +8,11 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: false
+          submodules: recursive
 
       - name: Install SBCL and Quicklisp
         run: |
@@ -36,5 +36,20 @@ jobs:
 
       - name: Validate browser adapters
         run: |
+          bash -n scripts/prepare-frontend.sh
           node --check static/quasar-control-plane.js
           node --check frontend-overlay/src/lib/control-plane.js
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Prepare and validate pinned frontend
+        run: |
+          bash scripts/prepare-frontend.sh
+          npm --prefix frontend ci
+          npm --prefix frontend run typecheck
+          VITE_BASE_PATH=/quasar-ui/ npm --prefix frontend run build
