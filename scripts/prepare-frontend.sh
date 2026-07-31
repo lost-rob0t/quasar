@@ -74,4 +74,11 @@ if service_worker_new not in source:
 path.write_text(source)
 PY
 
+prettier="$frontend_root/node_modules/.bin/prettier"
+if [[ -x "$prettier" ]]; then
+  "$prettier" --write \
+    "$entrypoint" \
+    "$auto_dig_target"
+fi
+
 printf 'Prepared Quasar frontend overlays at %s\n' "$frontend_root"
