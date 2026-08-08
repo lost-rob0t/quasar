@@ -91,8 +91,7 @@ describe("control-plane client lifecycle", () => {
     const first = FakeWebSocket.instances[0];
     first.open();
     first.respond({ id: "default", revision: 1, documents: [], graphs: [] }, 0);
-    await vi.runAllTicks();
-    expect(client.getConnected()).toBe(true);
+    await vi.waitFor(() => expect(client.getConnected()).toBe(true));
 
     first.close();
     await vi.advanceTimersByTimeAsync(500);
@@ -102,11 +101,46 @@ describe("control-plane client lifecycle", () => {
     expect(client.getConnected()).toBe(false);
     expect(JSON.parse(second.sent[0]).command).toBe("workspace.snapshot");
     second.respond({ id: "default", revision: 9, documents: [], graphs: [] }, 0);
-    await vi.runAllTicks();
-
-    expect(client.getConnected()).toBe(true);
+    await vi.waitFor(() => expect(client.getConnected()).toBe(true));
     expect(client.getRevision()).toBe(9);
     expect(snapshots.map((snapshot) => snapshot.revision)).toEqual([1, 9]);
+    client.dispose();
+  });
+
+  it("reassembles size-bounded authoritative snapshot pages", async () => {
+    const client = createControlPlaneClient("ws://quasar.test");
+    const snapshots: Record<string, unknown>[] = [];
+    client.onSnapshot((snapshot) => snapshots.push(snapshot));
+    const socket = FakeWebSocket.instances[0];
+    socket.open();
+
+    expect(JSON.parse(socket.sent[0]).payload).toMatchObject({
+      documentOffset: 0,
+      documentByteLimit: 512 * 1024
+    });
+    socket.respond({
+      id: "default",
+      revision: 4,
+      documents: [{ _id: "document:1" }],
+      graphs: [],
+      documentPage: { nextOffset: 1, total: 2, complete: false }
+    });
+    await vi.waitFor(() => expect(socket.sent).toHaveLength(2));
+    expect(JSON.parse(socket.sent[1]).payload.documentOffset).toBe(1);
+    socket.respond(
+      {
+        id: "default",
+        revision: 4,
+        documents: [{ _id: "document:2" }],
+        graphs: [],
+        documentPage: { nextOffset: 2, total: 2, complete: true }
+      },
+      1
+    );
+
+    await vi.waitFor(() => expect(client.getConnected()).toBe(true));
+    expect(snapshots[0].documents).toEqual([{ _id: "document:1" }, { _id: "document:2" }]);
+    expect(snapshots[0]).not.toHaveProperty("documentPage");
     client.dispose();
   });
 

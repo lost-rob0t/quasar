@@ -10,6 +10,10 @@ import { createEventBus } from "./events";
 import { createReconnectManager } from "./reconnect";
 
 const DEFAULT_TIMEOUT = 10_000;
+const TRANSACTION_TIMEOUT = 120_000;
+const SNAPSHOT_PAGE_BYTES = 512 * 1024;
+const SNAPSHOT_PAGE_INTERVAL_MS = 25;
+const MAX_SNAPSHOT_PAGES = 10_000;
 
 export type ConnectionPhase =
   "connecting" | "connected" | "reconnecting" | "disconnected" | "disposed";
@@ -289,7 +293,11 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
     };
   }
 
-  function send<T = unknown>(command: string, payload: Record<string, unknown> = {}): Promise<T> {
+  function send<T = unknown>(
+    command: string,
+    payload: Record<string, unknown> = {},
+    timeoutMs = DEFAULT_TIMEOUT
+  ): Promise<T> {
     return new Promise((resolve, reject) => {
       if (!socket || socket.readyState !== WebSocket.OPEN) {
         reject(new ControlPlaneError("control-plane.unavailable", "WebSocket is not connected."));
@@ -309,7 +317,7 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
             new ControlPlaneError("control-plane.unavailable", `Command ${command} timed out.`)
           )
         );
-      }, DEFAULT_TIMEOUT);
+      }, timeoutMs);
       pending.set(id, {
         resolve: resolve as (value: unknown) => void,
         reject,
@@ -321,12 +329,61 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
     });
   }
 
-  const snapshot = () => send<Record<string, unknown>>("workspace.snapshot");
+  async function snapshot(): Promise<Record<string, unknown>> {
+    let offset = 0;
+    let revision: number | null = null;
+    let metadata: Record<string, unknown> | null = null;
+    const documents: unknown[] = [];
+
+    for (let pageNumber = 0; pageNumber < MAX_SNAPSHOT_PAGES; pageNumber += 1) {
+      const page = await send<Record<string, unknown>>(
+        "workspace.snapshot",
+        { documentOffset: offset, documentByteLimit: SNAPSHOT_PAGE_BYTES },
+        TRANSACTION_TIMEOUT
+      );
+      const pageRevision = typeof page.revision === "number" ? page.revision : 0;
+      if (revision === null) revision = pageRevision;
+      else if (revision !== pageRevision) {
+        throw new ControlPlaneError(
+          "workspace.revision-conflict",
+          "Workspace changed while its snapshot was being transferred."
+        );
+      }
+      metadata ??= page;
+      if (Array.isArray(page.documents)) {
+        for (const document of page.documents) documents.push(document);
+      }
+      const documentPage = page.documentPage as Record<string, unknown> | undefined;
+      if (!documentPage) return page;
+      if (documentPage?.complete === true) {
+        const complete: Record<string, unknown> = { ...metadata, documents };
+        delete complete.documentPage;
+        return complete;
+      }
+      const nextOffset = Number(documentPage?.nextOffset);
+      if (!Number.isInteger(nextOffset) || nextOffset <= offset) {
+        throw new ControlPlaneError(
+          "protocol.invalid-envelope",
+          "Control plane returned an invalid snapshot page."
+        );
+      }
+      offset = nextOffset;
+      await new Promise((resolve) => setTimeout(resolve, SNAPSHOT_PAGE_INTERVAL_MS));
+    }
+    throw new ControlPlaneError(
+      "protocol.invalid-envelope",
+      "Workspace snapshot exceeded the page limit."
+    );
+  }
   const transaction = (operations: unknown[], expectedRevision?: number) =>
-    send("workspace.transaction", {
-      operations,
-      ...(expectedRevision === undefined ? {} : { expectedRevision })
-    });
+    send(
+      "workspace.transaction",
+      {
+        operations,
+        ...(expectedRevision === undefined ? {} : { expectedRevision })
+      },
+      TRANSACTION_TIMEOUT
+    );
 
   function setWorkspace(id: string): void {
     traceTransport("workspace", { from: workspaceId, to: id });

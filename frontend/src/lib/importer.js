@@ -228,8 +228,8 @@ export async function collectImportDocuments(fileList, options = {}) {
     if (includedFiles.has(name)) return;
     includedFiles.add(name);
     const result = parsed.get(name) || { documents: [], origins: [] };
-    documents.push(...result.documents);
-    origins.push(...result.origins);
+    for (const document of result.documents) documents.push(document);
+    for (const origin of result.origins) origins.push(origin);
     if (resolveManifestReferences) {
       for (const document of result.documents) {
         for (const reference of manifestReferences(document)) {

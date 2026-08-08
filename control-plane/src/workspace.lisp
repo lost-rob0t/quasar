@@ -116,14 +116,11 @@
   "Deep-clone a graph JSOWN object including nodes, edges, and all UI metadata."
   (quasar.protocol:clone-json graph))
 
-(defun workspace-snapshot (workspace)
+(defun workspace-snapshot-with-documents (workspace documents)
   (quasar.protocol:json-object
    (cons "id" (workspace-id workspace))
    (cons "revision" (workspace-revision workspace))
-   (cons "documents"
-         (apply #'quasar.protocol:json-array
-                (mapcar #'quasar.protocol:clone-json
-                        (hash-table-values (workspace-documents workspace)))))
+   (cons "documents" (cons :array documents))
    (cons "graphs"
          (apply #'quasar.protocol:json-array
                 (mapcar #'quasar.protocol:clone-json
@@ -132,6 +129,37 @@
          (or (gethash "activeGraphId" (workspace-settings workspace))
              "all-documents"))
    (cons "settings" (hash-table-object (workspace-settings workspace)))))
+
+(defun workspace-snapshot (workspace)
+  (workspace-snapshot-with-documents
+   workspace
+   (mapcar #'quasar.protocol:clone-json
+           (hash-table-values (workspace-documents workspace)))))
+
+(defun workspace-snapshot-page (workspace offset byte-limit)
+  "Return an authoritative snapshot with a size-bounded document page."
+  (let* ((documents (hash-table-values (workspace-documents workspace)))
+         (total (length documents))
+         (page '())
+         (page-bytes 0)
+         (next-offset offset))
+    (dolist (document (nthcdr offset documents))
+      (let ((document-bytes
+              (length (quasar.protocol:encode document))))
+        (when (and page (> (+ page-bytes document-bytes) byte-limit))
+          (return))
+        (push (quasar.protocol:clone-json document) page)
+        (incf page-bytes document-bytes)
+        (incf next-offset)))
+    (let ((snapshot (workspace-snapshot-with-documents workspace (nreverse page))))
+      (quasar.protocol:object-set
+       snapshot "documentPage"
+       (quasar.protocol:json-object
+        (cons "offset" offset)
+        (cons "nextOffset" next-offset)
+        (cons "total" total)
+        (cons "complete" (>= next-offset total))))
+      snapshot)))
 
 (defun graph-snapshot (workspace graph-id)
   (let ((graph (workspace-graph workspace graph-id)))

@@ -230,8 +230,22 @@ returns a result envelope with revision, operation ID, and canonical data."
          (cons "results" (apply #'quasar.protocol:json-array results)))))))
 
 (defun handle-snapshot (plane payload envelope)
-  (declare (ignore payload))
-  (quasar.workspace:workspace-snapshot (workspace-for plane envelope)))
+  (let* ((workspace (workspace-for plane envelope))
+         (offset (quasar.protocol:json-value payload "documentOffset"))
+         (requested-limit (quasar.protocol:json-value payload "documentByteLimit")))
+    (if (or offset requested-limit)
+        (progn
+          (unless (and (integerp offset) (not (minusp offset)))
+            (error 'quasar.protocol:quasar-error
+                   :code "protocol.invalid-envelope"
+                   :message "documentOffset must be a non-negative integer."))
+          (unless (and (integerp requested-limit) (plusp requested-limit))
+            (error 'quasar.protocol:quasar-error
+                   :code "protocol.invalid-envelope"
+                   :message "documentByteLimit must be a positive integer."))
+          (quasar.workspace:workspace-snapshot-page
+           workspace offset (min requested-limit (* 512 1024))))
+        (quasar.workspace:workspace-snapshot workspace))))
 
 (defun handle-graph-snapshot (plane payload envelope)
   (let* ((workspace (workspace-for plane envelope))

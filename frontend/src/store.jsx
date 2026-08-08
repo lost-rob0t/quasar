@@ -27,6 +27,7 @@ import {
   cpTransaction
 } from "./control-plane/mutations";
 import { getControlPlane } from "./control-plane/client";
+import { chunkTransactionOperations } from "./control-plane/transaction-chunks";
 import { documentsToJsonl, downloadText, importFiles } from "./lib/importer";
 import { operation } from "./lib/operations";
 import { validateDocumentBatch } from "./lib/document-batch";
@@ -89,6 +90,7 @@ export function QuasarProvider({ children }) {
   const runActorRef = useRef(null);
   const executeRef = useRef(null);
   const graphCommitVersion = useRef(0);
+  const eventRefreshSuspensions = useRef(0);
 
   documentsRef.current = documents;
 
@@ -131,8 +133,9 @@ export function QuasarProvider({ children }) {
       }
     });
     const unsubEvents = cpClient?.subscribe(() => {
-      if (active)
-        void refresh().catch((error) => setNotice({ kind: "error", message: error.message }));
+      if (!active) return;
+      if (eventRefreshSuspensions.current) return;
+      void refresh().catch((error) => setNotice({ kind: "error", message: error.message }));
     });
     Promise.all([getSettings(), ensureStarIntelViews()])
       .then(([nextSettings]) => {
@@ -189,9 +192,10 @@ export function QuasarProvider({ children }) {
         const ops = (command.operations || []).map((op) => {
           if (op.type === "save-document") {
             const previous = known.get(op.document._id);
-            inverses.unshift(
-              previous ? operation.save(previous) : operation.remove(op.document._id)
-            );
+            if (recordHistory)
+              inverses.push(
+                previous ? operation.save(previous) : operation.remove(op.document._id)
+              );
             known.set(op.document._id, op.document);
             return {
               type: previous ? "document.update" : "document.create",
@@ -200,22 +204,44 @@ export function QuasarProvider({ children }) {
           }
           if (op.type === "remove-document") {
             const previous = known.get(op.id);
-            if (previous) inverses.unshift(operation.save(previous));
+            if (recordHistory && previous) inverses.push(operation.save(previous));
             known.delete(op.id);
             return { type: "document.delete", payload: { id: op.id } };
           }
           return op;
         });
-        const result = await cpTransaction(ops);
-        await refresh();
+        const chunks = recordHistory ? [ops] : chunkTransactionOperations(ops);
+        let result = null;
+        let committedOperationCount = 0;
+        let failure = null;
+        eventRefreshSuspensions.current += 1;
+        try {
+          for (const chunk of chunks) {
+            result = await cpTransaction(chunk);
+            committedOperationCount += chunk.length;
+          }
+        } catch (error) {
+          error.committedOperationCount = committedOperationCount;
+          failure = error;
+        } finally {
+          eventRefreshSuspensions.current -= 1;
+          if (!eventRefreshSuspensions.current) {
+            try {
+              await refresh();
+            } catch (error) {
+              if (!failure) failure = error;
+            }
+          }
+        }
+        if (failure) throw failure;
         if (recordHistory && inverses.length) {
           record({
             label,
-            inverse: operation.batch(inverses, `Undo ${label}`),
+            inverse: operation.batch(inverses.reverse(), `Undo ${label}`),
             redo: command
           });
         }
-        return result;
+        return { ...result, chunkCount: chunks.length };
       }
       throw new TypeError(`Unknown operation type: ${command?.type || "<missing>"}`);
     },
@@ -241,6 +267,7 @@ export function QuasarProvider({ children }) {
       const existing = new Map(documentsRef.current.map((document) => [document._id, document]));
       const savedDocuments = [];
       const skipped = [];
+      let chunkCount = 1;
       for (const { document } of preflight.validated) {
         if (existing.has(document._id) && !replace) {
           skipped.push({ id: document._id, reason: "exists" });
@@ -249,13 +276,43 @@ export function QuasarProvider({ children }) {
         }
       }
       if (savedDocuments.length) {
-        await execute(operation.batch(savedDocuments.map(operation.save), label), label);
+        let execution;
+        try {
+          execution = await execute(
+            operation.batch(savedDocuments.map(operation.save), label),
+            label,
+            {
+              recordHistory: options.recordHistory !== false
+            }
+          );
+        } catch (error) {
+          const committed = Number(error.committedOperationCount || 0);
+          error.report = {
+            saved: savedDocuments.slice(0, committed).map((document) => ({
+              id: document._id,
+              ok: true
+            })),
+            skipped,
+            errors: [
+              {
+                index: committed,
+                id: savedDocuments[committed]?._id || null,
+                message: error.message,
+                phase: "write"
+              }
+            ],
+            atomic: false,
+            rolledBack: 0
+          };
+          throw error;
+        }
+        chunkCount = execution.chunkCount;
       }
       const report = {
         saved: savedDocuments.map((document) => ({ id: document._id, ok: true })),
         skipped,
         errors: preflight.errors,
-        atomic: options.atomic !== false,
+        atomic: options.atomic !== false && chunkCount === 1,
         rolledBack: 0
       };
       if (report.errors.length) {
@@ -289,26 +346,19 @@ export function QuasarProvider({ children }) {
   }, [execute, history.redo]);
 
   const importFileSet = useCallback(
-    async (files, options = {}) => {
-      try {
-        const report = await importFiles(
-          files,
-          (candidates, importOptions) =>
-            executeBatch(candidates, `Import ${candidates.length} documents`, {
-              replace: Boolean(importOptions.replace),
-              atomic: importOptions.atomic !== false,
-              origins: importOptions.origins || []
-            }),
-          { atomic: true, ...options }
-        );
-        await refresh();
-        return report;
-      } catch (error) {
-        await refresh();
-        throw error;
-      }
-    },
-    [executeBatch, refresh]
+    (files, options = {}) =>
+      importFiles(
+        files,
+        (candidates, importOptions) =>
+          executeBatch(candidates, `Import ${candidates.length} documents`, {
+            replace: Boolean(importOptions.replace),
+            atomic: importOptions.atomic !== false,
+            origins: importOptions.origins || [],
+            recordHistory: false
+          }),
+        { atomic: true, ...options }
+      ),
+    [executeBatch]
   );
 
   const persistSettings = useCallback(

@@ -813,6 +813,49 @@
              (check (search "snap-1" response))))
       (stop-control-plane plane))))
 
+(defun test-dispatch-paged-snapshot ()
+  (let ((plane (make-control-plane)))
+    (start-control-plane plane)
+    (unwind-protect
+         (progn
+           (dotimes (index 5)
+             (let ((document (make-doc (format nil "page-~D" index))))
+               (quasar.protocol:object-set document "padding"
+                                           (make-string 200 :initial-element #\x))
+               (call-command plane
+                             (make-envelope "document.create" document
+                                            :id (format nil "page-create-~D" index)))))
+           (let* ((first-response
+                    (call-command
+                     plane
+                     (make-envelope
+                      "workspace.snapshot"
+                      (quasar.protocol:json-object
+                       (cons "documentOffset" 0)
+                       (cons "documentByteLimit" 450))
+                      :id "page-first")))
+                  (first-result (result first-response))
+                  (first-page (jsown:val first-result "documentPage"))
+                  (next-offset (jsown:val first-page "nextOffset")))
+             (check (string= (status first-response) "ok"))
+             (check (> next-offset 0))
+             (check (< next-offset 5))
+             (check (not (jsown:val first-page "complete")))
+             (let* ((second-response
+                      (call-command
+                       plane
+                       (make-envelope
+                        "workspace.snapshot"
+                        (quasar.protocol:json-object
+                         (cons "documentOffset" next-offset)
+                         (cons "documentByteLimit" 4096))
+                        :id "page-second")))
+                    (second-page (jsown:val (result second-response) "documentPage")))
+               (check (string= (status second-response) "ok"))
+               (check (= (jsown:val second-page "nextOffset") 5))
+               (check (jsown:val second-page "complete")))))
+      (stop-control-plane plane))))
+
 (defun test-graph-snapshot ()
   (let ((plane (make-control-plane)))
     (start-control-plane plane)
@@ -873,6 +916,7 @@
   (test-unknown-command)
   (test-dispatch-document-create)
   (test-dispatch-snapshot)
+  (test-dispatch-paged-snapshot)
   (test-graph-snapshot)
   (when (plusp *failures*)
     (error "~D Quasar test(s) failed." *failures*))

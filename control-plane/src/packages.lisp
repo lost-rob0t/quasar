@@ -77,6 +77,7 @@
     #:copy-workspace
     #:workspace-graph
     #:workspace-snapshot
+    #:workspace-snapshot-page
     #:graph-snapshot
     #:graph-node
     #:graph-edge
@@ -129,6 +130,7 @@
                 #:workspace-id
                 #:workspace-revision
                 #:workspace-snapshot
+                #:workspace-snapshot-page
                 #:workspace-documents
                 #:workspace-graphs
                 #:workspace-settings

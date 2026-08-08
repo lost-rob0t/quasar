@@ -113,6 +113,10 @@ Implemented durable commands include:
 
 Transaction child events have unique operation IDs, a shared transaction ID,
 one committed revision, stable order, event index, and event count.
+File imports are fully prevalidated in the browser, then large corpora are sent
+as ordered, size-bounded transactions below the WebSocket security limit. Each
+chunk is atomic; a later chunk failure is reported with the already committed
+document count instead of claiming whole-corpus rollback.
 
 ## Transitional boundaries
 

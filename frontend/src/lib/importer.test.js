@@ -79,6 +79,21 @@ describe("browser imports", () => {
     expect(csv.origins[0]).toEqual({ file: "records.csv", line: 2, record: 1 });
   });
 
+  it("collects more documents than can be passed through a spread call", async () => {
+    const count = 150_000;
+    const records = Array.from({ length: count }, (_, index) => ({
+      _id: `starintel:note:${index}`,
+      dtype: "note"
+    }));
+
+    const result = await collectImportDocuments([
+      file("large-records.json", JSON.stringify(records))
+    ]);
+
+    expect(result.documents).toHaveLength(count);
+    expect(result.documents.at(-1)._id).toBe(`starintel:note:${count - 1}`);
+  });
+
   it("resolves files named by a dataset manifest", async () => {
     const manifest = {
       ...document,
