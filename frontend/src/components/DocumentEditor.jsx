@@ -376,8 +376,15 @@ export default function DocumentEditor({ mode }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const { documents, execute, setNotice, workspace, addDocumentsToActiveGraph, runTargetActors } =
-    useQuasar();
+  const {
+    documents,
+    execute,
+    setNotice,
+    workspace,
+    addDocumentsToActiveGraph,
+    flushWorkspace,
+    runTargetActors
+  } = useQuasar();
   const existing = mode === "edit" ? documents.find((document) => document._id === id) : null;
   const draftToken = params.get("draft");
   const initialDraft = useMemo(() => readDraft(draftToken), [draftToken]);
@@ -591,6 +598,7 @@ export default function DocumentEditor({ mode }) {
             changes.positions = { ...(workspace?.positions || {}), [document._id]: position };
           }
           addDocumentsToActiveGraph([document._id], changes);
+          await flushWorkspace();
         }
         navigate(`/graph?node=${encodeURIComponent(document._id)}`, {
           state: { revealUnreviewed: true, createdIds: existing ? [] : [document._id] }

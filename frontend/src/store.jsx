@@ -81,6 +81,8 @@ export function QuasarProvider({ children }) {
   const queueAutostartRef = useRef(false);
   const workspaceRef = useRef(null);
   const workspaceTimer = useRef(null);
+  const pendingWorkspaceCommit = useRef(null);
+  const workspaceCommit = useRef(Promise.resolve());
   const researchRunnerRef = useRef(null);
   const documentsRef = useRef([]);
   const actorsRef = useRef([]);
@@ -341,22 +343,43 @@ export function QuasarProvider({ children }) {
     return durable;
   }, []);
 
+  const sendWorkspaceCommit = useCallback(
+    (normalized, version) => {
+      pendingWorkspaceCommit.current = null;
+      const active = getActiveGraph(normalized);
+      const commit = cpTransaction([
+        { type: "graph.put", payload: canonicalGraph(active) },
+        { type: "graph.activate", payload: { id: active.id } }
+      ]);
+      workspaceCommit.current = commit;
+      commit.catch((error) => reportGraphFailure(version, error));
+      return commit;
+    },
+    [canonicalGraph, reportGraphFailure]
+  );
+
   const commitWorkspace = useCallback(
     (normalized) => {
       setLocalWorkspace(normalized);
       clearTimeout(workspaceTimer.current);
       const version = ++graphCommitVersion.current;
+      pendingWorkspaceCommit.current = { normalized, version };
       workspaceTimer.current = setTimeout(() => {
-        const active = getActiveGraph(normalized);
-        cpTransaction([
-          { type: "graph.put", payload: canonicalGraph(active) },
-          { type: "graph.activate", payload: { id: active.id } }
-        ]).catch((error) => reportGraphFailure(version, error));
+        workspaceTimer.current = null;
+        sendWorkspaceCommit(normalized, version);
       }, 120);
       return normalized;
     },
-    [canonicalGraph, reportGraphFailure, setLocalWorkspace]
+    [sendWorkspaceCommit, setLocalWorkspace]
   );
+
+  const flushWorkspace = useCallback(() => {
+    const pending = pendingWorkspaceCommit.current;
+    if (!pending) return workspaceCommit.current;
+    clearTimeout(workspaceTimer.current);
+    workspaceTimer.current = null;
+    return sendWorkspaceCommit(pending.normalized, pending.version);
+  }, [sendWorkspaceCommit]);
 
   const persistWorkspace = useCallback(
     (next) => {
@@ -814,6 +837,7 @@ export function QuasarProvider({ children }) {
       importFileSet,
       persistSettings,
       persistWorkspace,
+      flushWorkspace,
       addDocumentsToActiveGraph,
       removeDocumentsFromActiveGraph,
       createGraph,
@@ -862,6 +886,7 @@ export function QuasarProvider({ children }) {
       importFileSet,
       persistSettings,
       persistWorkspace,
+      flushWorkspace,
       addDocumentsToActiveGraph,
       removeDocumentsFromActiveGraph,
       createGraph,

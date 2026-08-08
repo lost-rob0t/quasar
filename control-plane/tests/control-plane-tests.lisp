@@ -162,6 +162,28 @@
       (cons "payload" (make-doc "person:1"))))
     (check (= 0 (workspace-revision workspace)))))
 
+(defun test-graph-put-preserves-membership-null ()
+  (let ((workspace (make-workspace :id "membership-null")))
+    (quasar.workspace:apply-graph-put
+     workspace
+     (jsown:parse
+      "{\"id\":\"all-documents\",\"documentIds\":null,\"viewport\":null}"))
+    (check (eq :null
+               (quasar.protocol:json-value
+                (workspace-graph workspace "all-documents") "documentIds")))
+    (check (search "\"documentIds\":null"
+                   (quasar.protocol:encode-result
+                    "snapshot" (workspace-snapshot workspace))))
+    (quasar.workspace:apply-graph-put
+     workspace
+     (jsown:parse "{\"id\":\"empty\",\"documentIds\":[]}"))
+    (check (quasar.protocol:array-p
+            (quasar.protocol:json-value (workspace-graph workspace "empty")
+                                        "documentIds")))
+    (check (search "\"documentIds\":[]"
+                   (quasar.protocol:encode-result
+                    "graph" (workspace-graph workspace "empty"))))))
+
 ;;; --- Document CRUD ---
 
 (defun test-document-crud ()
@@ -819,6 +841,7 @@
   (test-protocol-encode)
   (test-clone-json)
   (test-workspace-revision)
+  (test-graph-put-preserves-membership-null)
   (test-document-crud)
   (test-document-not-found)
   (test-document-invalid)

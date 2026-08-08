@@ -563,6 +563,17 @@
               (quasar.protocol:json-value payload "id") "id" "graph.invalid"))
          (previous (workspace-graph workspace id))
          (canonical (quasar.protocol:clone-json payload)))
+    ;; JSOWN parses both JSON null and an empty array as NIL. The graph ID
+    ;; disambiguates the membership contract: all-documents is the null corpus
+    ;; projection, while every named graph has an explicit array.
+    (quasar.protocol:object-set
+     canonical "documentIds"
+     (if (string= id "all-documents")
+         :null
+         (or (quasar.protocol:json-value canonical "documentIds")
+             (quasar.protocol:json-array))))
+    (unless (quasar.protocol:json-value canonical "viewport")
+      (quasar.protocol:object-set canonical "viewport" :null))
     (validate-graph-document-ids workspace canonical)
     (unless (quasar.protocol:json-value canonical "name")
       (quasar.protocol:object-set canonical "name" id))
