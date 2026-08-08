@@ -6,6 +6,35 @@ import WebSocket from "ws";
 const repoRoot = new URL("../", import.meta.url).pathname;
 const executable = `${repoRoot}quasar-server`;
 
+if (
+  process.platform === "linux" &&
+  !process.env.IN_NIX_SHELL &&
+  !process.env.QUASAR_PRODUCTION_SMOKE_NIX_READY &&
+  existsSync("/nix/store") &&
+  existsSync(`${repoRoot}flake.nix`)
+) {
+  const nix = spawnSync("nix", ["--version"], { encoding: "utf-8", timeout: 5000 });
+  if (nix.status === 0) {
+    const result = spawnSync(
+      "nix",
+      [
+        "develop",
+        "-c",
+        "env",
+        "QUASAR_PRODUCTION_SMOKE_NIX_READY=1",
+        "node",
+        "scripts/smoke-production.mjs",
+        ...process.argv.slice(2)
+      ],
+      { cwd: repoRoot, env: process.env, stdio: "inherit" }
+    );
+    if (result.error) {
+      console.error(`[production-smoke] Unable to enter the Nix shell: ${result.error.message}`);
+    }
+    process.exit(result.status ?? 1);
+  }
+}
+
 function fail(message) {
   throw new Error(message);
 }

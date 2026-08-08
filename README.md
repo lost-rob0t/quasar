@@ -32,6 +32,11 @@ npm ci
 npm run dev
 ```
 
+On Linux hosts with Nix available, plain `npm run dev` and
+`./scripts/run-production` automatically re-enter this repository's pinned Nix
+shell so CLOG can resolve SQLite and the other native libraries. Other platforms
+use the libraries installed on the host.
+
 One root `npm ci` installs the complete npm workspace. `npm run dev` supervises
 the Common Lisp control plane, WebSocket endpoint, CLOG host, and Vite without
 using `npx` or downloading undeclared packages. The local endpoints are:
@@ -39,6 +44,11 @@ using `npx` or downloading undeclared packages. The local endpoints are:
 - React/Vite: `http://127.0.0.1:5173`
 - CLOG production host: `http://127.0.0.1:8080`
 - control-plane WebSocket: `ws://127.0.0.1:8081`
+
+Development builds log uncaught browser errors, rejected promises, and React
+component stacks. Open `http://127.0.0.1:5173/?debug=1` to additionally trace
+WebSocket lifecycle, command IDs, revisions, and pending-request counts without
+logging payloads or credentials. Use `?debug=0` to disable that transport trace.
 
 `./scripts/run-control-plane` starts only the Lisp/CLOG/WebSocket side. The
 development scripts explicitly enable unauthenticated local mode; production

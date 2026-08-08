@@ -3,20 +3,22 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+if [[ "$(uname -s)" == "Linux" \
+  && -z "${IN_NIX_SHELL:-}" \
+  && -z "${QUASAR_PRODUCTION_NIX_READY:-}" \
+  && -d /nix/store \
+  && -f "$repo_root/flake.nix" \
+  && -x "$(command -v nix 2>/dev/null || true)" ]]; then
+  echo "[production] Entering the repository Nix shell for native runtime libraries..."
+  exec nix develop -c env QUASAR_PRODUCTION_NIX_READY=1 bash scripts/run-production "$@"
+fi
+
 # A single root install is the supported monorepo dependency path.
 cd "$repo_root"
 npm ci
 npm run build
 
-# Build the Lisp systems and save an executable
-cd "$repo_root"
-export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
-
-openssl_lib="$(nix-store -q --requisites /nix/var/nix/profiles/default 2>/dev/null | grep -m1 'openssl' || true)"
-if [[ -n "${openssl_lib}" && -d "${openssl_lib}/lib" ]]; then
-  export LD_LIBRARY_PATH="${openssl_lib}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-fi
-
+# Build the Lisp systems and save an executable.
 sbcl --non-interactive \
   --eval '(setf asdf:*central-registry* nil)' \
   --eval '(asdf:clear-configuration)' \

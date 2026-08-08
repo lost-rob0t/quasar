@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from "node:child_process";
-import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { createRequire } from "node:module";
@@ -8,35 +7,45 @@ import { createRequire } from "node:module";
 const repoRoot = new URL("../", import.meta.url).pathname;
 const frontendDir = join(repoRoot, "frontend");
 const rootNodeModules = join(repoRoot, "node_modules");
+const viteBin = join(rootNodeModules, ".bin", "vite");
 const requireFromFrontend = createRequire(join(frontendDir, "package.json"));
 
 const processes = [];
 let exiting = false;
-const emitter = new EventEmitter();
+
+function enterNixDevelopmentShell() {
+  if (
+    process.platform !== "linux" ||
+    process.env.IN_NIX_SHELL ||
+    process.env.QUASAR_DEV_NIX_READY ||
+    !existsSync("/nix/store") ||
+    !existsSync(join(repoRoot, "flake.nix"))
+  ) {
+    return;
+  }
+  const nix = spawnSync("nix", ["--version"], { encoding: "utf-8", timeout: 5000 });
+  if (nix.status !== 0) return;
+
+  console.log("[dev] Entering the repository Nix shell for native runtime libraries...");
+  const result = spawnSync(
+    "nix",
+    [
+      "develop",
+      "-c",
+      "env",
+      "QUASAR_DEV_NIX_READY=1",
+      "node",
+      "scripts/dev.mjs"
+    ],
+    { cwd: repoRoot, env: process.env, stdio: "inherit" }
+  );
+  if (result.error) console.error(`[dev] Unable to enter the Nix shell: ${result.error.message}`);
+  process.exit(result.status ?? 1);
+}
 
 function fail(msg) {
   console.error(`\n[dev] ${msg}`);
   process.exit(1);
-}
-
-function findOpenSsl() {
-  try {
-    const result = spawnSync("nix-store", ["-q", "--requisites", "/nix/var/nix/profiles/default"], {
-      encoding: "utf-8",
-      timeout: 5000,
-    });
-    if (result.status === 0) {
-      const lines = result.stdout.split("\n");
-      for (const line of lines) {
-        if (line.includes("openssl") && existsSync(`${line}/lib`)) {
-          return `${line}/lib`;
-        }
-      }
-    }
-  } catch {
-    // Nix not available, skip.
-  }
-  return null;
 }
 
 function resolveFromFrontend(spec) {
@@ -76,6 +85,9 @@ function validateDependencies() {
 
   if (!existsSync(join(repoRoot, "package-lock.json"))) {
     fail(`Root package-lock.json not found. Run: npm install`);
+  }
+  if (!existsSync(viteBin)) {
+    fail(`Tracked Vite executable not found at ${viteBin}. Run: npm ci`);
   }
 }
 
@@ -161,17 +173,14 @@ process.on("SIGINT", () => shutdown(0));
 process.on("SIGTERM", () => shutdown(0));
 
 // --- Validation phase ---
+enterNixDevelopmentShell();
 console.log("Starting Quasar development stack...");
 console.log(`  repository: ${repoRoot}`);
 
 validateExecutables();
 validateDependencies();
 
-const opensslLib = findOpenSsl();
 const env = { ...process.env };
-if (opensslLib) {
-  env.LD_LIBRARY_PATH = `${opensslLib}:${env.LD_LIBRARY_PATH ?? ""}`;
-}
 
 // Isolate ASDF source registry from user-local CL projects (e.g. Lem's qlot)
 // that may provide incompatible versions of named-readtables or other deps.
@@ -202,8 +211,8 @@ startProcess(
 // Start the Vite dev server using the tracked frontend package (no npx)
 startProcess(
   "vite",
-  "npm",
-  ["run", "dev", "--", "--port", "5173", "--host"],
+  viteBin,
+  ["--port", "5173", "--host"],
   { cwd: frontendDir, env },
 );
 

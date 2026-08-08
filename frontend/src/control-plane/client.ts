@@ -59,6 +59,23 @@ export interface ControlPlaneClient {
 
 let sequence = 0;
 
+function diagnosticsEnabled(): boolean {
+  if (!import.meta.env.DEV || typeof window === "undefined") return false;
+  try {
+    const requested = new URLSearchParams(window.location.search).get("debug");
+    if (requested === "1") window.localStorage.setItem("quasar-debug", "1");
+    if (requested === "0") window.localStorage.removeItem("quasar-debug");
+    return requested === "1" || window.localStorage.getItem("quasar-debug") === "1";
+  } catch {
+    return false;
+  }
+}
+
+function traceTransport(event: string, fields: Record<string, unknown> = {}): void {
+  if (!diagnosticsEnabled()) return;
+  console.debug(`[quasar-control:${event}] ${JSON.stringify(fields)}`);
+}
+
 function nextId(): string {
   sequence += 1;
   return `ui-${Date.now().toString(36)}-${sequence.toString(36)}`;
@@ -96,6 +113,7 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
 
   function publishState(next: Partial<ConnectionState>): void {
     state = { ...state, ...next };
+    traceTransport("state", { ...state });
     for (const listener of connectionListeners) {
       try {
         listener(state);
@@ -121,10 +139,12 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
     if (!request) return;
     pending.delete(id);
     clearTimeout(request.timer);
+    traceTransport("settle", { id, workspace: request.workspaceId, pending: pending.size });
     settle(request);
   }
 
   function rejectAllPending(reason: string): void {
+    traceTransport("reject-all", { reason, pending: pending.size });
     for (const id of [...pending.keys()]) {
       settlePending(id, (request) =>
         request.reject(new ControlPlaneError("control-plane.unavailable", reason))
@@ -137,12 +157,27 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
     const envelope = message as Record<string, unknown>;
     if (envelope.protocol !== PROTOCOL_VERSION) return;
     if (typeof envelope.event === "string") {
+      traceTransport("event", {
+        event: envelope.event,
+        workspace: envelope.workspace,
+        revision: envelope.revision,
+        operationId: envelope.operationId,
+        transactionId: envelope.transactionId
+      });
       eventBus.dispatch(envelope as unknown as EventEnvelope);
       return;
     }
     if (typeof envelope.id !== "string") return;
 
     const response = envelope as unknown as ResponseEnvelope;
+    traceTransport("response", {
+      id: response.id,
+      status: response.status,
+      revision:
+        response.status === "ok"
+          ? (response.result as Record<string, unknown> | null)?.revision
+          : undefined
+    });
     settlePending(response.id, (request) => {
       if (response.status === "error") {
         request.reject(
@@ -161,6 +196,7 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
   async function synchronize(): Promise<void> {
     const attempt = ++synchronization;
     const synchronizedWorkspace = workspaceId;
+    traceTransport("synchronize-start", { attempt, workspace: synchronizedWorkspace });
     try {
       const current = await snapshot();
       if (
@@ -184,7 +220,22 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
       reconnect.markConnected();
       openedOnce = true;
       publishState({ phase: "connected", connected: true, synchronized: true, attempts: 0 });
-    } catch {
+      traceTransport("synchronize-complete", {
+        attempt,
+        workspace: synchronizedWorkspace,
+        revision: current.revision
+      });
+    } catch (error) {
+      traceTransport("synchronize-failed", {
+        attempt,
+        workspace: synchronizedWorkspace,
+        error:
+          error instanceof ControlPlaneError
+            ? error.code
+            : error instanceof Error
+              ? error.name
+              : "unknown"
+      });
       socket?.close();
     }
   }
@@ -202,6 +253,7 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
       connected: false,
       synchronized: false
     });
+    traceTransport("connect", { workspace: workspaceId, openedOnce });
     let nextSocket: WebSocket;
     try {
       nextSocket = new WebSocket(url);
@@ -211,6 +263,7 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
     }
     socket = nextSocket;
     nextSocket.onopen = () => {
+      traceTransport("open", { workspace: workspaceId });
       if (socket === nextSocket) void synchronize();
     };
     nextSocket.onmessage = (event) => {
@@ -223,6 +276,7 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
     nextSocket.onclose = () => {
       if (socket !== nextSocket) return;
       socket = null;
+      traceTransport("close", { workspace: workspaceId, disposed, pending: pending.size });
       synchronization += 1;
       rejectAllPending("WebSocket connection closed.");
       if (disposed) return;
@@ -230,6 +284,7 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
       reconnect.markDisconnected();
     };
     nextSocket.onerror = () => {
+      traceTransport("socket-error", { workspace: workspaceId });
       // Browsers follow an error with close; close owns cleanup and retry.
     };
   }
@@ -261,6 +316,7 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
         timer,
         workspaceId
       });
+      traceTransport("send", { id, command, workspace: workspaceId, pending: pending.size });
       socket.send(JSON.stringify(envelope));
     });
   }
@@ -273,6 +329,7 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
     });
 
   function setWorkspace(id: string): void {
+    traceTransport("workspace", { from: workspaceId, to: id });
     workspaceId = id;
     eventBus.setWorkspace(id);
     if (socket?.readyState === WebSocket.OPEN) void synchronize();
@@ -281,6 +338,7 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
   function dispose(): void {
     if (disposed) return;
     disposed = true;
+    traceTransport("dispose", { workspace: workspaceId, pending: pending.size });
     synchronization += 1;
     reconnect.stop();
     const current = socket;
