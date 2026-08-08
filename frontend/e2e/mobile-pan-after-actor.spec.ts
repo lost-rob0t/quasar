@@ -1,4 +1,5 @@
-import { expect, test, type Locator } from "@playwright/test";
+import type { Locator } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 type Point = { x: number; y: number };
 type GraphState = { node: Point; pan: Point };

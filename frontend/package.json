@@ -21,7 +21,8 @@
     "test:e2e": "playwright test",
     "check:static": "node --check public/sw.js && node --check public/sw-runtime.js",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run check:boundaries && npm run check:static",
-    "check:boundaries": "node scripts/check-boundaries.mjs"
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "benchmark:graph": "node --expose-gc scripts/benchmark-graph-scale.mjs"
   },
   "dependencies": {
     "@stomp/stompjs": "^7.3.0",

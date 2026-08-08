@@ -41,14 +41,13 @@ export interface EventEnvelope {
   operationId: string;
   transactionId?: string;
   eventIndex?: number;
+  eventCount?: number;
   payload: Record<string, unknown>;
 }
 
 export type EventHandler = (event: EventEnvelope) => void;
 
-export type CommandHandler<T = unknown> = (
-  payload: Record<string, unknown>
-) => Promise<T>;
+export type CommandHandler<T = unknown> = (payload: Record<string, unknown>) => Promise<T>;
 
 export const ERROR_CODES = [
   "protocol.invalid-envelope",
@@ -57,11 +56,18 @@ export const ERROR_CODES = [
   "workspace.revision-conflict",
   "document.not-found",
   "document.invalid",
+  "document.duplicate-id",
+  "graph.not-found",
+  "graph.invalid",
+  "graph.duplicate-id",
   "graph.node-not-found",
   "graph.edge-not-found",
   "graph.invalid-reference",
   "transaction.failed",
-  "control-plane.unavailable",
+  "security.unauthorized",
+  "security.forbidden",
+  "security.rate-limited",
+  "control-plane.unavailable"
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("opens the datasets navigation as a dataset index", async ({ page }) => {
   await page.goto("/documents?group=dataset");

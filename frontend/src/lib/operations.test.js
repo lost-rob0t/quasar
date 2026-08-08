@@ -1,13 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const database = vi.hoisted(() => ({
-  bulkSaveDocuments: vi.fn(),
-  getDocument: vi.fn(),
-  removeDocument: vi.fn(),
-  saveDocument: vi.fn()
+const controlPlane = vi.hoisted(() => ({
+  cpSnapshot: vi.fn(),
+  cpTransaction: vi.fn()
 }));
 
-vi.mock("./db", () => database);
+vi.mock("../control-plane/mutations", () => controlPlane);
 
 import { saveDocumentBatch } from "./operations";
 
@@ -29,35 +27,25 @@ const document = {
 describe("batch operation history", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    database.getDocument.mockResolvedValue(null);
+    controlPlane.cpSnapshot.mockResolvedValue({ documents: [] });
+    controlPlane.cpTransaction.mockResolvedValue({ revision: 1, results: [] });
   });
 
   it("returns an undo operation for every committed document", async () => {
-    database.bulkSaveDocuments.mockResolvedValue({
-      saved: [{ index: 0, id: document._id, rev: "1-a" }],
-      skipped: [],
-      errors: []
-    });
-
     const applied = await saveDocumentBatch([document], "Import");
+    expect(controlPlane.cpTransaction).toHaveBeenCalledWith([
+      {
+        type: "document.create",
+        payload: expect.objectContaining({ _id: document._id, dtype: "org" })
+      }
+    ]);
     expect(applied.inverse.operations).toEqual([{ type: "remove-document", id: document._id }]);
   });
 
-  it("exposes an undo operation even when a failed rollback leaves a write committed", async () => {
-    database.bulkSaveDocuments.mockResolvedValue({
-      saved: [{ index: 0, id: document._id, rev: "1-a" }],
-      skipped: [],
-      errors: [{ index: 1, id: "starintel:org:failed", message: "write failed" }]
-    });
-
-    try {
-      await saveDocumentBatch([document], "Import");
-      throw new Error("expected saveDocumentBatch to reject");
-    } catch (error) {
-      expect(error.report.saved[0].id).toBe(document._id);
-      expect(error.applied.inverse.operations).toEqual([
-        { type: "remove-document", id: document._id }
-      ]);
-    }
+  it("does not submit an atomic batch when validation fails", async () => {
+    await expect(
+      saveDocumentBatch([document, { _id: "invalid", dtype: "not-a-real-dtype" }], "Import")
+    ).rejects.toMatchObject({ report: { atomic: true, saved: [] } });
+    expect(controlPlane.cpTransaction).not.toHaveBeenCalled();
   });
 });

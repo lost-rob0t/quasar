@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("uses a compact modern shell in full viewport", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });

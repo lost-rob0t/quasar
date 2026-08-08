@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("runs target-create actors from a newly created target", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });

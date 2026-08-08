@@ -99,6 +99,7 @@ function startProcess(name, command, args, options = {}) {
       ...options.env,
     },
     shell: false,
+    detached: process.platform !== "win32",
   });
   processes.push({ name, proc });
 
@@ -193,7 +194,7 @@ startProcess(
     "--eval", "(asdf:load-asd (truename \"systems/quasar-starlang.asd\"))",
     "--eval", "(asdf:load-asd (truename \"systems/quasar-web.asd\"))",
     "--eval", "(asdf:load-system :quasar-web)",
-    "--eval", "(quasar.app:start :open-browser-p nil)",
+    "--eval", "(quasar.app:main :open-browser-p nil :insecure-development-p t)",
   ],
   { env },
 );

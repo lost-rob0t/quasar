@@ -22,6 +22,27 @@ export async function listDocuments() {
     .sort(newestFirst);
 }
 
+export async function replaceDocumentProjection(inputs) {
+  const documents = inputs.map((input) => assertDocument(input));
+  const existing = await documentsDb.allDocs({ include_docs: true });
+  const current = new Map(
+    existing.rows
+      .map((row) => row.doc)
+      .filter((document) => document && !document._id.startsWith("_design/"))
+      .map((document) => [document._id, document])
+  );
+  const desiredIds = new Set(documents.map((document) => document._id));
+  const writes = documents.map((document) => ({
+    ...document,
+    ...(current.get(document._id)?._rev ? { _rev: current.get(document._id)._rev } : {})
+  }));
+  for (const document of current.values()) {
+    if (!desiredIds.has(document._id)) writes.push({ ...document, _deleted: true });
+  }
+  if (writes.length) await documentsDb.bulkDocs(writes);
+  return documents;
+}
+
 export async function getDocument(id) {
   try {
     return await documentsDb.get(id);

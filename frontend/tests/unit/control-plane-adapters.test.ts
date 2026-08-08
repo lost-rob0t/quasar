@@ -4,7 +4,7 @@ import {
   createAdapters,
   createDocumentAdapter,
   createGraphNodeAdapter,
-  createGraphEdgeAdapter,
+  createGraphEdgeAdapter
 } from "../../src/control-plane/adapters";
 import type { ControlPlaneClient } from "../../src/control-plane/client";
 
@@ -29,7 +29,7 @@ function mockClient(): ControlPlaneClient {
     getConnected: vi.fn(() => true),
     getRevision: vi.fn(() => 0),
     setWorkspace: vi.fn(),
-    dispose: vi.fn(),
+    dispose: vi.fn()
   } as unknown as ControlPlaneClient;
 }
 
@@ -79,7 +79,7 @@ describe("control-plane adapters", () => {
       id: "edge-1",
       source: "a",
       target: "b",
-      graphId: "g1",
+      graphId: "g1"
     });
   });
 

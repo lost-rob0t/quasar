@@ -1,0 +1,130 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createControlPlaneClient } from "../../src/control-plane/client";
+import { PROTOCOL_VERSION } from "../../src/control-plane/protocol";
+
+class FakeWebSocket {
+  static CONNECTING = 0;
+  static OPEN = 1;
+  static CLOSING = 2;
+  static CLOSED = 3;
+  static instances: FakeWebSocket[] = [];
+
+  readyState = FakeWebSocket.CONNECTING;
+  sent: string[] = [];
+  onopen: (() => void) | null = null;
+  onmessage: ((event: { data: string }) => void) | null = null;
+  onclose: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+
+  constructor(readonly url: string) {
+    FakeWebSocket.instances.push(this);
+  }
+
+  open() {
+    this.readyState = FakeWebSocket.OPEN;
+    this.onopen?.();
+  }
+
+  send(message: string) {
+    this.sent.push(message);
+  }
+
+  close() {
+    if (this.readyState === FakeWebSocket.CLOSED) return;
+    this.readyState = FakeWebSocket.CLOSED;
+    this.onclose?.();
+  }
+
+  respond(result: unknown, index = this.sent.length - 1) {
+    const command = JSON.parse(this.sent[index]) as { id: string };
+    this.onmessage?.({
+      data: JSON.stringify({
+        protocol: PROTOCOL_VERSION,
+        id: command.id,
+        status: "ok",
+        result
+      })
+    });
+  }
+}
+
+async function connect(client: ReturnType<typeof createControlPlaneClient>) {
+  const socket = FakeWebSocket.instances.at(-1)!;
+  socket.open();
+  expect(JSON.parse(socket.sent[0]).command).toBe("workspace.snapshot");
+  socket.respond({ id: "default", revision: 3, documents: [], graphs: [] }, 0);
+  await vi.waitFor(() => expect(client.getConnected()).toBe(true));
+  return socket;
+}
+
+describe("control-plane client lifecycle", () => {
+  beforeEach(() => {
+    FakeWebSocket.instances = [];
+    vi.stubGlobal("WebSocket", FakeWebSocket);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("rejects pending requests immediately when the socket closes", async () => {
+    const client = createControlPlaneClient("ws://quasar.test");
+    const socket = await connect(client);
+    const pending = client.documentCreate({ _id: "person:1", dtype: "person" });
+
+    socket.close();
+
+    await expect(pending).rejects.toMatchObject({
+      code: "control-plane.unavailable"
+    });
+    expect(client.getConnected()).toBe(false);
+    client.dispose();
+  });
+
+  it("takes a fresh snapshot before declaring a reconnect synchronized", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
+    const client = createControlPlaneClient("ws://quasar.test");
+    const snapshots: Record<string, unknown>[] = [];
+    client.onSnapshot((snapshot) => snapshots.push(snapshot));
+    const first = FakeWebSocket.instances[0];
+    first.open();
+    first.respond({ id: "default", revision: 1, documents: [], graphs: [] }, 0);
+    await vi.runAllTicks();
+    expect(client.getConnected()).toBe(true);
+
+    first.close();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    const second = FakeWebSocket.instances[1];
+    second.open();
+    expect(client.getConnected()).toBe(false);
+    expect(JSON.parse(second.sent[0]).command).toBe("workspace.snapshot");
+    second.respond({ id: "default", revision: 9, documents: [], graphs: [] }, 0);
+    await vi.runAllTicks();
+
+    expect(client.getConnected()).toBe(true);
+    expect(client.getRevision()).toBe(9);
+    expect(snapshots.map((snapshot) => snapshot.revision)).toEqual([1, 9]);
+    client.dispose();
+  });
+
+  it("disposes idempotently without reconnecting or retaining timers", async () => {
+    vi.useFakeTimers();
+    const client = createControlPlaneClient("ws://quasar.test");
+    const socket = FakeWebSocket.instances[0];
+    socket.open();
+    socket.respond({ id: "default", revision: 0, documents: [], graphs: [] }, 0);
+    await vi.runAllTicks();
+
+    client.dispose();
+    client.dispose();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    await expect(client.snapshot()).rejects.toMatchObject({
+      code: "control-plane.unavailable"
+    });
+  });
+});

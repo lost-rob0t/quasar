@@ -49,6 +49,7 @@
     #:load-workspace
     #:save-workspace
     #:append-operation
+    #:commit-workspace
     #:store-journal-entries))
 
 (defpackage #:quasar.workspace
@@ -73,6 +74,7 @@
     #:workspace-graphs
     #:workspace-settings
     #:workspace-journal
+    #:copy-workspace
     #:workspace-graph
     #:workspace-snapshot
     #:graph-snapshot
@@ -91,6 +93,9 @@
     #:apply-edge-create
     #:apply-edge-update
     #:apply-edge-delete
+    #:apply-graph-put
+    #:apply-graph-delete
+    #:apply-graph-activate
     #:applied-op
     #:applied-op-event
     #:applied-op-result
@@ -128,6 +133,7 @@
                 #:workspace-graphs
                 #:workspace-settings
                 #:workspace-graph
+                #:copy-workspace
                 #:graph-snapshot
                 #:dispatch-operation
                 #:commit-operations
@@ -138,7 +144,8 @@
                 #:make-memory-store
                 #:load-workspace
                 #:save-workspace
-                #:append-operation)
+                #:append-operation
+                #:commit-workspace)
   (:export
     #:control-plane
     #:make-control-plane
@@ -184,6 +191,8 @@
     #:start-websocket-server
     #:stop-websocket-server
     #:websocket-server-started-p
+    #:register-websocket-session
+    #:websocket-audit-records
     #:attach-subscriber
     #:detach-subscriber))
 
@@ -196,15 +205,13 @@
                 #:json-object)
   (:import-from #:quasar.control-plane
                 #:submit-command
-                #:subscribe
-                #:broadcast-event)
+                #:subscribe)
   (:export
     #:*frontend-url*
     #:*last-session*
     #:frontend-asset-path
     #:start-ui
-    #:stop-ui
-    #:broadcast-event))
+    #:stop-ui))
 
 (defpackage #:quasar.app
   (:use #:cl)

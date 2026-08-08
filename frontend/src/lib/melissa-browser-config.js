@@ -38,7 +38,10 @@ const MELISSA_HOSTS = new Set([
   "globalip.melissadata.net"
 ]);
 
-const INVISIBLE_KEY_CHARACTERS = /[\u200b-\u200d\u2060\ufeff]/gu;
+const MELISSA_KEY_LABEL =
+  /^(?:melissa\s+)?(?:api\s+key|license\s+key(?:\s+using\s+credits)?|customer\s+id)\b(?:\s*[:=]\s*|\s+)/i;
+const MELISSA_COPY_LABEL = /^(?:copy|copied)\b\s*/i;
+const INVISIBLE_KEY_CHARACTERS = /[\u200b-\u200d\u2060\ufeff]/g;
 
 let originalFetch = null;
 let installed = false;
@@ -50,17 +53,17 @@ function finiteInteger(value, fallback, minimum, maximum) {
 }
 
 export function normalizeMelissaLicenseKey(value) {
-  return String(value ?? "");
-}
-
-export function inspectMelissaLicenseKey(value) {
-  const key = normalizeMelissaLicenseKey(value);
-  return {
-    length: key.length,
-    leadingOrTrailingWhitespace: key !== key.trim(),
-    whitespaceCount: (key.match(/\s/gu) || []).length,
-    invisibleCount: (key.match(INVISIBLE_KEY_CHARACTERS) || []).length
-  };
+  let key = String(value ?? "")
+    .replace(INVISIBLE_KEY_CHARACTERS, "")
+    .trim();
+  key = key.replace(MELISSA_KEY_LABEL, "").replace(MELISSA_COPY_LABEL, "").trim();
+  if (
+    key.length >= 2 &&
+    ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'")))
+  ) {
+    key = key.slice(1, -1);
+  }
+  return key.replace(INVISIBLE_KEY_CHARACTERS, "").replace(/\s+/gu, "");
 }
 
 export function normalizeMelissaConfig(value = {}) {
@@ -201,12 +204,6 @@ function proxiedUrl(url, template) {
   if (!template) return url.href;
   if (!template.includes("{url}")) throw new Error("Melissa proxy template must contain {url}");
   return template.replaceAll("{url}", encodeURIComponent(url.href));
-}
-
-export function fetchMelissaDirect(input, init) {
-  const fetchImpl = originalFetch || globalThis.fetch;
-  if (typeof fetchImpl !== "function") throw new Error("Browser fetch is unavailable");
-  return fetchImpl(input, init);
 }
 
 export function installMelissaFetchInterceptor() {

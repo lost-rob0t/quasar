@@ -1,7 +1,7 @@
 import { MELISSA_ACTORS as NORMALIZED_MELISSA_ACTORS } from "./melissa-actor-pack-normalized";
 import { MELISSA_PERSONATOR_SEARCH_SOURCE } from "./melissa-personator-search";
 
-export const MELISSA_ACTOR_PACK_VERSION = 6;
+export const MELISSA_ACTOR_PACK_VERSION = 5;
 
 const PERSONATOR_SEARCH_SOURCE = `async (context, api) => {
   const actor = ${MELISSA_PERSONATOR_SEARCH_SOURCE};
@@ -16,30 +16,12 @@ const PERSONATOR_SEARCH_SOURCE = `async (context, api) => {
   return result;
 }`;
 
-function manualOnlySource(source) {
-  return `async (context, api) => {
-    const selected = Array.isArray(context?.selection) ? context.selection : [];
-    if (selected.some((document) => document?.dtype === "target")) {
-      return {
-        documents: [],
-        message: "Melissa actors are manual-run only. Select the underlying person, organization, location, email, phone, or entity and run the actor from the graph.",
-        metrics: { manualOnly: true, inputs: selected.length, outputs: 0 }
-      };
-    }
-    const actor = ${source};
-    return actor(context, api);
-  }`;
-}
-
 export const MELISSA_ACTORS = Object.freeze(
   NORMALIZED_MELISSA_ACTORS.map((actor) =>
     Object.freeze({
       ...actor,
       version: MELISSA_ACTOR_PACK_VERSION,
-      manualOnly: true,
-      source: manualOnlySource(
-        actor.service === "personator-search" ? PERSONATOR_SEARCH_SOURCE : actor.source
-      )
+      source: actor.service === "personator-search" ? PERSONATOR_SEARCH_SOURCE : actor.source
     })
   )
 );

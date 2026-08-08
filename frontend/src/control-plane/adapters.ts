@@ -24,10 +24,7 @@ export interface GraphEdgeAdapter {
 
 export interface WorkspaceAdapter {
   snapshot(): Promise<unknown>;
-  transaction(
-    operations: unknown[],
-    expectedRevision?: number
-  ): Promise<unknown>;
+  transaction(operations: unknown[], expectedRevision?: number): Promise<unknown>;
   getRevision(): number;
 }
 
@@ -47,7 +44,7 @@ export function createDocumentAdapter(client: ControlPlaneClient): DocumentAdapt
     },
     async get(id) {
       return client.send("document.get", { id });
-    },
+    }
   };
 }
 
@@ -64,7 +61,7 @@ export function createGraphNodeAdapter(client: ControlPlaneClient): GraphNodeAda
     },
     async snapshot(graphId) {
       return client.graphSnapshot(graphId);
-    },
+    }
   };
 }
 
@@ -78,7 +75,7 @@ export function createGraphEdgeAdapter(client: ControlPlaneClient): GraphEdgeAda
     },
     async remove(graphId, id) {
       return client.edgeDelete(graphId, id);
-    },
+    }
   };
 }
 
@@ -92,7 +89,7 @@ export function createWorkspaceAdapter(client: ControlPlaneClient): WorkspaceAda
     },
     getRevision() {
       return client.getRevision();
-    },
+    }
   };
 }
 
@@ -103,7 +100,7 @@ export function createAdapters(client?: ControlPlaneClient) {
     node: createGraphNodeAdapter(c),
     edge: createGraphEdgeAdapter(c),
     workspace: createWorkspaceAdapter(c),
-    client: c,
+    client: c
   };
 }
 

@@ -1,4 +1,10 @@
-import { bulkSaveDocuments, getDocument, removeDocument, saveDocument } from "./db";
+import {
+  cpDocumentCreate,
+  cpDocumentDelete,
+  cpDocumentUpdate,
+  cpSnapshot,
+  cpTransaction
+} from "../control-plane/mutations";
 import { validateDocumentBatch } from "./document-batch";
 
 export const operation = Object.freeze({
@@ -14,31 +20,52 @@ export const operation = Object.freeze({
 });
 
 async function applySave(command) {
-  const previous = await getDocument(command.document._id);
-  const saved = await saveDocument(command.document, { replace: true });
+  const snapshot = await cpSnapshot();
+  const previous = snapshot.documents?.find((document) => document._id === command.document._id);
+  const saved = previous
+    ? await cpDocumentUpdate(command.document)
+    : await cpDocumentCreate(command.document);
   return {
     result: saved,
-    inverse: previous ? operation.save(previous) : operation.remove(saved._id)
+    inverse: previous
+      ? operation.save(previous)
+      : operation.remove(saved.created?._id || command.document._id)
   };
 }
 
 async function applyRemove(command) {
-  const previous = await getDocument(command.id);
+  const snapshot = await cpSnapshot();
+  const previous = snapshot.documents?.find((document) => document._id === command.id);
   if (!previous) return { result: null, inverse: null };
-  await removeDocument(command.id);
+  await cpDocumentDelete(command.id);
   return { result: previous, inverse: operation.save(previous) };
 }
 
 async function applyBatch(command) {
+  const snapshot = await cpSnapshot();
+  const known = new Map((snapshot.documents || []).map((document) => [document._id, document]));
   const inverses = [];
-  const results = [];
-  for (const child of command.operations || []) {
-    const applied = await applyOperation(child);
-    results.push(applied.result);
-    if (applied.inverse) inverses.unshift(applied.inverse);
-  }
+  const commands = (command.operations || []).map((child) => {
+    if (child.type === "save-document") {
+      const previous = known.get(child.document._id);
+      inverses.unshift(previous ? operation.save(previous) : operation.remove(child.document._id));
+      known.set(child.document._id, child.document);
+      return {
+        type: previous ? "document.update" : "document.create",
+        payload: child.document
+      };
+    }
+    if (child.type === "remove-document") {
+      const previous = known.get(child.id);
+      if (previous) inverses.unshift(operation.save(previous));
+      known.delete(child.id);
+      return { type: "document.delete", payload: { id: child.id } };
+    }
+    throw new TypeError(`Unknown batch operation type: ${child.type}`);
+  });
+  const result = commands.length ? await cpTransaction(commands) : { results: [] };
   return {
-    result: results,
+    result,
     inverse: inverses.length ? operation.batch(inverses, `Undo ${command.label || "batch"}`) : null
   };
 }
@@ -64,19 +91,30 @@ export async function saveDocumentBatch(
     throw error;
   }
 
-  const normalizedDocuments = preflight.validated.map(({ document }) => document);
-  const previous = new Map();
+  const snapshot = await cpSnapshot();
+  const previous = new Map((snapshot.documents || []).map((document) => [document._id, document]));
+  const savedDocuments = [];
+  const skipped = [];
   for (const { document } of preflight.validated) {
-    previous.set(document._id, await getDocument(document._id));
+    if (previous.has(document._id) && !replace)
+      skipped.push({ id: document._id, reason: "exists" });
+    else savedDocuments.push(document);
   }
-  const report = await bulkSaveDocuments(documents, {
-    replace,
+  if (savedDocuments.length) {
+    await cpTransaction(
+      savedDocuments.map((document) => ({
+        type: previous.has(document._id) ? "document.update" : "document.create",
+        payload: document
+      }))
+    );
+  }
+  const report = {
+    saved: savedDocuments.map((document, index) => ({ index, id: document._id, ok: true })),
+    skipped,
+    errors: preflight.errors,
     atomic,
-    origins,
-    prepared: preflight
-  });
-  const savedIds = new Set(report.saved.map((item) => item.id));
-  const savedDocuments = normalizedDocuments.filter((document) => savedIds.has(document._id));
+    rolledBack: 0
+  };
   const inverse = savedDocuments
     .map((document) => {
       const old = previous.get(document._id);

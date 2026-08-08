@@ -2,78 +2,88 @@
 
 ## Decision
 
-Quasar uses a browser client plus a Common Lisp control plane.
+Quasar keeps React and Cytoscape as its presentation layer and uses Common Lisp
+as the canonical durable-state control plane. CLOG owns production hosting and
+browser session issuance; the typed WebSocket is the command/event transport.
 
-The UI is not rewritten widget-by-widget in CLOG. That would destroy the current
-React/Cytoscape interaction quality and flood the WebSocket with pointer and
-layout frames. CLOG owns connection lifecycle, session identity, hosting, and the
-bridge. The Common Lisp control plane owns durable state, authorization,
-commands, actors, StarLang, adapters, and audit.
+## Ownership boundaries
 
-## Boundaries
+Browser-local state includes routing, component state, form buffers, hover and
+menus, responsive presentation, selection, pan/zoom and drag frames, layout
+animation, and PWA caches. None of these high-frequency interactions are
+canonical workspace data.
 
-### Browser-local
+The control plane owns StarIntel documents, named graph definitions and
+membership, committed positions/viewport/layout/groups, workspace revision,
+transactions, the journal, authorization, capability checks, and audit.
+PouchDB is a replaceable query projection and CouchDB staging adapter. It is
+never a fallback mutation authority.
 
-- React routing and component state
-- Cytoscape paint, hover, pan, zoom, drag frames, layout animation
-- open menus and dialogs
-- temporary form buffers
-- responsive/mobile presentation
-- PWA cache and install UX
+## Canonical graph contract
 
-### Control-plane commands
+StarIntel documents—including `relation` documents—are the intelligence
+records. A durable named graph is a view definition containing:
 
-- document save/remove/import commits
-- graph definitions and committed positions/view state
-- undo/redo transaction requests
-- settings commits with secret filtering
-- actor and research-node lifecycle
-- target submission
-- CouchDB synchronization
-- RabbitMQ settlement
-- Brave search and URL retrieval
-- MCP and skill execution
-- StarLang compile/load/run
-- permissions, capabilities, audit, export policy
+- stable `id` and `name`;
+- `documentIds`, or `null` for the `all-documents` projection;
+- committed `positions`, `viewport`, `layout`, and `groups`;
+- optional node/edge view records with validated document and endpoint
+  references.
 
-## Protocol
+Cytoscape derives its elements from those records. It does not own a parallel
+intelligence database. Document deletion is rejected while graph nodes refer to
+the document and deterministically removes named-graph membership. Node
+deletion removes incident edges. Responses and events contain authoritative
+objects required to reconcile a projection.
 
-Every browser command is a JSON object:
+## Command path and persistence
 
-```json
-{
-  "v": 1,
-  "kind": "command",
-  "id": "ui-l8f-1",
-  "command": "workspace.apply",
-  "payload": {
-    "operation": {
-      "type": "document.save",
-      "payload": {"_id": "person:1", "dtype": "person"}
-    }
-  }
-}
-```
+Every `quasar.control.v1` command carries a correlated ID, payload, client, and
+workspace. The WebSocket layer validates Origin, session, workspace,
+capability, size, and rate limits. It then sends canonical operations to the
+Sento actor; WebSocket callbacks never mutate a workspace.
 
-Every command receives exactly one result envelope. Asynchronous changes use
-event envelopes. Unknown commands fail deterministically.
+The actor deep-clones the authoritative workspace, applies and validates the
+operation or complete transaction on that candidate, assigns the next
+revision, and calls the store's atomic `commit-workspace`. Only after state and
+journal persistence succeeds does it install the candidate, acknowledge, and
+broadcast. A persistence or validation failure changes no live object, appends
+no journal record, and emits no event.
 
-## Actor rule
+The memory store used by development and tests implements the same atomic
+contract and returns deep clones on load. It survives control-plane recreation
+when the same store instance is supplied. A process-durable store remains a
+future implementation of this boundary; the in-memory limitation is explicit
+and is not disguised as browser durability.
 
-The WebSocket callback never mutates canonical state. It validates the envelope
-and sends one message to the control-plane actor. That actor is the initial
-single writer. External adapters later get supervised actors with bounded
-mailboxes; they return declarative results to the control plane.
+## Transaction and event semantics
+
+A successful transaction increments the workspace revision once. Each child
+event has a unique `operationId`, all children share `transactionId` and
+revision, and `eventIndex`/`eventCount` define order. A failed transaction
+returns `transaction.failed` with the underlying stable error in `details`.
+
+The browser tracks revisions per workspace, accepts distinct same-revision
+children, filters inactive workspaces, and bounds operation-ID deduplication.
+Reconnect rejects pending requests immediately and obtains a fresh snapshot
+before declaring the projection synchronized. Mutations are never blindly
+replayed.
+
+## Security
+
+Production WebSockets require a CLOG-issued session token and an allowed
+Origin. Sessions bind a principal, authorized workspaces, and per-command
+capabilities. Events are delivered only to the matching workspace. StarLang
+load is absent from the normal browser capability set. Audit records contain
+structured action/principal/workspace/command/outcome fields, never request
+payloads or credentials, and are bounded in memory.
+
+Explicit insecure development mode is available only to local development and
+Playwright. It accepts isolated test workspaces but production never enables
+that bypass.
 
 ## StarLang
 
 StarLang remains Common Lisp-only. The adapter discovers `STAR-LANG.API`
-dynamically so Quasar can boot without loading the compiler/runtime. Loading
-StarLang adds commands; it never moves StarLang implementation into JavaScript.
-
-## Security
-
-Arbitrary Common Lisp is not loaded into the GUI process. Extensions declare
-capabilities and should execute in supervised worker processes or containers.
-The backend must enforce permissions for every view and command. Secrets remain
-session-scoped and are excluded from settings export.
+dynamically so Quasar can boot without the compiler/runtime. No JavaScript
+StarLang implementation or arbitrary Lisp evaluation endpoint exists.

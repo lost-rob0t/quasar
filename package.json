@@ -15,6 +15,7 @@
     "dev": "node scripts/dev.mjs",
     "build": "npm --prefix frontend run build",
     "smoke": "node scripts/smoke-startup.mjs",
+    "smoke:production": "node scripts/smoke-production.mjs",
     "test": "npm run test:lisp && npm --prefix frontend run test:unit && npm --prefix frontend run test:integration",
     "test:lisp": "bash scripts/test-lisp",
     "test:e2e": "npm --prefix frontend run test:e2e",

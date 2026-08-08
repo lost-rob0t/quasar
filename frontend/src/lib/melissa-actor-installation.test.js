@@ -25,12 +25,11 @@ describe("Melissa actor installation", () => {
       (actor) => actor.service === "personator-search"
     );
 
-    expect(MELISSA_ACTOR_PACK_VERSION).toBe(6);
-    expect(installed.melissaActorPackVersion).toBe(6);
+    expect(MELISSA_ACTOR_PACK_VERSION).toBe(5);
+    expect(installed.melissaActorPackVersion).toBe(5);
     expect(installed.actorsEnabled).toBe(true);
     expect(installed.melissaActorPackInstalled).toBe(true);
     expect(installed.actors).toContain(customActor);
-    expect(installedPersonator.manualOnly).toBe(true);
     expect(installedPersonator.source).toBe(runtimePersonator.source);
     expect(installedPersonator.source).not.toBe(legacyPersonator.source);
   });

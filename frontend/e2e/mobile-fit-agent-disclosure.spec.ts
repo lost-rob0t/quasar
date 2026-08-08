@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("uses a full-screen graph canvas with three mobile controls", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });

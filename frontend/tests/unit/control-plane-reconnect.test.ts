@@ -13,7 +13,9 @@ describe("control-plane reconnect", () => {
   it("uses bounded exponential backoff", () => {
     const onReconnect = vi.fn();
     const stateChanges: Array<{ connected: boolean; attempts: number; delay: number }> = [];
-    const mgr = createReconnectManager(onReconnect, (s) => stateChanges.push({ ...s, delay: (s as { delay?: number }).delay ?? 0 }));
+    const mgr = createReconnectManager(onReconnect, (s) =>
+      stateChanges.push({ ...s, delay: (s as { delay?: number }).delay ?? 0 })
+    );
 
     mgr.markDisconnected();
     expect(stateChanges.at(-1)).toMatchObject({ connected: false });

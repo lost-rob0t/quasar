@@ -3,6 +3,7 @@ import { ArrowLeft, Download, Edit3, ExternalLink, Network, Plus, Trash2 } from 
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { dtypes, documentLabel } from "starintel_doc";
 import { connectedDocumentIds } from "../lib/document-delete";
+import { graphRenderDecision } from "../lib/graph-scale";
 import { documentsToJsonl, downloadText } from "../lib/importer";
 import { operation } from "../lib/operations";
 import { useQuasar } from "../store";
@@ -100,12 +101,20 @@ function DatasetsPage({ documents, query, setQuery }) {
                 <td>{row.types.join(", ") || "—"}</td>
                 <td>{row.updatedAt ? new Date(row.updatedAt).toLocaleString() : "—"}</td>
                 <td>
-                  <Link
-                    className="button small"
-                    to={`/documents?dataset=${encodeURIComponent(row.name)}`}
-                  >
-                    Open documents
-                  </Link>
+                  <div className="button-row">
+                    <Link
+                      className="button small"
+                      to={`/documents?dataset=${encodeURIComponent(row.name)}`}
+                    >
+                      Open documents
+                    </Link>
+                    <Link
+                      className="button small"
+                      to={`/graph?graph=all-documents&dataset=${encodeURIComponent(row.name)}&review=all`}
+                    >
+                      <Network size={15} /> Open graph
+                    </Link>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -118,12 +127,14 @@ function DatasetsPage({ documents, query, setQuery }) {
 }
 
 export function DocumentsPage() {
-  const { documents, execute, setNotice } = useQuasar();
+  const { documents, execute, setNotice, createGraph, addDocumentsToActiveGraph } = useQuasar();
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const query = params.get("q") || "";
   const dtype = params.get("dtype") || "";
   const dataset = params.get("dataset") || "";
   const group = params.get("group") || "";
+  const hasSearchScope = Boolean(query || dtype || dataset);
   const datasets = useMemo(
     () => [...new Set(documents.map((document) => document.dataset).filter(Boolean))].sort(),
     [documents]
@@ -139,12 +150,33 @@ export function DocumentsPage() {
     [documents, dtype, dataset, query]
   );
 
+  const graphDecision = useMemo(() => graphRenderDecision(visible), [visible]);
+
   const set = (key, value) => {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value);
     else next.delete(key);
     setParams(next);
   };
+
+  function importSearchToGraph() {
+    if (!hasSearchScope || !visible.length || !graphDecision.allowed) return;
+    try {
+      const scope = query || dataset || dtype;
+      createGraph(`Search: ${scope}`);
+      const importedIds = visible.map((document) => document._id);
+      addDocumentsToActiveGraph(importedIds);
+      navigate("/graph?review=all", {
+        state: {
+          importedIds,
+          revealUnreviewed: true,
+          source: "search-results"
+        }
+      });
+    } catch (error) {
+      setNotice({ kind: "error", message: error.message });
+    }
+  }
 
   async function removeDocument(document) {
     const deleteIds = connectedDocumentIds(documents, [document._id]);
@@ -182,6 +214,20 @@ export function DocumentsPage() {
           <p>Search and inspect the local StarIntel v0.9 corpus.</p>
         </div>
         <div className="button-row">
+          <button
+            className="button"
+            onClick={importSearchToGraph}
+            disabled={!hasSearchScope || !visible.length || !graphDecision.allowed}
+            title={
+              !hasSearchScope
+                ? "Search or filter the corpus before importing results"
+                : graphDecision.allowed
+                  ? "Create a graph from the current search results"
+                  : "Narrow the search before importing it into a graph"
+            }
+          >
+            <Network size={16} /> Import results to graph
+          </button>
           <button
             className="button"
             onClick={() => downloadText("starintel-documents.jsonl", documentsToJsonl(visible))}
@@ -340,7 +386,10 @@ export function DocumentPage() {
           {document.summary && <p>{document.summary}</p>}
         </div>
         <div className="button-row">
-          <Link className="button" to={`/graph?node=${encodeURIComponent(document._id)}`}>
+          <Link
+            className="button"
+            to={`/graph?graph=all-documents&node=${encodeURIComponent(document._id)}`}
+          >
             <Network size={16} /> Graph
           </Link>
           {website && (

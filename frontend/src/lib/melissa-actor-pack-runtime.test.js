@@ -41,44 +41,18 @@ function api(body = { TransmissionResults: "US01", Records: [] }) {
 }
 
 describe("Melissa runtime actor pack", () => {
-  it("publishes version 6 manual-only actors and replaces stale pack entries", () => {
-    expect(MELISSA_ACTOR_PACK_VERSION).toBe(6);
+  it("publishes version 5 actors and replaces stale pack entries", () => {
+    expect(MELISSA_ACTOR_PACK_VERSION).toBe(5);
     expect(MELISSA_ACTORS).toHaveLength(11);
-    expect(MELISSA_ACTORS.every((actor) => actor.version === 6)).toBe(true);
-    expect(MELISSA_ACTORS.every((actor) => actor.manualOnly === true)).toBe(true);
+    expect(MELISSA_ACTORS.every((actor) => actor.version === 5)).toBe(true);
 
     const custom = { id: "example.actor" };
     const stale = { ...MELISSA_ACTORS[0], version: 1, source: "async () => ({ documents: [] })" };
     const merged = mergeMelissaActors([custom, stale]);
 
     expect(merged).toContain(custom);
-    expect(merged.find((actor) => actor.id === stale.id)?.version).toBe(6);
+    expect(merged.find((actor) => actor.id === stale.id)?.version).toBe(5);
     expect(removeMelissaActors(merged)).toEqual([custom]);
-  });
-
-  it("does not call Melissa when a target would auto-run the actor", async () => {
-    const runtime = api();
-    const result = await implementation()(
-      {
-        selection: [
-          input({
-            _id: "starintel:target:auto-run",
-            dtype: "target",
-            title: "Automatic target",
-            data: {
-              actor: "quasar.actor.melissa-personator-search",
-              target: "Erica Porter"
-            }
-          })
-        ]
-      },
-      runtime
-    );
-
-    expect(runtime.network.fetch).not.toHaveBeenCalled();
-    expect(result.documents).toEqual([]);
-    expect(result.message).toContain("manual-run only");
-    expect(result.metrics).toMatchObject({ manualOnly: true, outputs: 0 });
   });
 
   it("builds documented name inputs from a person title", async () => {

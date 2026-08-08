@@ -3,8 +3,8 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Build the frontend for production
-cd "$repo_root/frontend"
+# A single root install is the supported monorepo dependency path.
+cd "$repo_root"
 npm ci
 npm run build
 
@@ -28,3 +28,7 @@ sbcl --non-interactive \
   --eval "(sb-ext:save-lisp-and-die \"quasar-server\" :executable t :toplevel 'quasar.app:main)"
 
 echo "Built quasar-server executable"
+
+if [[ "${1:-}" != "--build-only" ]]; then
+  exec "$repo_root/quasar-server"
+fi

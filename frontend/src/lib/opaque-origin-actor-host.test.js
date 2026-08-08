@@ -44,7 +44,7 @@ describe("browser actor host configuration", () => {
   it("loads Melissa configuration and injects the exact credit key", () => {
     const actor = { id: "quasar.actor.melissa-runtime-test" };
     saveMelissaConfig({
-      licenseKey: "CR+ED/IT==",
+      licenseKey: "License Key Using Credits: CR+ED/IT==",
       transmissionReference: "Quasar credit test"
     });
 

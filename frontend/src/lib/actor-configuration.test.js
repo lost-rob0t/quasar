@@ -71,7 +71,7 @@ describe("actor configuration", () => {
   it("reports the missing Melissa license key", () => {
     expect(actorConfigurationStatus({ id: "quasar.actor.melissa-global-ip" })).toMatchObject({
       configured: false,
-      missing: ["License Key Using Credits or subscription license key"]
+      missing: ["Melissa license key"]
     });
   });
 });

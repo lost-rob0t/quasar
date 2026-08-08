@@ -1,5 +1,9 @@
 # ADR 0001: JavaScript package boundaries
 
+Status note: this ADR still governs dependency direction inside `frontend/`,
+but its original browser-canonical deployment assumption is superseded by the
+root Common Lisp control-plane architecture.
+
 - Status: Accepted
 - Date: 2026-07-26
 - Decision owner: Quasar UI maintainers

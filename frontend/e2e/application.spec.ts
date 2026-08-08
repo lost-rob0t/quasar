@@ -1,6 +1,6 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
-test("opens the local workspace without a backend", async ({ page }) => {
+test("opens the local workspace through the control plane", async ({ page }) => {
   const failedApplicationRequests: string[] = [];
   page.on("requestfailed", (request) => {
     if (["document", "script", "stylesheet"].includes(request.resourceType())) {
@@ -68,6 +68,8 @@ test("creates a graph node through the compact editor and preserves its full-edi
   await page.locator(".editor-save-bar .primary").click();
 
   await expect(page).toHaveURL(/\/graph\?node=/);
+  await expect(page.locator(".graph-count")).toContainText("1 nodes");
+  await page.reload();
   await expect(page.locator(".graph-count")).toContainText("1 nodes");
 });
 

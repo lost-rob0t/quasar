@@ -1,231 +1,115 @@
 # Quasar
 
-Quasar is a self-contained monorepo containing the complete React/Vite UI, the
-Common Lisp control plane, the CLOG host, and StarLang integration. No submodule
-or separate repository clone is required.
+Quasar is a React/Cytoscape investigation UI backed by a Common Lisp
+single-writer control plane. The UI is tracked directly in this monorepo; there
+is no frontend submodule or generated overlay.
 
 ## Architecture
 
-```text
-frontend/ (React/Vite/Cytoscape, tracked files)
-  frontend/src/control-plane/  ← typed WebSocket client (client.ts, protocol.ts, events.ts, reconnect.ts)
-        |
-        | quasar.control.v1 command/event envelopes over WebSocket
-        v
-Quasar Common Lisp control plane
-  control-plane/src/protocol.lisp     ← v1 envelope decode/encode, stable error codes
-  control-plane/src/workspace.lisp    ← canonical workspace state, documents, graphs, nodes, edges
-  control-plane/src/store.lisp        ← persistence boundary (in-memory default, CouchDB-ready)
-  control-plane/src/control-plane.lisp ← Sento single-writer actor, command dispatch, events
-  control-plane/src/websocket-server.lisp ← typed WebSocket transport
-  control-plane/src/clog-host.lisp    ← CLOG static host (session lifecycle)
-  control-plane/src/starlang-adapter.lisp ← restricted StarLang adapter
-  systems/quasar-*.asd                ← ASDF system definitions
-        |
-        +-- single-writer actor
-        +-- canonical workspace state (documents, graphs, nodes, edges)
-        +-- command registry and capability discovery
-        +-- atomic transactions with rollback
-        +-- authoritative event broadcast
-        +-- StarLang adapter
-        +-- future CouchDB/RabbitMQ/Brave/MCP adapters
-```
+- React, Cytoscape, routing, responsive presentation, editing buffers, hover,
+  menus, and animation remain in the browser.
+- Common Lisp owns canonical documents, named graph definitions, committed
+  graph presentation state, revisions, transactions, and the operation journal.
+- Cytoscape and the local PouchDB corpus are projections. Migrated document and
+  graph writes never fall back to PouchDB.
+- WebSocket callbacks authenticate and validate requests, then enqueue commands
+  on the Sento control-plane actor. They never mutate workspace state directly.
+- CLOG serves the production bundle and issues the browser session token.
+- StarLang remains a Common Lisp subsystem and `starlang.load` is excluded from
+  the normal browser capability set.
 
-CLOG hosts the browser session and serves static assets. It does **not** recreate
-every React component as a CLOG object. The typed WebSocket server is the command
-transport. High-frequency graph interaction (drag, zoom, pan) remains in
-Cytoscape; committed operations cross to Lisp.
+See [Architecture](docs/ARCHITECTURE.md) and the
+[UI migration ledger](docs/UI-MIGRATION.md) for the detailed boundaries.
 
-## Repository layout
+## Development
 
-```text
-quasar/
-├── frontend/             ← React/Vite/Cytoscape UI (tracked files, no submodule)
-│   ├── src/
-│   │   ├── control-plane/ ← typed WS client (client.ts, protocol.ts, events.ts, reconnect.ts, adapters.ts)
-│   │   ├── app/           ← main.tsx imports initializeControlPlane() directly
-│   │   ├── components/    ← graph, mobile, agents, research, etc.
-│   │   ├── lib/           ← db, operations, graph-workspaces, actors, etc.
-│   │   └── ...
-│   ├── package.json
-│   ├── vite.config.ts
-│   └── ...
-├── control-plane/         ← Common Lisp sources
-│   ├── src/               ← protocol, workspace, store, control-plane, websocket-server, clog-host, starlang
-│   └── tests/             ← control-plane tests
-├── systems/               ← ASDF system definitions
-│   ├── quasar-control.asd
-│   ├── quasar-web.asd
-│   ├── quasar-starlang.asd
-│   └── quasar-tests.asd
-├── scripts/               ← dev runner, test-lisp, run-control-plane, run-production
-├── static/                ← CLOG static assets
-├── docs/                   ← architecture and UI migration ledger
-├── flake.nix               ← Nix development environment
-├── package.json            ← root monorepo commands
-└── README.md
-```
-
-## Quick start
+Node.js 22.12 or newer, SBCL, Quicklisp, SQLite, OpenSSL, libffi, and
+RabbitMQ C libraries are required. The supported Nix shell supplies these:
 
 ```sh
-git clone https://github.com/lost-rob0t/quasar.git
-cd quasar
-
-# Development shell (NixOS or Nix)
 nix develop
-
-# Install all monorepo dependencies (root + frontend workspace)
 npm ci
-
-# Start the full development stack (Lisp control plane + WebSocket + CLOG + Vite)
 npm run dev
-
-# Or run individual pieces
-./scripts/run-control-plane             # Lisp control plane + WS + CLOG
-npm --prefix frontend run dev -- --port 5173 --host  # Vite dev server only
 ```
 
-## Root commands
+One root `npm ci` installs the complete npm workspace. `npm run dev` supervises
+the Common Lisp control plane, WebSocket endpoint, CLOG host, and Vite without
+using `npx` or downloading undeclared packages. The local endpoints are:
 
-All commands run from the repository root using npm workspaces:
+- React/Vite: `http://127.0.0.1:5173`
+- CLOG production host: `http://127.0.0.1:8080`
+- control-plane WebSocket: `ws://127.0.0.1:8081`
 
-```bash
-npm ci             # Install all dependencies (root + frontend workspace)
-npm run dev        # Start all services (supervised, signal-forwarding)
-npm run build      # Build the frontend for production
-npm run test       # Run Lisp + frontend unit/integration tests
-npm run test:lisp   # Run Lisp tests only
-npm run test:e2e   # Run Playwright E2E tests
-npm run typecheck   # TypeScript typecheck
-npm run lint        # ESLint (full frontend)
-npm run format      # Prettier
+`./scripts/run-control-plane` starts only the Lisp/CLOG/WebSocket side. The
+development scripts explicitly enable unauthenticated local mode; production
+does not.
+
+## Validation
+
+Run commands from the repository root:
+
+```sh
+npm run check              # format, lint, types, boundaries, static syntax
+npm run test               # Common Lisp + all frontend unit/integration tests
+npm run smoke              # real Vite/CLOG/WebSocket command exchange
+npm run test:e2e           # Playwright against the complete real stack
+npm run smoke:production   # fresh install, package, serve, route/PWA/security smoke
 ```
 
-## Protocol
+Playwright uses an isolated authorized workspace per test and covers desktop,
+mobile, real UI mutation, graph membership, reload, and authoritative snapshot
+restore. The production smoke verifies hashed assets, nested SPA routes,
+manifest/service worker paths, session and Origin rejection, workspace
+isolation, capability denial, malformed requests, and message-size limits.
 
-Every command is a JSON object with the `quasar.control.v1` protocol:
+## Production
 
-```json
-{
-  "protocol": "quasar.control.v1",
-  "id": "unique-request-id",
-  "command": "graph.node.create",
-  "payload": {},
-  "metadata": {
-    "client": "quasar-ui",
-    "workspace": "workspace-id"
-  }
-}
+Build and start the packaged server from a fresh dependency state:
+
+```sh
+nix develop
+./scripts/run-production
 ```
 
-Successful response:
+The script runs the root `npm ci`, builds `frontend/dist`, creates the
+`quasar-server` executable, and starts it at `http://127.0.0.1:8080`. Use
+`./scripts/run-production --build-only` when packaging without starting it.
+Production serves the application at `/`; Vite, React Router, CLOG, the PWA
+manifest, and service-worker scope use that same base path.
 
-```json
-{
-  "protocol": "quasar.control.v1",
-  "id": "unique-request-id",
-  "status": "ok",
-  "result": {}
-}
-```
+## Protocol and durable graph contract
 
-Error response:
+Commands and responses use `quasar.control.v1` envelopes with correlated IDs,
+stable error codes, and workspace metadata. Successful mutations persist the
+isolated candidate workspace and journal record atomically before the live
+workspace is replaced, acknowledged, or broadcast.
 
-```json
-{
-  "protocol": "quasar.control.v1",
-  "id": "unique-request-id",
-  "status": "error",
-  "error": {
-    "code": "graph.invalid-reference",
-    "message": "The referenced node does not exist.",
-    "details": {}
-  }
-}
-```
+StarIntel documents and relation documents are the intelligence records. A
+named graph stores membership plus committed positions, viewport, layout, and
+groups. Optional graph node/edge records are view records whose document and
+endpoint references are validated; they are not a second intelligence corpus.
+The `all-documents` graph projects the full corpus with `documentIds: null`.
+Selection, pan/zoom frames, and editing state remain browser-local.
 
-### Implemented commands
+Implemented durable commands include:
 
-- `system.capabilities`
-- `workspace.snapshot`
-- `workspace.transaction`
-- `document.list`, `document.get`, `document.create`, `document.update`, `document.delete`
-- `graph.snapshot`
-- `graph.node.create`, `graph.node.update`, `graph.node.delete`
-- `graph.edge.create`, `graph.edge.update`, `graph.edge.delete`
-- `starlang.status`, `starlang.load`
+- `workspace.snapshot`, `workspace.transaction`
+- `document.list`, `document.get`, `document.create`, `document.update`,
+  `document.delete`
+- `graph.snapshot`, `graph.workspace.put`, `graph.workspace.delete`,
+  `graph.workspace.activate`
+- `graph.node.*`, `graph.edge.*`
+- capability-gated `starlang.status` and `starlang.load`
 
-### Authoritative events
+Transaction child events have unique operation IDs, a shared transaction ID,
+one committed revision, stable order, event index, and event count.
 
-- `workspace.revision.changed`
-- `document.created`, `document.updated`, `document.deleted`
-- `graph.node.created`, `graph.node.updated`, `graph.node.deleted`
-- `graph.edge.created`, `graph.edge.updated`, `graph.edge.deleted`
+## Transitional boundaries
 
-Each event includes protocol, event name, workspace ID, revision, operation ID,
-and payload. All connected clients (including the initiator) receive events. The
-frontend deduplicates by operation ID and revision.
-
-## Frontend integration
-
-The React app imports the control-plane client directly:
-
-```typescript
-import { initializeControlPlane } from "./control-plane";
-
-initializeControlPlane();
-```
-
-The client is a typed WebSocket client in `frontend/src/control-plane/` with:
-
-- Request correlation by ID
-- Command timeout
-- Bounded exponential backoff reconnection
-- Event subscription with deduplication by operation ID and revision
-- Optimistic update + rollback helpers
-- Adapters for document and graph CRUD
-
-## Persistence boundary
-
-The control plane owns durable state through a store abstraction:
-
-```lisp
-(defgeneric load-workspace (store workspace-id))
-(defgeneric save-workspace (store workspace))
-(defgeneric append-operation (store workspace-id operation))
-```
-
-The default in-memory implementation is suitable for development and tests.
-CouchDB integration replaces the implementation, not the protocol.
-
-## Current slice
-
-Implemented:
-
-- Complete React UI as tracked files (no submodule)
-- v1 protocol envelope with structured ok/error and stable error codes
-- Sento single-writer actor; all mutations through the actor
-- Document CRUD, graph node/edge CRUD
-- Atomic `workspace.transaction` with isolated candidate state and rollback
-- Authoritative event broadcast to all clients
-- Typed WebSocket server (websocket-driver)
-- Typed WebSocket client in the frontend (client.ts, reconnect, events, adapters)
-- Direct `initializeControlPlane()` import in `main.tsx`
-- Store abstraction with in-memory default (CouchDB-ready)
-- Monorepo CI assertions (no submodule, no overlay, no injection script)
-- Nix development environment (SBCL, Node, OpenSSL, Chromium)
-- Root `npm run dev` supervised dev stack
-
-Remaining (documented transitional adapters):
-
-- Actor and research lifecycle → control-plane actors
-- Import/commit/abort with progress events
-- CouchDB sync adapter
-- RabbitMQ ingest adapter
-- Brave search, URL retrieval, MCP adapters
-- StarLang compile/load/run contracts
-- Full Playwright parity coverage
-- Frontend mutation adapters wiring into store.jsx
-
-The complete UI binding ledger is in [`docs/UI-MIGRATION.md`](docs/UI-MIGRATION.md).
+Actor/research execution and optional browser network integrations have not all
+moved behind Common Lisp commands yet. PouchDB remains a replaceable local query
+projection and CouchDB ingress/egress staging layer; pulled documents are
+validated and committed through the control plane before becoming
+authoritative. Browser settings still support existing local integrations, and
+settings transfer filters credential fields. These adapters must not be used as
+fallback authority for document or graph mutations.

@@ -28,6 +28,9 @@
     "document.update"
     "document.delete"
     "graph.snapshot"
+    "graph.workspace.put"
+    "graph.workspace.delete"
+    "graph.workspace.activate"
     "graph.node.create"
     "graph.node.update"
     "graph.node.delete"
@@ -43,6 +46,9 @@
    (workspace :initarg :workspace :initform "default" :accessor ws-connection-workspace)
    (session-id :initarg :session-id :reader ws-connection-session-id)
    (principal :initarg :principal :initform "anonymous" :reader ws-connection-principal)
+   (authorized-workspaces :initarg :authorized-workspaces
+                          :reader ws-connection-authorized-workspaces)
+   (capabilities :initarg :capabilities :reader ws-connection-capabilities)
    (command-count :initform 0 :accessor ws-connection-command-count)
    (window-start :initform (get-universal-time) :accessor ws-connection-window-start))
   (:documentation "Per-connection state: workspace subscription, session,
@@ -71,7 +77,16 @@
                     :reader websocket-server-allowed-origins)
    (capabilities :initarg :capabilities
                  :initform +default-capabilities+
-                 :reader websocket-server-capabilities))
+                 :reader websocket-server-capabilities)
+   (sessions :initform (make-hash-table :test #'equal)
+             :reader websocket-server-sessions)
+   (insecure-development-p :initarg :insecure-development-p
+                           :initform nil
+                           :reader websocket-server-insecure-development-p)
+   (audit-records :initform (make-array 0 :adjustable t :fill-pointer 0)
+                  :reader websocket-server-audit-records)
+   (lock :initform (bt:make-lock "quasar-websocket-server")
+         :reader websocket-server-lock))
   (:documentation
    "WebSocket server carrying quasar.control.v1 envelopes both directions.
    Each connection is isolated to its selected workspace. Events are only
@@ -81,10 +96,43 @@
 
 (defun make-websocket-server (plane &key (host "127.0.0.1") (port 8081)
                               (max-message-size +default-max-message-size+)
-                              (allowed-origins +default-allowed-origins+))
+                              (allowed-origins +default-allowed-origins+)
+                              (capabilities +default-capabilities+)
+                              (insecure-development-p nil))
   (make-instance 'websocket-server :plane plane :host host :port port
                  :max-message-size max-message-size
-                 :allowed-origins allowed-origins))
+                 :allowed-origins allowed-origins
+                 :capabilities capabilities
+                 :insecure-development-p insecure-development-p))
+
+(defun register-websocket-session (server token principal workspaces
+                                    &key (capabilities +default-capabilities+))
+  (quasar.protocol:ensure-string token "session token" "security.unauthorized")
+  (bt:with-lock-held ((websocket-server-lock server))
+    (setf (gethash token (websocket-server-sessions server))
+          (list :principal principal
+                :workspaces (copy-list workspaces)
+                :capabilities (copy-list capabilities))))
+  token)
+
+(defun record-audit (server action &key principal workspace command outcome)
+  (bt:with-lock-held ((websocket-server-lock server))
+    (let ((records (websocket-server-audit-records server)))
+      (when (>= (length records) 1000)
+        (replace records records :start1 0 :start2 1)
+        (decf (fill-pointer records)))
+      (vector-push-extend
+       (list :timestamp (get-universal-time)
+             :action action
+             :principal principal
+             :workspace workspace
+             :command command
+             :outcome outcome)
+       records))))
+
+(defun websocket-audit-records (server)
+  (bt:with-lock-held ((websocket-server-lock server))
+    (copy-list (coerce (websocket-server-audit-records server) 'list))))
 
 (defvar *resource* nil)
 
@@ -123,7 +171,7 @@
 
 (defun origin-allowed-p (server origin)
   "Check if the Origin header is in the allowed list."
-  (or (null origin)
+  (or (and (websocket-server-insecure-development-p server) (null origin))
       (null (websocket-server-allowed-origins server))
       (member origin (websocket-server-allowed-origins server) :test #'string=)))
 
@@ -143,37 +191,68 @@
     (< (ws-connection-command-count conn)
        (websocket-server-rate-limit-max server))))
 
-(defun command-allowed-p (server command)
+(defun command-allowed-p (connection command)
   "Check if the command is in the capabilities list."
-  (member command (websocket-server-capabilities server) :test #'string=))
+  (member command (ws-connection-capabilities connection) :test #'string=))
 
 (defun handle-text-message (server conn message)
   (let ((plane (websocket-server-plane server))
         (connection (ws-connection-ws conn)))
     (handler-case
         (progn
-          (incf (ws-connection-command-count conn))
           (unless (message-size-ok-p server message)
             (error 'quasar.protocol:quasar-error
                    :code "protocol.invalid-envelope"
                    :message "Message exceeds maximum size."))
           (unless (rate-limit-ok-p conn server)
             (error 'quasar.protocol:quasar-error
-                   :code "control-plane.unavailable"
+                   :code "security.rate-limited"
                    :message "Rate limit exceeded."))
+          (incf (ws-connection-command-count conn))
           (let ((command (safe-decode-command message)))
-            (unless (command-allowed-p server command)
+            (unless command
               (error 'quasar.protocol:quasar-error
-                     :code "protocol.unknown-command"
+                     :code "protocol.invalid-envelope"
+                     :message "Command envelope is malformed."))
+            (unless (command-allowed-p conn command)
+              (error 'quasar.protocol:quasar-error
+                     :code "security.forbidden"
                      :message (format nil "Command ~A is not permitted." command))))
-          (setf (ws-connection-workspace conn) (safe-decode-workspace message))
-          (quasar.control-plane:submit-command
-           plane
-           message
-           (lambda (response)
-             (ignore-errors
-               (wsd:send-text connection response)))))
+          (let ((workspace (safe-decode-workspace message)))
+            (unless (or (member "*" (ws-connection-authorized-workspaces conn)
+                                :test #'string=)
+                        (member workspace (ws-connection-authorized-workspaces conn)
+                                :test #'string=))
+              (error 'quasar.protocol:quasar-error
+                     :code "security.forbidden"
+                     :message (format nil "Workspace ~A is not authorized." workspace)))
+            (setf (ws-connection-workspace conn) workspace)
+            (record-audit server "command"
+                          :principal (ws-connection-principal conn)
+                          :workspace workspace
+                          :command (safe-decode-command message)
+                          :outcome "accepted"))
+          (if (string= (safe-decode-command message) "system.capabilities")
+              (ignore-errors
+                (wsd:send-text
+                 connection
+                 (quasar.protocol:encode-result
+                  (safe-decode-id message)
+                  (apply #'quasar.protocol:json-array
+                         (sort (copy-list (ws-connection-capabilities conn))
+                               #'string<)))))
+              (quasar.control-plane:submit-command
+               plane
+               message
+               (lambda (response)
+                 (ignore-errors
+                   (wsd:send-text connection response))))))
       (quasar.protocol:quasar-error (condition)
+        (record-audit server "command"
+                      :principal (ws-connection-principal conn)
+                      :workspace (ws-connection-workspace conn)
+                      :command (safe-decode-command message)
+                      :outcome (quasar.protocol:quasar-error-code condition))
         (ignore-errors
           (wsd:send-text connection
                          (quasar.protocol:quasar-error-to-envelope
@@ -193,7 +272,10 @@
           (handler-case
               (quasar.protocol:json-value (jsown:parse encoded) "workspace")
             (error () "default"))))
-    (loop for conn being the hash-values of (websocket-server-connections server)
+    (loop for conn in (bt:with-lock-held ((websocket-server-lock server))
+                        (loop for value being the hash-values
+                                of (websocket-server-connections server)
+                              collect value))
           when (string= (ws-connection-workspace conn) event-workspace)
           do (ignore-errors
                (wsd:send-text (ws-connection-ws conn) encoded)))))
@@ -203,38 +285,81 @@
           (get-universal-time)
           (random most-positive-fixnum)))
 
+(defun request-header (env name)
+  (let ((headers (getf env :headers)))
+    (cond
+      ((hash-table-p headers) (gethash (string-downcase name) headers))
+      ((listp headers)
+       (cdr (assoc name headers :test #'string-equal)))
+      (t nil))))
+
+(defun query-parameter (env name)
+  (let ((query (or (getf env :query-string) "")))
+    (loop for part in (uiop:split-string query :separator '(#\&))
+          for equals = (position #\= part)
+          when (and equals (string= name (subseq part 0 equals)))
+            do (return (subseq part (1+ equals))))))
+
+(defun handshake-session (server env)
+  (if (websocket-server-insecure-development-p server)
+      (list :principal "insecure-development"
+            :workspaces '("*")
+            :capabilities (websocket-server-capabilities server))
+      (bt:with-lock-held ((websocket-server-lock server))
+        (gethash (query-parameter env "session")
+                 (websocket-server-sessions server)))))
+
 (defun start-websocket-server (server)
   (unless (websocket-server-started-p server)
-    (let* ((plane (websocket-server-plane server)))
-      (setf *resource* t)
-      (let ((app
-              (lambda (env)
-                (let ((ws (wsd:make-server env)))
-                  (let* ((connection-id
-                          (format nil "conn-~36R" (random most-positive-fixnum)))
-                         (conn (make-instance 'ws-connection
-                                              :id connection-id
-                                              :ws ws
-                                              :session-id (random-session-id))))
-                    (setf (gethash connection-id
-                                  (websocket-server-connections server))
-                          conn)
-                    (wsd:on ws :message
-                            (lambda (message)
-                              (handle-text-message server conn message)))
-                    (wsd:on ws :close
-                            (lambda (&rest args)
-                              (declare (ignore args))
-                              (remhash connection-id
-                                       (websocket-server-connections server))))
-                    (wsd:start-connection ws))
-                  #'identity))))
+    (setf *resource* t)
+    (let ((app
+            (lambda (env)
+              (let* ((origin (request-header env "origin"))
+                     (session (handshake-session server env)))
+                (cond
+                  ((not (origin-allowed-p server origin))
+                   (record-audit server "handshake" :outcome "origin-denied")
+                   '(403 (:content-type "text/plain") ("Origin denied")))
+                  ((null session)
+                   (record-audit server "handshake" :outcome "unauthorized")
+                   '(401 (:content-type "text/plain") ("Unauthorized")))
+                  (t
+                   (let* ((ws (wsd:make-server env))
+                          (connection-id
+                            (format nil "conn-~36R" (random most-positive-fixnum)))
+                          (conn (make-instance 'ws-connection
+                                               :id connection-id
+                                               :ws ws
+                                               :session-id (random-session-id)
+                                               :principal (getf session :principal)
+                                               :authorized-workspaces
+                                               (getf session :workspaces)
+                                               :capabilities
+                                               (getf session :capabilities))))
+                     (bt:with-lock-held ((websocket-server-lock server))
+                       (setf (gethash connection-id
+                                     (websocket-server-connections server))
+                             conn))
+                     (wsd:on :message ws
+                             (lambda (message)
+                               (handle-text-message server conn message)))
+                     (wsd:on :close ws
+                             (lambda (&rest args)
+                               (declare (ignore args))
+                               (bt:with-lock-held ((websocket-server-lock server))
+                                 (remhash connection-id
+                                          (websocket-server-connections server)))))
+                     (record-audit server "handshake"
+                                   :principal (getf session :principal)
+                                   :outcome "accepted")
+                     (wsd:start-connection ws)
+                     #'identity)))))))
         (setf (websocket-server-acceptor server)
               (clack:clackup app
                              :host (websocket-server-host server)
                              :port (websocket-server-port server)
                              :use-default-middlewares nil))
-        (setf (websocket-server-started-p server) t))))
+        (setf (websocket-server-started-p server) t)))
   server)
 
 (defun stop-websocket-server (server)
@@ -243,7 +368,8 @@
     (when (websocket-server-acceptor server)
       (ignore-errors
         (clack:stop (websocket-server-acceptor server))))
-    (clrhash (websocket-server-connections server))
+    (bt:with-lock-held ((websocket-server-lock server))
+      (clrhash (websocket-server-connections server)))
     (setf (websocket-server-acceptor server) nil
           (websocket-server-started-p server) nil
           *resource* nil))

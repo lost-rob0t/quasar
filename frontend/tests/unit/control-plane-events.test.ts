@@ -14,7 +14,7 @@ describe("control-plane events", () => {
       workspace: "default",
       revision: 1,
       operationId: "op-1",
-      payload: { created: "doc-1" },
+      payload: { created: "doc-1" }
     };
     bus.dispatch(event);
 
@@ -35,7 +35,7 @@ describe("control-plane events", () => {
       workspace: "default",
       revision: 1,
       operationId: "op-1",
-      payload: {},
+      payload: {}
     });
     bus.dispatch({
       protocol: "quasar.control.v1",
@@ -43,7 +43,7 @@ describe("control-plane events", () => {
       workspace: "default",
       revision: 2,
       operationId: "op-2",
-      payload: {},
+      payload: {}
     });
 
     expect(created).toHaveLength(1);
@@ -61,7 +61,7 @@ describe("control-plane events", () => {
       workspace: "default",
       revision: 1,
       operationId: "op-dup",
-      payload: {},
+      payload: {}
     };
     bus.dispatch(event);
     bus.dispatch(event);
@@ -80,7 +80,7 @@ describe("control-plane events", () => {
       workspace: "default",
       revision: 5,
       operationId: "op-5",
-      payload: {},
+      payload: {}
     });
     bus.dispatch({
       protocol: "quasar.control.v1",
@@ -88,7 +88,7 @@ describe("control-plane events", () => {
       workspace: "default",
       revision: 3,
       operationId: "op-3",
-      payload: {},
+      payload: {}
     });
 
     expect(received).toHaveLength(1);
@@ -106,7 +106,7 @@ describe("control-plane events", () => {
       workspace: "default",
       revision: 1,
       operationId: "op-1",
-      payload: {},
+      payload: {}
     });
     unsub();
     bus.dispatch({
@@ -115,9 +115,101 @@ describe("control-plane events", () => {
       workspace: "default",
       revision: 2,
       operationId: "op-2",
-      payload: {},
+      payload: {}
     });
 
     expect(received).toHaveLength(1);
+  });
+
+  it("accepts ordered transaction children at the same revision", () => {
+    const bus = createEventBus();
+    const received: string[] = [];
+    bus.subscribe((event) => received.push(event.operationId));
+    for (const eventIndex of [1, 2, 3]) {
+      bus.dispatch({
+        protocol: "quasar.control.v1",
+        event: "document.created",
+        workspace: "default",
+        revision: 7,
+        transactionId: "tx-1",
+        operationId: `tx-1:${eventIndex}`,
+        eventIndex,
+        eventCount: 3,
+        payload: {}
+      });
+    }
+    expect(received).toEqual(["tx-1:1", "tx-1:2", "tx-1:3"]);
+  });
+
+  it("buffers out-of-order transaction children and delivers stable order", () => {
+    const bus = createEventBus();
+    const received: number[] = [];
+    bus.subscribe((event) => received.push(event.eventIndex!));
+    for (const eventIndex of [3, 1, 2]) {
+      bus.dispatch({
+        protocol: "quasar.control.v1",
+        event: "document.created",
+        workspace: "default",
+        revision: 7,
+        transactionId: "tx-out-of-order",
+        operationId: `tx-out-of-order:${eventIndex}`,
+        eventIndex,
+        eventCount: 3,
+        payload: {}
+      });
+    }
+    expect(received).toEqual([1, 2, 3]);
+  });
+
+  it("isolates workspace revisions and ignores inactive workspaces", () => {
+    const bus = createEventBus("alpha");
+    const received: string[] = [];
+    bus.subscribe((event) => received.push(event.workspace));
+    bus.dispatch({
+      protocol: "quasar.control.v1",
+      event: "document.created",
+      workspace: "alpha",
+      revision: 20,
+      operationId: "alpha:20",
+      payload: {}
+    });
+    bus.dispatch({
+      protocol: "quasar.control.v1",
+      event: "document.created",
+      workspace: "beta",
+      revision: 1,
+      operationId: "beta:1",
+      payload: {}
+    });
+    bus.setWorkspace("beta");
+    bus.dispatch({
+      protocol: "quasar.control.v1",
+      event: "document.created",
+      workspace: "beta",
+      revision: 1,
+      operationId: "beta:1",
+      payload: {}
+    });
+    expect(received).toEqual(["alpha", "beta"]);
+    expect(bus.getRevision("alpha")).toBe(20);
+    expect(bus.getRevision("beta")).toBe(1);
+  });
+
+  it("bounds operation deduplication and resets reconnect state", () => {
+    const bus = createEventBus();
+    for (let index = 1; index <= 2_100; index += 1) {
+      bus.dispatch({
+        protocol: "quasar.control.v1",
+        event: "document.updated",
+        workspace: "default",
+        revision: index,
+        operationId: `op-${index}`,
+        payload: {}
+      });
+    }
+    expect(bus.getSeenOperationCount()).toBe(2_048);
+    bus.reset("default");
+    expect(bus.getSeenOperationCount()).toBe(0);
+    expect(bus.getRevision()).toBe(0);
   });
 });

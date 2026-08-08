@@ -23,38 +23,64 @@ perspective."))
 append-only history used for replay and audit. Implementations may no-op when
 journaling is not yet durable, but the interface must remain stable."))
 
+(defgeneric commit-workspace (store workspace operation)
+  (:documentation
+   "Atomically persist WORKSPACE and append OPERATION. No partial state or
+journal update may be visible if this operation fails."))
+
 (defclass memory-store (workspace-store)
   ((workspaces :initform (make-hash-table :test #'equal)
                :reader memory-store-workspaces)
    (journals :initform (make-hash-table :test #'equal)
-             :reader memory-store-journals))
+             :reader memory-store-journals)
+   (lock :initform (bt:make-lock "quasar-memory-store")
+         :reader memory-store-lock))
   (:documentation
    "In-memory workspace store. Acceptable for development and tests as long as
 the limitation is documented and the same STORE interface is used everywhere.
 CouchDB integration replaces this implementation, not the protocol."))
 
 (defmethod load-workspace ((store memory-store) workspace-id)
-  (gethash workspace-id (memory-store-workspaces store)))
+  (bt:with-lock-held ((memory-store-lock store))
+    (let ((workspace (gethash workspace-id (memory-store-workspaces store))))
+      (and workspace (quasar.workspace:copy-workspace workspace)))))
 
 (defmethod save-workspace ((store memory-store) workspace)
-  (setf (gethash (quasar.workspace:workspace-id workspace)
-                 (memory-store-workspaces store))
-        workspace)
+  (bt:with-lock-held ((memory-store-lock store))
+    (setf (gethash (quasar.workspace:workspace-id workspace)
+                   (memory-store-workspaces store))
+          (quasar.workspace:copy-workspace workspace)))
   workspace)
 
 (defmethod append-operation ((store memory-store) workspace-id operation)
-  (let ((journal (gethash workspace-id (memory-store-journals store))))
-    (unless journal
-      (setf journal (make-array 0 :adjustable t :fill-pointer 0)
-            (gethash workspace-id (memory-store-journals store)) journal))
-    (vector-push-extend operation journal))
+  (bt:with-lock-held ((memory-store-lock store))
+    (let ((journal (gethash workspace-id (memory-store-journals store))))
+      (unless journal
+        (setf journal (make-array 0 :adjustable t :fill-pointer 0)
+              (gethash workspace-id (memory-store-journals store)) journal))
+      (vector-push-extend (quasar.protocol:clone-json operation) journal)))
   operation)
+
+(defmethod commit-workspace ((store memory-store) workspace operation)
+  (bt:with-lock-held ((memory-store-lock store))
+    (let* ((workspace-id (quasar.workspace:workspace-id workspace))
+           (journal (or (gethash workspace-id (memory-store-journals store))
+                        (make-array 0 :adjustable t :fill-pointer 0)))
+           (next-journal (make-array (length journal)
+                                     :adjustable t :fill-pointer (length journal))))
+      (replace next-journal journal)
+      (vector-push-extend (quasar.protocol:clone-json operation) next-journal)
+      (setf (gethash workspace-id (memory-store-workspaces store))
+            (quasar.workspace:copy-workspace workspace)
+            (gethash workspace-id (memory-store-journals store)) next-journal)))
+  workspace)
 
 (defun store-journal-entries (store workspace-id)
   "Return the journal entries for WORKSPACE-ID as a list, or NIL if absent."
-  (let ((journal (gethash workspace-id (memory-store-journals store))))
-    (when journal
-      (coerce journal 'list))))
+  (bt:with-lock-held ((memory-store-lock store))
+    (let ((journal (gethash workspace-id (memory-store-journals store))))
+      (when journal
+        (map 'list #'quasar.protocol:clone-json journal)))))
 
 (defun make-memory-store ()
   (make-instance 'memory-store))

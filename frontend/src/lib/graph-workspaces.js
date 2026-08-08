@@ -38,6 +38,10 @@ function normalizeGraph(graph, fallback = {}) {
     layout: String(graph?.layout || fallback.layout || "cose"),
     selectedIds: uniqueStrings(graph?.selectedIds || fallback.selectedIds || [])
   };
+  if (Array.isArray(graph?.nodes || fallback.nodes))
+    normalized.nodes = graph?.nodes || fallback.nodes;
+  if (Array.isArray(graph?.edges || fallback.edges))
+    normalized.edges = graph?.edges || fallback.edges;
   if (graph?.groups || fallback.groups)
     normalized.groups = cleanGroups(graph?.groups || fallback.groups);
   return normalized;

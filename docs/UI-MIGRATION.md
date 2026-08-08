@@ -1,58 +1,54 @@
 # Quasar UI binding ledger
 
-The `frontend/` submodule preserves the current UI. Migration changes its data
-and action adapters, not its visible feature set.
+The migration changes data/action ownership without replacing the React and
+Cytoscape presentation layer or removing visible routes.
 
-| UI surface | Browser responsibility | Common Lisp command/event |
-| --- | --- | --- |
-| Dashboard/statistics | render cards and charts | `projection.stats.query` |
-| Global search | input, suggestions, result presentation | `search.query`, `search.cancel` |
-| Graph list/workspaces | selector, responsive/mobile menu | `graph.list`, `graph.create`, `graph.rename`, `graph.delete` |
-| Graph canvas | Cytoscape rendering and transient interaction | `graph.snapshot`, `graph.operation.apply` |
-| Drag/layout/viewport | animation and frames stay local | final `graph.view.commit` |
-| Right-click menus | menu rendering and action search | `action.list-applicable`, `action.invoke` |
-| Cross-dataset links | gesture and editor | `relation.create` with provenance |
-| Documents/table | render, sort, filter controls | `document.query`, `document.get` |
-| Document editor | local form buffer | `document.save`, `document.remove` |
-| Import | file selection and progress UI | `import.stage`, `import.commit`, `import.abort` |
-| Undo/redo | buttons and labels | `transaction.undo`, `transaction.redo` |
-| Datasets | routes and forms | `dataset.list`, `dataset.save`, `dataset.remove` |
-| Agents | console, bubble, status controls | `actor.list`, `actor.run`, `actor.pause`, `actor.resume`, `actor.stop` |
-| Research nodes | node UI and progress | `research.run`, `research.pause`, `research.resume`, `research.retry`, `research.kill` |
-| Targets | target form | `target.submit` |
-| CouchDB | status and controls | `sync.start`, `sync.stop`, `sync.once` |
-| RabbitMQ | status and counters | `queue.start`, `queue.stop`; delivery events |
-| Brave search | query/results UI | `tool.brave.search` |
-| URL grab | URL input and extraction display | `tool.url.fetch` |
-| MCP/skills | configuration and invocation UI | `mcp.*`, `skill.*` |
-| StarLang | editor/results UI | `starlang.status`, `starlang.load`, later compile/run |
-| Settings | controls and ten auto-dig themes | `settings.get`, `settings.patch` |
-| Settings import/export | file UI; never export credentials | `settings.export-safe`, `settings.import-safe` |
-| Mobile navigation | swipe/tap sheet and three-bar button | no RPC |
-| Mobile graph selector | compact dropdown, no nested scrolling | `graph.list`, `graph.switch` |
-| Full viewport graph | layout and fullscreen presentation | committed view state only |
-| PWA/install | browser install/cache UX | capability/status events only |
+| Surface | Browser responsibility | Durable authority | Status |
+| --- | --- | --- | --- |
+| Documents/editor | render, filter, edit buffer | `document.*` and authoritative snapshots | migrated |
+| Import and batches | file selection, parsing, progress UI | `workspace.transaction` | migrated commit path |
+| Undo/redo | labels and buttons | inverse control-plane transactions | migrated for documents |
+| Graph list/workspaces | selector and responsive UI | `graph.workspace.*` | migrated |
+| Graph membership/view | Cytoscape projection and animation | `graph.workspace.put` transaction | migrated |
+| Drag/layout | live frames local | debounced final graph commit | migrated |
+| Selection/menus | transient interaction | browser only | intentionally local |
+| PouchDB views | query/statistics projection | replaced from Lisp snapshot | projection only |
+| CouchDB sync | browser connection UI and staging | pulled records commit through Lisp | transitional adapter |
+| Settings/themes | controls and presentation | browser settings store | transitional; export filtered |
+| Actors/research/targets | UI and current browser runtimes | mixed | transitional |
+| RabbitMQ/Brave/URL/MCP | current browser adapters | mixed | transitional |
+| StarLang | editor/results UI | capability-gated Common Lisp | Lisp-only |
+| PWA/install | install/cache UX | browser | intentionally local |
 
-## Migration order
+## Migration rules
 
-1. Import `frontend-overlay/src/lib/control-plane.js` and add the browser transport adapter without changing presentation.
-2. Replace direct durable database writes with command calls.
-3. Move actor/research/target execution to the control plane.
-4. Move CouchDB, RabbitMQ, Brave, URL, MCP, skills, and StarLang behind
-   capability-checked commands.
-5. Add reconnect, replay, optimistic transaction IDs, and deterministic conflict
-   presentation.
-6. Remove browser-held credentials and privileged network paths.
-7. Add integration and Playwright parity tests proving every existing route and
-   mobile interaction remains available.
+- Migrated document and graph operations fail visibly when the control plane is
+  unavailable; they never fall back to PouchDB.
+- Authoritative snapshots initialize and restore durable UI state.
+- Optimistic graph presentation commits refresh or roll back from the snapshot
+  on failure.
+- CouchDB pull data is staging input and must pass canonical validation and a
+  Lisp transaction before it appears in authoritative state.
+- Credentials remain outside document/graph envelopes, settings export strips
+  them, and audit records never include payloads.
 
 ## Non-regression gates
 
-- no route or visible feature may be deleted during adapter migration;
-- desktop layout remains unchanged by mobile work;
-- mobile navigation keeps both swipe/tap access and the visible three-bar button;
-- graph selector remains a compact dropdown without nested scrolling;
-- right-click menus, graph lists, cross-dataset links, fullscreen graph, fast
-  zoom, agents, themes, and settings import/export remain present;
-- settings exports strip credentials and tokens;
-- Cytoscape remains a projection, never the canonical database.
+- all existing routes and visible desktop/mobile features remain present;
+- mobile navigation, graph selector, right-click menus, fullscreen graph,
+  actors, themes, and settings transfer remain usable;
+- Cytoscape remains a projection;
+- selection and high-frequency viewport interaction remain browser-local;
+- Playwright runs against the real Lisp/Vite stack and proves create, graph
+  membership, reload, and authoritative restore.
+
+## Remaining migration order
+
+1. Move settings commits and secret-bearing network configuration behind
+   capability-checked commands.
+2. Move actor/research lifecycle and target submission to supervised Lisp
+   actors.
+3. Move CouchDB, RabbitMQ, Brave, URL, MCP, and skill execution behind control
+   plane adapters while preserving their existing UI.
+4. Replace the development memory store with a process-durable implementation
+   of the existing atomic store interface.

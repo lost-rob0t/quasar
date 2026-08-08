@@ -55,12 +55,17 @@ the store has no record."
   (remhash id (control-plane-subscribers plane)))
 
 (defun broadcast-event (plane event workspace-id revision operation-id payload
-                        &key transaction-id event-index)
+                        &key transaction-id event-index event-count)
   (let ((encoded (quasar.protocol:encode-event
                   event workspace-id revision operation-id payload
-                  :transaction-id transaction-id :event-index event-index)))
+                  :transaction-id transaction-id :event-index event-index
+                  :event-count event-count)))
     (loop for handler being the hash-values of (control-plane-subscribers plane)
-          do (funcall handler encoded))))
+          do (handler-case
+                 (funcall handler encoded)
+               (error (condition)
+                 (format *error-output* "~&[control-plane] subscriber failed: ~A~%"
+                         condition))))))
 
 (defun next-operation-id ()
   (format nil "op-~36R-~36R" (get-universal-time) (random most-positive-fixnum)))
@@ -94,25 +99,34 @@ the store has no record."
 Saves to the store, journals the operation, broadcasts the event, and
 returns a result envelope with revision, operation ID, and canonical data."
   (let* ((workspace (workspace-for plane envelope))
-         (applied (quasar.workspace:dispatch-operation workspace operation))
+         (base-revision (quasar.workspace:workspace-revision workspace))
+         (candidate (quasar.workspace:copy-workspace workspace))
+         (applied (quasar.workspace:dispatch-operation candidate operation))
          (operation-id (next-operation-id)))
-    (incf (quasar.workspace:workspace-revision workspace))
+    (incf (quasar.workspace:workspace-revision candidate))
     (let ((result-obj (applied-op-result applied)))
       (quasar.protocol:object-set result-obj "operationId" operation-id)
       (quasar.protocol:object-set result-obj "revision"
-                                  (quasar.workspace:workspace-revision workspace))
+                                  (quasar.workspace:workspace-revision candidate))
       (quasar.protocol:object-set result-obj "event" (applied-op-event applied)))
-    (quasar.store:save-workspace (control-plane-store plane) workspace)
-    (quasar.store:append-operation
-     (control-plane-store plane) (quasar.workspace:workspace-id workspace)
+    (quasar.store:commit-workspace
+     (control-plane-store plane) candidate
      (quasar.protocol:json-object
       (cons "operationId" operation-id)
-      (cons "revision" (quasar.workspace:workspace-revision workspace))
-      (cons "operation" (quasar.protocol:clone-json operation))))
+      (cons "workspaceId" (quasar.workspace:workspace-id candidate))
+      (cons "baseRevision" base-revision)
+      (cons "committedRevision" (quasar.workspace:workspace-revision candidate))
+      (cons "command" (quasar.protocol:clone-json operation))
+      (cons "result" (quasar.protocol:clone-json (applied-op-result applied)))
+      (cons "timestamp" (get-universal-time))
+      (cons "client" (or (quasar.protocol:command-envelope-client envelope) "unknown"))))
+    (setf (gethash (quasar.workspace:workspace-id candidate)
+                   (control-plane-workspaces plane))
+          candidate)
     (broadcast-event plane
                      (applied-op-event applied)
-                     (quasar.workspace:workspace-id workspace)
-                     (quasar.workspace:workspace-revision workspace)
+                     (quasar.workspace:workspace-id candidate)
+                     (quasar.workspace:workspace-revision candidate)
                      operation-id
                      (applied-op-result applied))
     (applied-op-result applied)))
@@ -136,6 +150,10 @@ returns a result envelope with revision, operation ID, and canonical data."
                        (quasar.protocol:json-value payload "operations")
                        "operations" "protocol.invalid-envelope"))
          (expected-revision (quasar.protocol:json-value payload "expectedRevision")))
+    (when (null (array-elements operations))
+      (error 'quasar.protocol:quasar-error
+             :code "transaction.failed"
+             :message "A transaction must contain at least one operation."))
     (when (and expected-revision
                (/= expected-revision (quasar.workspace:workspace-revision workspace)))
       (error 'quasar.protocol:quasar-error
@@ -143,80 +161,73 @@ returns a result envelope with revision, operation ID, and canonical data."
              :message (format nil "Expected revision ~A but current is ~A."
                               expected-revision
                               (quasar.workspace:workspace-revision workspace))))
-    (let ((candidate (quasar.workspace:make-workspace
-                      :id (quasar.workspace:workspace-id workspace))))
-      (copy-workspace-state workspace candidate)
-      (handler-case
-          (multiple-value-bind (events inverses)
-              (quasar.workspace:commit-operations candidate (array-elements operations))
-            (declare (ignore inverses))
-            (commit-workspace plane envelope workspace candidate)
-            (let* ((transaction-id (next-transaction-id))
-                   (revision (incf (quasar.workspace:workspace-revision workspace))))
-              (quasar.store:save-workspace (control-plane-store plane) workspace)
-              (loop for event in events
-                    for n from 1
-                    do (broadcast-event plane
-                                        event
-                                        (quasar.workspace:workspace-id workspace)
-                                        revision
-                                        (format nil "~A-~D" transaction-id n)
-                                        (quasar.protocol:json-object
-                                         (cons "index" n))
-                                        :transaction-id transaction-id
-                                        :event-index n))
-              (quasar.store:append-operation
-               (control-plane-store plane) (quasar.workspace:workspace-id workspace)
-               (quasar.protocol:json-object
-                (cons "transactionId" transaction-id)
-                (cons "revision" revision)
-                (cons "operations" (quasar.protocol:clone-json operations))))
-              (quasar.protocol:json-object
-               (cons "operationId" transaction-id)
-               (cons "transactionId" transaction-id)
-               (cons "revision" revision)
-               (cons "workspaceId" (quasar.workspace:workspace-id workspace))
-               (cons "events" (apply #'quasar.protocol:json-array
-                                     (loop for e in events
-                                           for n from 1
-                                           collect (quasar.protocol:json-object
-                                                    (cons "event" e)
-                                                    (cons "index" n))))))))
-        (error (condition)
-          (declare (ignore condition))
-          (error 'quasar.protocol:quasar-error
-                 :code "transaction.failed"
-                 :message "One or more operations failed; the transaction was rolled back."
-                 :details (quasar.protocol:json-object
-                           (cons "applied" 0))))))))
-
-(defun copy-workspace-state (source target)
-  "Deep-clone all state from SOURCE to TARGET: documents, graphs (including
-nodes/edges arrays), settings, and revision. The journal is NOT copied
-because it is an append-only history of operations on the authoritative
-workspace, not part of the mutable state that a transaction candidate needs."
-  (setf (quasar.workspace:workspace-revision target)
-        (quasar.workspace:workspace-revision source))
-  (clrhash (quasar.workspace:workspace-documents target))
-  (clrhash (quasar.workspace:workspace-graphs target))
-  (clrhash (quasar.workspace:workspace-settings target))
-  (loop for key being the hash-keys of (quasar.workspace:workspace-documents source)
-        using (hash-value value)
-        do (setf (gethash key (quasar.workspace:workspace-documents target))
-                 (quasar.protocol:clone-json value)))
-  (loop for key being the hash-keys of (quasar.workspace:workspace-graphs source)
-        using (hash-value value)
-        do (setf (gethash key (quasar.workspace:workspace-graphs target))
-                 (quasar.protocol:clone-json value)))
-  (loop for key being the hash-keys of (quasar.workspace:workspace-settings source)
-        using (hash-value value)
-        do (setf (gethash key (quasar.workspace:workspace-settings target))
-                 (quasar.protocol:clone-json value))))
-
-(defun commit-workspace (plane envelope old new)
-  "Copy candidate state back into the authoritative workspace."
-  (declare (ignore plane envelope))
-  (copy-workspace-state new old))
+    (let* ((candidate (quasar.workspace:copy-workspace workspace))
+           (base-revision (quasar.workspace:workspace-revision workspace))
+           (transaction-id (next-transaction-id))
+           (applied-operations
+             (handler-case
+                 (multiple-value-bind (applied inverses)
+                     (quasar.workspace:commit-operations
+                      candidate (array-elements operations))
+                   (declare (ignore inverses))
+                   applied)
+               (quasar.protocol:quasar-error (condition)
+                 (error 'quasar.protocol:quasar-error
+                        :code "transaction.failed"
+                        :message "One or more operations failed; the transaction was rolled back."
+                        :details (quasar.protocol:json-object
+                                  (cons "code" (quasar.protocol:quasar-error-code condition))
+                                  (cons "message" (quasar.protocol:quasar-error-message condition))
+                                  (cons "details" (quasar.protocol:quasar-error-details condition))))))))
+      (let* ((revision (incf (quasar.workspace:workspace-revision candidate)))
+             (event-count (length applied-operations))
+             (results
+               (loop for applied in applied-operations
+                     for n from 1
+                     for operation-id = (format nil "~A:~D" transaction-id n)
+                     collect (let ((result (applied-op-result applied)))
+                               (quasar.protocol:object-set result "operationId" operation-id)
+                               (quasar.protocol:object-set result "transactionId" transaction-id)
+                               (quasar.protocol:object-set result "eventIndex" n)
+                               (quasar.protocol:object-set result "eventCount" event-count)
+                               (quasar.protocol:object-set result "revision" revision)
+                               (quasar.protocol:object-set result "event"
+                                                           (applied-op-event applied))
+                               result))))
+        (quasar.store:commit-workspace
+         (control-plane-store plane) candidate
+         (quasar.protocol:json-object
+          (cons "transactionId" transaction-id)
+          (cons "workspaceId" (quasar.workspace:workspace-id candidate))
+          (cons "baseRevision" base-revision)
+          (cons "committedRevision" revision)
+          (cons "commands" (quasar.protocol:clone-json operations))
+          (cons "results" (apply #'quasar.protocol:json-array
+                                  (mapcar #'quasar.protocol:clone-json results)))
+          (cons "timestamp" (get-universal-time))
+          (cons "client" (or (quasar.protocol:command-envelope-client envelope)
+                              "unknown"))))
+        (setf (gethash (quasar.workspace:workspace-id candidate)
+                       (control-plane-workspaces plane))
+              candidate)
+        (loop for applied in applied-operations
+              for result in results
+              for n from 1
+              do (broadcast-event plane
+                                  (applied-op-event applied)
+                                  (quasar.workspace:workspace-id candidate)
+                                  revision
+                                  (quasar.protocol:json-value result "operationId")
+                                  result
+                                  :transaction-id transaction-id
+                                  :event-index n
+                                  :event-count event-count))
+        (quasar.protocol:json-object
+         (cons "operationId" transaction-id)
+         (cons "transactionId" transaction-id)
+         (cons "revision" revision)
+         (cons "workspaceId" (quasar.workspace:workspace-id candidate))
+         (cons "results" (apply #'quasar.protocol:json-array results)))))))
 
 (defun handle-snapshot (plane payload envelope)
   (declare (ignore payload))
@@ -257,6 +268,15 @@ workspace, not part of the mutable state that a transaction candidate needs."
   (register-command plane "graph.snapshot"
    (lambda (payload envelope)
      (handle-graph-snapshot plane payload envelope)))
+  (register-command plane "graph.workspace.put"
+   (lambda (payload envelope)
+     (handle-operation plane payload envelope "graph.put")))
+  (register-command plane "graph.workspace.delete"
+   (lambda (payload envelope)
+     (handle-operation plane payload envelope "graph.delete")))
+  (register-command plane "graph.workspace.activate"
+   (lambda (payload envelope)
+     (handle-operation plane payload envelope "graph.activate")))
   (register-command plane "graph.node.create"
    (lambda (payload envelope)
      (handle-operation plane payload envelope "graph.node.create")))

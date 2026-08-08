@@ -17,18 +17,23 @@ export function createReconnectManager(
   let stopped = false;
 
   function scheduleReconnect(): void {
-    if (stopped) return;
+    if (stopped || timer !== null) return;
     state.attempts += 1;
     const jitter = 1 + (Math.random() - 0.5) * JITTER;
     state.delay = Math.min(BASE_DELAY * Math.pow(2, state.attempts - 1) * jitter, MAX_DELAY);
     onStateChange({ ...state });
     timer = setTimeout(() => {
+      timer = null;
       if (stopped) return;
       onReconnect();
     }, state.delay);
   }
 
   function markConnected(): void {
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
     state.connected = true;
     state.attempts = 0;
     state.delay = BASE_DELAY;
@@ -53,7 +58,16 @@ export function createReconnectManager(
     stopped = false;
   }
 
-  return { scheduleReconnect, markConnected, markDisconnected, stop, start, get state() { return state; } };
+  return {
+    scheduleReconnect,
+    markConnected,
+    markDisconnected,
+    stop,
+    start,
+    get state() {
+      return state;
+    }
+  };
 }
 
 export type ReconnectManager = ReturnType<typeof createReconnectManager>;

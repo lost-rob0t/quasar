@@ -26,9 +26,10 @@ Handles two representations:
   - JSOWN native (from jsown:parse): a plain list of elements where the
     first element is neither the :OBJ keyword (object) nor a string
     (key-value pair)."
-  (and (consp value)
-       (not (eq (car value) :obj))
-       (not (stringp (car value)))))
+  (or (null value)
+      (and (consp value)
+           (not (eq (car value) :obj))
+           (not (stringp (car value))))))
 
 (defun object-keys (object)
   (mapcar #'car (rest object)))
@@ -47,9 +48,11 @@ Handles two representations:
      (cons :obj
            (loop for (key . val) in (rest value)
                  collect (cons key (clone-json val)))))
-    ((array-p value)
+    ((and (consp value) (eq (car value) :array))
      (cons :array
            (mapcar #'clone-json (rest value))))
+    ((array-p value)
+     (mapcar #'clone-json value))
     (t value)))
 
 (define-condition quasar-error (error)
@@ -74,10 +77,18 @@ Handles two representations:
     "workspace.revision-conflict"
     "document.not-found"
     "document.invalid"
+    "document.duplicate-id"
     "graph.node-not-found"
     "graph.edge-not-found"
+    "graph.not-found"
+    "graph.invalid"
+    "graph.duplicate-id"
     "graph.invalid-reference"
     "transaction.failed"
+    "security.unauthorized"
+    "security.forbidden"
+    "security.origin-denied"
+    "security.rate-limited"
     "control-plane.unavailable"))
 
 (defun ensure-string (value field &optional (code "protocol.invalid-envelope"))
@@ -164,7 +175,7 @@ Handles two representations:
           (cons "details" (or details (empty-object)))))))
 
 (defun event-envelope (event workspace-id revision operation-id payload
-                       &key transaction-id event-index)
+                       &key transaction-id event-index event-count)
   (let ((obj (json-object
               (cons "protocol" +protocol-version+)
               (cons "event" event)
@@ -176,6 +187,8 @@ Handles two representations:
       (object-set obj "transactionId" transaction-id))
     (when event-index
       (object-set obj "eventIndex" event-index))
+    (when event-count
+      (object-set obj "eventCount" event-count))
     obj))
 
 (defun normalize-for-encoding (value)
@@ -206,12 +219,13 @@ Handles two representations:
   (encode (error-envelope id code message details)))
 
 (defun encode-event (event workspace-id revision operation-id payload
-                     &key transaction-id event-index)
+                     &key transaction-id event-index event-count)
   (encode (event-envelope event workspace-id revision operation-id payload
-          :transaction-id transaction-id :event-index event-index)))
+          :transaction-id transaction-id :event-index event-index
+          :event-count event-count)))
 
 (defun quasar-error-to-envelope (id condition)
-  (encode-error id
+  (encode-error (or id "")
                 (quasar-error-code condition)
                 (quasar-error-message condition)
                 (quasar-error-details condition)))

@@ -8,34 +8,28 @@ import {
   useState
 } from "react";
 import {
-  bulkSaveDocuments,
   databaseInfo,
   ensureStarIntelViews,
-  exportDocuments,
-  getDocument,
   getSettings,
-  getWorkspace,
   listDocuments,
+  replaceDocumentProjection,
   saveSettings,
-  saveWorkspace,
   startLiveSync,
   syncOnce,
   queryView,
-  queryViewCounts,
-  watchDocuments
+  queryViewCounts
 } from "./lib/db";
 import {
   cpDocumentCreate,
   cpDocumentUpdate,
   cpDocumentDelete,
   cpSnapshot,
-  cpTransaction,
-  isControlPlaneConnected,
-  ControlPlaneError
+  cpTransaction
 } from "./control-plane/mutations";
 import { getControlPlane } from "./control-plane/client";
-import { importFiles } from "./lib/importer";
-import { applyOperation, operation, saveDocumentBatch } from "./lib/operations";
+import { documentsToJsonl, downloadText, importFiles } from "./lib/importer";
+import { operation } from "./lib/operations";
+import { validateDocumentBatch } from "./lib/document-batch";
 import {
   BUILTIN_ACTORS,
   actorApplicability,
@@ -45,7 +39,6 @@ import {
 } from "./lib/actors";
 import { actorWithTransformEnvelope, buildActorTransform } from "./lib/actor-transforms";
 import { createResearchNodeRunner } from "./lib/research-node-runner";
-import { startDocumentSource } from "./lib/document-source";
 import { startRabbitMqIngest } from "./lib/rabbitmq-ingest";
 import { probeStarIntelServer, submitTargetToServer } from "./lib/starintel-server";
 import { applyTheme } from "./lib/themes";
@@ -58,7 +51,8 @@ import {
   removeDocumentsFromActiveGraph as removeDocumentsFromGraphWorkspace,
   renameActiveGraph as renameGraphWorkspace,
   switchActiveGraph as switchGraphWorkspace,
-  updateActiveGraph
+  updateActiveGraph,
+  normalizeGraphWorkspace
 } from "./lib/graph-workspaces";
 
 const QuasarContext = createContext(null);
@@ -92,44 +86,71 @@ export function QuasarProvider({ children }) {
   const actorsRef = useRef([]);
   const runActorRef = useRef(null);
   const executeRef = useRef(null);
+  const graphCommitVersion = useRef(0);
 
   documentsRef.current = documents;
 
-  const refresh = useCallback(async () => setDocuments(await listDocuments()), []);
+  const applyAuthoritativeSnapshot = useCallback(async (snapshot) => {
+    const nextDocuments = Array.isArray(snapshot?.documents) ? snapshot.documents : [];
+    const snapshotWorkspace = normalizeGraphWorkspace({
+      graphs: Array.isArray(snapshot?.graphs) ? snapshot.graphs : [],
+      activeGraphId: snapshot?.activeGraphId || "all-documents"
+    });
+    const transientSelection = workspaceRef.current?.selectedIds || [];
+    const nextWorkspace = updateActiveGraph(snapshotWorkspace, {
+      selectedIds: transientSelection
+    });
+    documentsRef.current = nextDocuments;
+    workspaceRef.current = nextWorkspace;
+    setDocuments(nextDocuments);
+    setWorkspace(nextWorkspace);
+    setSelectedIds(nextWorkspace.selectedIds || []);
+    await replaceDocumentProjection(nextDocuments);
+  }, []);
+
+  const refresh = useCallback(async () => {
+    const snapshot = await cpSnapshot();
+    await applyAuthoritativeSnapshot(snapshot);
+    return snapshot;
+  }, [applyAuthoritativeSnapshot]);
 
   useEffect(() => {
     let active = true;
-    const source = startDocumentSource({
-      load: listDocuments,
-      watch: watchDocuments,
-      onDocuments: (nextDocuments) => setDocuments(nextDocuments),
-      onError: (error) => setNotice({ kind: "error", message: error.message })
-    });
     const cpClient = getControlPlane();
     const unsubConn = cpClient?.onConnectionStateChange((state) => {
       setControlPlaneStatus(state);
+      if (state.phase === "disconnected") {
+        setNotice({ kind: "error", message: "The Common Lisp control plane disconnected." });
+      }
     });
-    Promise.all([source.initial, getSettings(), getWorkspace(), ensureStarIntelViews()])
-      .then(([, nextSettings, nextWorkspace]) => {
+    const unsubSnapshot = cpClient?.onSnapshot((snapshot) => {
+      if (active) {
+        void applyAuthoritativeSnapshot(snapshot).finally(() => setLoading(false));
+      }
+    });
+    const unsubEvents = cpClient?.subscribe(() => {
+      if (active)
+        void refresh().catch((error) => setNotice({ kind: "error", message: error.message }));
+    });
+    Promise.all([getSettings(), ensureStarIntelViews()])
+      .then(([nextSettings]) => {
         if (!active) return;
         applyTheme(nextSettings.theme);
         setSettings(nextSettings);
-        workspaceRef.current = nextWorkspace;
-        setWorkspace(nextWorkspace);
-        setSelectedIds(nextWorkspace.selectedIds || []);
       })
       .catch((error) => setNotice({ kind: "error", message: error.message }))
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
-      source.stop();
       unsubConn?.();
+      unsubSnapshot?.();
+      unsubEvents?.();
       syncRef.current?.cancel?.();
       queueRef.current?.cancel?.();
       researchRunnerRef.current?.dispose?.();
       clearTimeout(workspaceTimer.current);
     };
-  }, []);
+  }, [applyAuthoritativeSnapshot, refresh]);
 
   const record = useCallback((entry) => {
     if (!entry?.inverse) return;
@@ -137,10 +158,10 @@ export function QuasarProvider({ children }) {
   }, []);
 
   const execute = useCallback(
-    async (command, label = command.type) => {
-      if (command?.type === "save-document" && isControlPlaneConnected()) {
+    async (command, label = command.type, { recordHistory = true } = {}) => {
+      if (command?.type === "save-document") {
         const doc = command.document;
-        const existing = await getDocument(doc._id);
+        const existing = documentsRef.current.find((item) => item._id === doc._id) || null;
         let result;
         if (existing) {
           result = await cpDocumentUpdate(doc);
@@ -149,32 +170,52 @@ export function QuasarProvider({ children }) {
         }
         await refresh();
         const inverse = existing ? operation.save(existing) : operation.remove(doc._id);
-        record({ label, inverse, redo: command });
+        if (recordHistory) record({ label, inverse, redo: command });
         return result;
       }
-      if (command?.type === "remove-document" && isControlPlaneConnected()) {
-        const existing = await getDocument(command.id);
+      if (command?.type === "remove-document") {
+        const existing = documentsRef.current.find((item) => item._id === command.id) || null;
         const result = await cpDocumentDelete(command.id);
         await refresh();
         const inverse = existing ? operation.save(existing) : null;
-        record({ label, inverse, redo: command });
+        if (recordHistory) record({ label, inverse, redo: command });
         return result;
       }
-      if (command?.type === "batch" && isControlPlaneConnected()) {
+      if (command?.type === "batch") {
+        const known = new Map(documentsRef.current.map((document) => [document._id, document]));
+        const inverses = [];
         const ops = (command.operations || []).map((op) => {
-          if (op.type === "save-document") return { type: "document.create", payload: op.document };
-          if (op.type === "remove-document") return { type: "document.delete", payload: { id: op.id } };
+          if (op.type === "save-document") {
+            const previous = known.get(op.document._id);
+            inverses.unshift(
+              previous ? operation.save(previous) : operation.remove(op.document._id)
+            );
+            known.set(op.document._id, op.document);
+            return {
+              type: previous ? "document.update" : "document.create",
+              payload: op.document
+            };
+          }
+          if (op.type === "remove-document") {
+            const previous = known.get(op.id);
+            if (previous) inverses.unshift(operation.save(previous));
+            known.delete(op.id);
+            return { type: "document.delete", payload: { id: op.id } };
+          }
           return op;
         });
         const result = await cpTransaction(ops);
         await refresh();
-        record({ label, inverse: null, redo: command });
+        if (recordHistory && inverses.length) {
+          record({
+            label,
+            inverse: operation.batch(inverses, `Undo ${label}`),
+            redo: command
+          });
+        }
         return result;
       }
-      const applied = await applyOperation(command);
-      record({ label, inverse: applied.inverse, redo: command });
-      await refresh();
-      return applied.result;
+      throw new TypeError(`Unknown operation type: ${command?.type || "<missing>"}`);
     },
     [record, refresh]
   );
@@ -182,73 +223,80 @@ export function QuasarProvider({ children }) {
 
   const executeBatch = useCallback(
     async (nextDocuments, label = "Save documents", options = {}) => {
-      const applied = await saveDocumentBatch(nextDocuments, label, options);
-      record({
-        label,
-        inverse: applied.inverse,
-        redo: operation.batch(applied.savedDocuments.map(operation.save), label)
-      });
-      await refresh();
-      return applied.result;
+      const preflight = validateDocumentBatch(nextDocuments, { origins: options.origins || [] });
+      if (options.atomic !== false && preflight.errors.length) {
+        const error = new Error(`Batch rejected ${preflight.errors.length} document(s)`);
+        error.report = {
+          saved: [],
+          skipped: [],
+          errors: preflight.errors,
+          atomic: true,
+          rolledBack: 0
+        };
+        throw error;
+      }
+      const replace = options.replace !== false;
+      const existing = new Map(documentsRef.current.map((document) => [document._id, document]));
+      const savedDocuments = [];
+      const skipped = [];
+      for (const { document } of preflight.validated) {
+        if (existing.has(document._id) && !replace) {
+          skipped.push({ id: document._id, reason: "exists" });
+        } else {
+          savedDocuments.push(document);
+        }
+      }
+      if (savedDocuments.length) {
+        await execute(operation.batch(savedDocuments.map(operation.save), label), label);
+      }
+      const report = {
+        saved: savedDocuments.map((document) => ({ id: document._id, ok: true })),
+        skipped,
+        errors: preflight.errors,
+        atomic: options.atomic !== false,
+        rolledBack: 0
+      };
+      if (report.errors.length) {
+        const error = new Error(`Batch rejected ${report.errors.length} document(s)`);
+        error.report = report;
+        throw error;
+      }
+      return report;
     },
-    [record, refresh]
+    [execute]
   );
 
   const undo = useCallback(async () => {
     const entry = history.undo.at(-1);
     if (!entry) return;
-    const applied = await applyOperation(entry.inverse);
+    await execute(entry.inverse, `Undo ${entry.label}`, { recordHistory: false });
     setHistory((current) => ({
       undo: current.undo.slice(0, -1),
-      redo: [...current.redo, { label: entry.label, inverse: applied.inverse }]
+      redo: [...current.redo, entry]
     }));
-    await refresh();
-  }, [history.undo, refresh]);
+  }, [execute, history.undo]);
 
   const redo = useCallback(async () => {
     const entry = history.redo.at(-1);
     if (!entry) return;
-    const applied = await applyOperation(entry.inverse);
+    await execute(entry.redo, `Redo ${entry.label}`, { recordHistory: false });
     setHistory((current) => ({
-      undo: [...current.undo, { label: entry.label, inverse: applied.inverse }],
+      undo: [...current.undo, entry],
       redo: current.redo.slice(0, -1)
     }));
-    await refresh();
-  }, [history.redo, refresh]);
+  }, [execute, history.redo]);
 
   const importFileSet = useCallback(
     async (files, options = {}) => {
       try {
         const report = await importFiles(
           files,
-          async (candidates, importOptions) => {
-            const label = `Import ${candidates.length} documents`;
-            try {
-              const applied = await saveDocumentBatch(candidates, label, {
-                replace: Boolean(importOptions.replace),
-                atomic: importOptions.atomic !== false,
-                origins: importOptions.origins || []
-              });
-              record({
-                label,
-                inverse: applied.inverse,
-                redo: operation.batch(applied.savedDocuments.map(operation.save), "Redo import")
-              });
-              return applied.result;
-            } catch (error) {
-              if (error.applied?.inverse) {
-                record({
-                  label,
-                  inverse: error.applied.inverse,
-                  redo: operation.batch(
-                    error.applied.savedDocuments.map(operation.save),
-                    "Redo import"
-                  )
-                });
-              }
-              throw error;
-            }
-          },
+          (candidates, importOptions) =>
+            executeBatch(candidates, `Import ${candidates.length} documents`, {
+              replace: Boolean(importOptions.replace),
+              atomic: importOptions.atomic !== false,
+              origins: importOptions.origins || []
+            }),
           { atomic: true, ...options }
         );
         await refresh();
@@ -258,7 +306,7 @@ export function QuasarProvider({ children }) {
         throw error;
       }
     },
-    [record, refresh]
+    [executeBatch, refresh]
   );
 
   const persistSettings = useCallback(
@@ -272,20 +320,43 @@ export function QuasarProvider({ children }) {
     [settings]
   );
 
-  const commitWorkspace = useCallback((normalized) => {
+  const setLocalWorkspace = useCallback((normalized) => {
     workspaceRef.current = normalized;
     setWorkspace(normalized);
     setSelectedIds(normalized.selectedIds || []);
-    clearTimeout(workspaceTimer.current);
-    workspaceTimer.current = setTimeout(
-      () =>
-        saveWorkspace(normalized).catch((error) => {
-          setNotice({ kind: "error", message: error.message });
-        }),
-      120
-    );
     return normalized;
   }, []);
+
+  const reportGraphFailure = useCallback(
+    (version, error) => {
+      if (version !== graphCommitVersion.current) return;
+      setNotice({ kind: "error", message: error.message });
+      void refresh().catch(() => {});
+    },
+    [refresh]
+  );
+
+  const canonicalGraph = useCallback((graph) => {
+    const { selectedIds: _selectedIds, ...durable } = graph;
+    return durable;
+  }, []);
+
+  const commitWorkspace = useCallback(
+    (normalized) => {
+      setLocalWorkspace(normalized);
+      clearTimeout(workspaceTimer.current);
+      const version = ++graphCommitVersion.current;
+      workspaceTimer.current = setTimeout(() => {
+        const active = getActiveGraph(normalized);
+        cpTransaction([
+          { type: "graph.put", payload: canonicalGraph(active) },
+          { type: "graph.activate", payload: { id: active.id } }
+        ]).catch((error) => reportGraphFailure(version, error));
+      }, 120);
+      return normalized;
+    },
+    [canonicalGraph, reportGraphFailure, setLocalWorkspace]
+  );
 
   const persistWorkspace = useCallback(
     (next) => {
@@ -409,8 +480,18 @@ export function QuasarProvider({ children }) {
   );
 
   const deleteGraph = useCallback(() => {
-    return commitWorkspace(deleteGraphWorkspace(workspaceRef.current || {}));
-  }, [commitWorkspace]);
+    const current = workspaceRef.current || {};
+    const deletedId = getActiveGraph(current).id;
+    const normalized = deleteGraphWorkspace(current);
+    clearTimeout(workspaceTimer.current);
+    setLocalWorkspace(normalized);
+    const version = ++graphCommitVersion.current;
+    cpTransaction([
+      { type: "graph.delete", payload: { id: deletedId } },
+      { type: "graph.activate", payload: { id: normalized.activeGraphId } }
+    ]).catch((error) => reportGraphFailure(version, error));
+    return normalized;
+  }, [reportGraphFailure, setLocalWorkspace]);
 
   const clearGraph = useCallback(() => {
     return commitWorkspace(clearGraphWorkspace(workspaceRef.current || {}));
@@ -425,10 +506,18 @@ export function QuasarProvider({ children }) {
         normalized.every((id, index) => id === currentIds[index])
       )
         return workspaceRef.current;
-      return persistWorkspace({ selectedIds: normalized });
+      return setLocalWorkspace(
+        updateActiveGraph(workspaceRef.current || {}, {
+          selectedIds: normalized
+        })
+      );
     },
-    [persistWorkspace, selectedIds]
+    [selectedIds, setLocalWorkspace]
   );
+
+  const exportDocuments = useCallback(() => {
+    downloadText("quasar-documents.jsonl", documentsToJsonl(documentsRef.current));
+  }, []);
 
   const startSync = useCallback(
     (configuration = settings) => {
@@ -443,10 +532,20 @@ export function QuasarProvider({ children }) {
           }),
         onDenied: (error) => setSyncStatus({ state: "denied", message: error.message }),
         onError: (error) => setSyncStatus({ state: "error", message: error.message }),
-        onChange: () => refresh().catch(() => {})
+        onChange: (info) => {
+          if (info?.direction !== "pull") return;
+          const pulled = Array.isArray(info.change?.docs)
+            ? info.change.docs.filter((document) => !document?._deleted)
+            : [];
+          if (!pulled.length) return;
+          executeBatch(pulled, "Import CouchDB changes", {
+            replace: true,
+            atomic: true
+          }).catch((error) => setNotice({ kind: "error", message: error.message }));
+        }
       });
     },
-    [refresh, settings]
+    [executeBatch, settings]
   );
 
   const stopSync = useCallback(() => {
@@ -460,6 +559,15 @@ export function QuasarProvider({ children }) {
       setSyncStatus({ state: "active", message: `${direction} synchronization` });
       try {
         const result = await syncOnce(configuration, direction);
+        if (direction !== "push") {
+          const pulled = await listDocuments();
+          if (pulled.length) {
+            await executeBatch(pulled, "Import CouchDB snapshot", {
+              replace: true,
+              atomic: true
+            });
+          }
+        }
         setSyncStatus({ state: "synced", message: "Synchronization complete" });
         await refresh();
         return result;
@@ -468,7 +576,7 @@ export function QuasarProvider({ children }) {
         throw error;
       }
     },
-    [refresh, settings]
+    [executeBatch, refresh, settings]
   );
 
   const testServer = useCallback(
@@ -731,7 +839,7 @@ export function QuasarProvider({ children }) {
       killResearchNode,
       exportDocuments,
       databaseInfo,
-      bulkSaveDocuments,
+      bulkSaveDocuments: executeBatch,
       ensureStarIntelViews,
       queryView,
       queryViewCounts
@@ -747,7 +855,6 @@ export function QuasarProvider({ children }) {
       serverStatus,
       queueStatus,
       controlPlaneStatus,
-      history,
       execute,
       executeBatch,
       undo,

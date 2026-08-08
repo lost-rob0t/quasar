@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { KeyRound, Play, RefreshCw, Save, Settings2, Trash2 } from "lucide-react";
+import { KeyRound, RefreshCw, Save, Settings2, Trash2 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useLocation } from "react-router-dom";
 import {
@@ -10,7 +10,6 @@ import {
   saveActorConfiguration
 } from "../lib/actor-configuration";
 import { installMelissaActorPack, MELISSA_ACTORS } from "../lib/melissa-actor-installation";
-import { testMelissaPersonatorSearch } from "../lib/melissa-personator-test";
 import { useQuasar } from "../store";
 
 function actorSettingsPanel() {
@@ -42,18 +41,7 @@ function fieldValue(event, field) {
   return event.target.value;
 }
 
-function MelissaFields({
-  actor,
-  form,
-  installed,
-  onChange,
-  onSave,
-  onClear,
-  onInstall,
-  onTest,
-  testing,
-  testResult
-}) {
+function MelissaFields({ actor, form, installed, onChange, onSave, onClear, onInstall }) {
   const definition = actorConfigurationDefinition(actor);
   const primary = definition.fields.slice(0, 9);
   const advanced = definition.fields.slice(9);
@@ -110,61 +98,11 @@ function MelissaFields({
               String(form.licenseKey || "").trim() ? "active" : "offline"
             }`}
           >
-            {String(form.licenseKey || "").trim() ? "configured" : "license key required"}
+            {String(form.licenseKey || "").trim() ? "configured" : "API key required"}
           </span>
         </div>
       </div>
       <div className="form-grid">{primary.map(renderField)}</div>
-      <div className="actor-config-test">
-        <p>
-          <strong>Place the key in the first field above.</strong> Copy the value from Melissa
-          Account → License Information → <strong>License Key Using Credits</strong>. Paste only the
-          key value, not the label.
-        </p>
-        <p className="muted">
-          The test is manual. It sends Melissa&apos;s documented sample person and address directly
-          to Personator Search and may consume credits.
-        </p>
-        <button
-          className="button"
-          type="button"
-          onClick={onTest}
-          disabled={testing || !String(form.licenseKey || "").trim()}
-        >
-          <Play size={15} />{" "}
-          {testing ? "Testing Personator Search…" : "Save and test Personator Search"}
-        </button>
-        {testResult && (
-          <div
-            className={testResult.ok ? "actor-test-result" : "actor-test-result validation-error"}
-          >
-            <strong>
-              {testResult.ok ? "Personator credential accepted" : "Personator credential rejected"}
-            </strong>
-            <dl>
-              <div>
-                <dt>HTTP</dt>
-                <dd>{testResult.httpStatus}</dd>
-              </div>
-              <div>
-                <dt>TransmissionResults</dt>
-                <dd>{testResult.transmissionResults}</dd>
-              </div>
-              <div>
-                <dt>Records</dt>
-                <dd>{testResult.totalRecords}</dd>
-              </div>
-              <div>
-                <dt>Saved key</dt>
-                <dd>
-                  {testResult.key.length} characters · ends in {testResult.key.ending || "(empty)"}{" "}
-                  · fingerprint {testResult.key.fingerprint || "(empty)"}
-                </dd>
-              </div>
-            </dl>
-          </div>
-        )}
-      </div>
       <details className="actor-config-advanced">
         <summary>Advanced Melissa options</summary>
         <div className="form-grid">{advanced.map(renderField)}</div>
@@ -189,8 +127,6 @@ export default function ActorConfigurationBridge() {
   const { actors = [], settings, persistSettings, setNotice } = useQuasar();
   const [host, setHost] = useState(null);
   const [melissaForm, setMelissaForm] = useState({});
-  const [melissaTest, setMelissaTest] = useState(null);
-  const [testingMelissa, setTestingMelissa] = useState(false);
   const [selectedActorId, setSelectedActorId] = useState("");
   const [jsonText, setJsonText] = useState("{}");
 
@@ -224,7 +160,6 @@ export default function ActorConfigurationBridge() {
 
   useEffect(() => {
     setMelissaForm(loadActorConfiguration(melissaActor));
-    setMelissaTest(null);
   }, [melissaActor]);
 
   useEffect(() => {
@@ -243,7 +178,6 @@ export default function ActorConfigurationBridge() {
     try {
       const saved = saveActorConfiguration(melissaActor, melissaForm);
       setMelissaForm(saved);
-      setMelissaTest(null);
       setNotice({
         kind: "success",
         message: "Melissa actor configuration saved locally"
@@ -253,31 +187,9 @@ export default function ActorConfigurationBridge() {
     }
   }
 
-  async function testMelissa() {
-    setTestingMelissa(true);
-    setMelissaTest(null);
-    try {
-      const saved = saveActorConfiguration(melissaActor, melissaForm);
-      setMelissaForm(saved);
-      const result = await testMelissaPersonatorSearch(saved.licenseKey);
-      setMelissaTest(result);
-      setNotice({
-        kind: result.ok ? "success" : "error",
-        message: result.ok
-          ? `Personator Search accepted the saved key (${result.transmissionResults})`
-          : `Personator Search rejected the exact saved key (${result.transmissionResults})`
-      });
-    } catch (error) {
-      setNotice({ kind: "error", message: error.message });
-    } finally {
-      setTestingMelissa(false);
-    }
-  }
-
   function clearMelissa() {
     clearActorConfiguration(melissaActor);
     setMelissaForm(loadActorConfiguration(melissaActor));
-    setMelissaTest(null);
     setNotice({
       kind: "success",
       message: "Melissa actor configuration cleared"
@@ -348,16 +260,10 @@ export default function ActorConfigurationBridge() {
         actor={melissaActor}
         form={melissaForm}
         installed={melissaInstalled}
-        onChange={(key, value) => {
-          setMelissaForm((current) => ({ ...current, [key]: value }));
-          setMelissaTest(null);
-        }}
+        onChange={(key, value) => setMelissaForm((current) => ({ ...current, [key]: value }))}
         onSave={saveMelissa}
         onClear={clearMelissa}
         onInstall={installMelissa}
-        onTest={testMelissa}
-        testing={testingMelissa}
-        testResult={melissaTest}
       />
 
       <div className="actor-config-group">

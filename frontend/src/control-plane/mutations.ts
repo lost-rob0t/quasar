@@ -61,6 +61,18 @@ export async function cpEdgeDelete(graphId: string, id: string): Promise<Mutatio
   return r as unknown as MutationResult;
 }
 
+export async function cpGraphPut(graph: Record<string, unknown>): Promise<MutationResult> {
+  return (await client().graphPut(graph)) as MutationResult;
+}
+
+export async function cpGraphDelete(id: string): Promise<MutationResult> {
+  return (await client().graphDelete(id)) as MutationResult;
+}
+
+export async function cpGraphActivate(id: string): Promise<MutationResult> {
+  return (await client().graphActivate(id)) as MutationResult;
+}
+
 export async function cpSnapshot(): Promise<Record<string, unknown>> {
   return (await client().snapshot()) as Record<string, unknown>;
 }

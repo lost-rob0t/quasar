@@ -1,4 +1,10 @@
-# JavaScript-only deployment roadmap
+# Archived JavaScript-only deployment roadmap
+
+> Historical design record. The monorepo adopted a Common Lisp authoritative
+> control plane in PR #3. The current contract is
+> [`../../docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md) and the migration
+> ledger is [`../../docs/UI-MIGRATION.md`](../../docs/UI-MIGRATION.md). Any
+> browser-canonical or JavaScript-only target below is superseded.
 
 This document is the repository execution plan for [roadmap issue #2](https://github.com/lost-rob0t/quasar-ui/issues/2). The issue and its linked implementation issues own scope and acceptance criteria. The machine-readable [dependency manifest](roadmap.json) mirrors their dependency declarations and is validated in the test suite.
 

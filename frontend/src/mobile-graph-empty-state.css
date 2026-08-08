@@ -18,14 +18,14 @@
     justify-content: center;
     justify-items: stretch;
     gap: 0.65rem;
-    width: min(100%, 300px);
+    width: min(100%, 260px);
     margin: 0.25rem auto 0;
   }
 
   .graph-empty-state .button-row > .button {
     justify-content: center;
     width: 100%;
-    min-height: 48px;
+    min-height: 44px;
     margin: 0;
     text-align: center;
   }

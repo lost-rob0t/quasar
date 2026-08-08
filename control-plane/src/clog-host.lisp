@@ -45,16 +45,36 @@ broke production asset serving."
           *last-session* session)
     session))
 
-(defun start-ui (plane &key (host "127.0.0.1") (port 8080) (open-browser-p t))
-  (declare (ignore plane))
+(defun inject-session-token (html token)
+  (let ((marker (search "</head>" html :test #'char-equal))
+        (tag (format nil "<meta name=\"quasar-session-token\" content=\"~A\">" token)))
+    (if marker
+        (concatenate 'string (subseq html 0 marker) tag (subseq html marker))
+        html)))
+
+(defun start-ui (plane &key (host "127.0.0.1") (port 8080) (open-browser-p t)
+                             session-token)
   (let ((asset-root (frontend-asset-path)))
     (clog:initialize
      (lambda (body)
        (install-host body plane))
      :host host
      :port port
+     :boot-file "/index.html"
+     :boot-function (when session-token
+                      (lambda (url html)
+                        (declare (ignore url))
+                        (inject-session-token html session-token)))
+     :extended-routing t
+     :static-boot-html "<!doctype html><title>Quasar</title><p>Frontend build not present; use the Vite development server.</p>"
      :static-root (when (probe-file asset-root)
-                    (namestring asset-root))))
+                    (namestring asset-root)))
+    (dolist (route '("/graph" "/documents" "/datasets" "/import" "/stats"
+                     "/settings" "/agents"))
+      (clog:set-on-new-window
+       (lambda (body) (install-host body plane))
+       :path route
+       :boot-file "/index.html")))
   (when open-browser-p
     (clog:open-browser))
   t)
@@ -64,10 +84,4 @@ broke production asset serving."
     (clog:shutdown))
   (clrhash *sessions*)
   (setf *last-session* nil)
-  t)
-
-(defun broadcast-event (name payload)
-  (declare (ignore name payload))
-  "Event broadcast is owned by the WebSocket server. This stub remains for
-  backward compatibility while CLOG keeps its host role."
   t)

@@ -8,128 +8,82 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: false
 
-      - name: Assert no submodule
+      - name: Verify monorepo layout
         run: |
-          if [ -f .gitmodules ]; then
-            echo "ERROR: .gitmodules still exists — no submodules allowed."
-            exit 1
-          fi
-          if [ -d frontend-overlay ]; then
-            echo "ERROR: frontend-overlay directory still exists."
-            exit 1
-          fi
-          if [ -f scripts/prepare-frontend.sh ]; then
-            echo "ERROR: scripts/prepare-frontend.sh still exists."
-            exit 1
-          fi
-          echo "No submodule, overlay, or injection script found."
-
-      - name: Assert frontend is tracked
-        run: |
+          test ! -e .gitmodules
+          test ! -e frontend-overlay
+          test ! -e scripts/prepare-frontend.sh
           test -f frontend/package.json
-          test -f frontend/package-lock.json
-          test -f frontend/src/control-plane/client.ts
           test -f frontend/src/app/main.tsx
-          echo "Frontend is tracked as normal files."
+          test -f frontend/src/control-plane/client.ts
 
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: "npm"
+          cache: npm
 
-      - name: Install all dependencies (root workspace)
+      - name: Install monorepo dependencies from the root lockfile
         run: npm ci
 
-      - name: Typecheck frontend
-        run: npm run typecheck
+      - name: Format, lint, type, boundary, and static checks
+        run: npm run check
 
-      - name: Lint frontend (full application code)
-        run: npm run lint
+      - name: Frontend unit and integration tests
+        run: |
+          npm --prefix frontend run test:unit
+          npm --prefix frontend run test:integration
 
-      - name: Build frontend
+      - name: Production frontend build
         run: npm run build
 
-      - name: Run all frontend unit and integration tests
-        run: npm --prefix frontend run test:unit && npm --prefix frontend run test:integration
-
-      - name: Install SBCL and Quicklisp
+      - name: Install Common Lisp runtime dependencies
         run: |
           sudo apt-get update --quiet
-          sudo apt-get install --yes --quiet sbcl curl git >/dev/null || sudo apt-get install --yes --quiet sbcl curl git >/dev/null
-          curl --fail --silent --show-error --output quicklisp.lisp \
+          sudo apt-get install --yes --quiet \
+            sbcl curl git libffi-dev libssl-dev libsqlite3-dev librabbitmq-dev
+          curl --fail --silent --show-error --output /tmp/quicklisp.lisp \
             https://beta.quicklisp.org/quicklisp.lisp
           sbcl --non-interactive \
-            --load quicklisp.lisp \
+            --load /tmp/quicklisp.lisp \
             --eval '(quicklisp-quickstart:install :path #p"/home/runner/quicklisp/")'
-          git clone --quiet --depth 1 https://github.com/rabbibotton/clog.git \
+          printf '%s\n' '(load #p"/home/runner/quicklisp/setup.lisp")' > /home/runner/.sbclrc
+          git clone --quiet https://github.com/rabbibotton/clog.git \
             /home/runner/quicklisp/local-projects/clog
+          git -C /home/runner/quicklisp/local-projects/clog checkout --quiet \
+            9ee022a97ab4109f2ff6d2b9c43ba6da286d6302
 
-      - name: Load all Lisp systems (warnings fail CI)
+      - name: Common Lisp transaction, persistence, and control-plane tests
+        run: npm run test:lisp
+
+      - name: Load the real quasar-web system
         run: |
           output=$(mktemp)
           sbcl --non-interactive \
-            --load /home/runner/quicklisp/setup.lisp \
+            --eval '(setf asdf:*central-registry* nil)' \
+            --eval '(asdf:clear-configuration)' \
             --eval '(ql:quickload (list :jsown :sento :bordeaux-threads :clog :websocket-driver) :silent t)' \
             --eval '(asdf:load-asd (truename "systems/quasar-control.asd"))' \
             --eval '(asdf:load-asd (truename "systems/quasar-starlang.asd"))' \
             --eval '(asdf:load-asd (truename "systems/quasar-web.asd"))' \
-            --eval '(ql:quickload :quasar-web)' \
-            --eval '(ql:quickload :quasar-starlang)' 2>&1 | tee "$output"
-          if grep -iE '(undefined.*function|UNDEFINED-FUNCTION)' "$output" | grep -ivE '(quicklisp|sento|bordeaux|jsown|clog|websocket-driver|mgl-pax|dref)'; then
-            echo "FAIL: undefined function warnings in quasar code." >&2
+            --eval '(asdf:load-system :quasar-web)' 2>&1 | tee "$output"
+          if grep -iE '(undefined.*function|UNDEFINED-FUNCTION|; caught.*ERROR.*condition)' "$output"; then
+            echo "quasar-web produced a compilation error or undefined function" >&2
             exit 1
           fi
 
-      - name: Run Common Lisp tests
-        run: |
-          sbcl --non-interactive \
-            --load /home/runner/quicklisp/setup.lisp \
-            --eval '(ql:quickload (list :jsown :sento :bordeaux-threads) :silent t)' \
-            --eval '(asdf:load-asd (truename "systems/quasar-control.asd"))' \
-            --eval '(asdf:load-asd (truename "systems/quasar-starlang.asd"))' \
-            --eval '(asdf:load-asd (truename "systems/quasar-tests.asd"))' \
-            --eval '(asdf:test-system :quasar-tests)'
+      - name: Complete development stack smoke test
+        run: npm run smoke
 
-      - name: Web stack smoke test (load, start, stop, verify WS + HTTP)
-        run: |
-          sbcl --non-interactive \
-            --load /home/runner/quicklisp/setup.lisp \
-            --eval '(ql:quickload :quasar-web)' \
-            --eval '
-              (let ((asset-dir (quasar.ui:frontend-asset-path)))
-                (unless (probe-file asset-dir)
-                  (format t "ERROR: frontend-asset-path does not resolve: ~a~%" asset-dir)
-                  (sb-ext:quit :unix-status 1))
-                (format t "frontend-asset-path resolves to ~a~%" asset-dir))
-              (quasar.app:start :open-browser-p nil)
-              (sleep 1)
-              (unless (quasar.ws:websocket-server-started-p quasar.app:*websocket-server*)
-                (format t "ERROR: websocket server did not start~%")
-                (sb-ext:quit :unix-status 1))
-              (quasar.app:stop)
-              (format t "web smoke test ok~%")'
+      - name: Install tracked Playwright browser runtime
+        run: ./node_modules/.bin/playwright install --with-deps chromium
 
-      - name: Production asset smoke test (build + serve)
-        run: |
-          npm run build
-          sbcl --non-interactive \
-            --load /home/runner/quicklisp/setup.lisp \
-            --eval '(ql:quickload :quasar-web)' \
-            --eval '
-              (quasar.app:start :open-browser-p nil)
-              (sleep 1)
-              (let ((index (merge-pathnames "frontend/dist/index.html"
-                                           (quasar.ui:frontend-asset-path))))
-                (unless (probe-file index)
-                  (format t "ERROR: built index.html not found at ~a~%" index)
-                  (sb-ext:quit :unix-status 1))
-                (format t "production index.html found at ~a~%" index))
-              (quasar.app:stop)
-              (format t "production asset smoke test ok~%")'
+      - name: Real-stack desktop, mobile, mutation, and reload paths
+        run: npm run test:e2e
+
+      - name: Packaged production build, serve, routing, PWA, and security smoke
+        run: npm run smoke:production

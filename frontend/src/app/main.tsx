@@ -2,6 +2,9 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "../App.jsx";
+import AutoDigHostBridge, {
+  isAutoDigEmbedded
+} from "../integrations/auto-dig/AutoDigHostBridge.jsx";
 import ActorConfigurationBridge from "../components/ActorConfigurationBridge.jsx";
 import GraphContextRadialBridge from "../components/GraphContextRadialBridge.jsx";
 import GraphObjectTypePickerBridge from "../components/GraphObjectTypePickerBridge.jsx";
@@ -48,6 +51,7 @@ createRoot(rootElement).render(
     <BrowserRouter basename={routerBasename(import.meta.env.BASE_URL)}>
       <QuasarProvider>
         <App />
+        <AutoDigHostBridge />
         <OperatorUiEnhancer />
         <PwaInstallBridge />
         <MelissaActorBridge />
@@ -62,6 +66,6 @@ createRoot(rootElement).render(
   </StrictMode>
 );
 
-if ("serviceWorker" in navigator && import.meta.env.PROD) {
+if ("serviceWorker" in navigator && import.meta.env.PROD && !isAutoDigEmbedded()) {
   window.addEventListener("load", () => registerServiceWorker().catch(() => {}));
 }

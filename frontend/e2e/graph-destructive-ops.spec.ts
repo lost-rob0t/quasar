@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 async function createPerson(page: Page, name: string) {
   await page.goto("/documents/new?dtype=person&returnTo=graph");

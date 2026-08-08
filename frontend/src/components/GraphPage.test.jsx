@@ -29,6 +29,36 @@ const document = (id, dtype, data, verified) => ({
 });
 
 describe("graph local corpus status", () => {
+  it("names hidden URL filters and offers to restore every graph node", () => {
+    const documents = [
+      document("starintel:org:alpha", "org", { name: "Alpha" }, true),
+      document("starintel:org:beta", "org", { name: "Beta" }, true)
+    ];
+    context.current = {
+      documents,
+      workspace: { positions: {}, layout: "cose" },
+      selectedIds: [],
+      selectedDocuments: [],
+      select: vi.fn(),
+      persistWorkspace: vi.fn(),
+      actors: [],
+      runActor: vi.fn(),
+      settings: { actorsEnabled: false },
+      setNotice: vi.fn()
+    };
+
+    const html = renderToStaticMarkup(
+      <MemoryRouter initialEntries={["/graph?dataset=missing"]}>
+        <Routes>
+          <Route path="/graph" element={<GraphPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(html).toContain("Hidden by dataset “missing”.");
+    expect(html).toContain("Show all 2 documents");
+  });
+
   it("offers manual creation from an empty graph", () => {
     context.current = {
       documents: [],

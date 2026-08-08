@@ -1,10 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const host = "127.0.0.1";
-const port = 4173;
-const webServerCommand = process.env.CI
-  ? `npm run preview -- --host ${host} --port ${port}`
-  : `npm run dev -- --host ${host} --port ${port}`;
+const port = 5173;
+const webServerCommand = "node ../scripts/dev.mjs";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -25,7 +23,10 @@ export default defineConfig({
   webServer: {
     command: webServerCommand,
     env: { VITE_BASE_PATH: "/" },
-    url: `http://${host}:${port}/`,
+    // CLOG starts after the WebSocket listener, so this readiness probe means
+    // both the React server and the durable control plane are available.
+    url: `http://${host}:8080/`,
+    gracefulShutdown: { signal: "SIGTERM", timeout: 10_000 },
     reuseExistingServer: !process.env.CI
   }
 });

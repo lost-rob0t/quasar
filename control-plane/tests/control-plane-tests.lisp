@@ -3,6 +3,24 @@
 (defvar *failures* 0)
 (defvar *events-box* nil)
 
+(defclass failing-store (quasar.store:workspace-store) ())
+
+(defmethod quasar.store:load-workspace ((store failing-store) workspace-id)
+  (declare (ignore store workspace-id))
+  nil)
+
+(defmethod quasar.store:save-workspace ((store failing-store) workspace)
+  (declare (ignore store workspace))
+  (error "injected persistence failure"))
+
+(defmethod quasar.store:append-operation ((store failing-store) workspace-id operation)
+  (declare (ignore store workspace-id operation))
+  (error "injected persistence failure"))
+
+(defmethod quasar.store:commit-workspace ((store failing-store) workspace operation)
+  (declare (ignore store workspace operation))
+  (error "injected persistence failure"))
+
 (defmacro check (form)
   `(unless ,form
      (incf *failures*)
@@ -67,6 +85,9 @@
    (cons "source" source)
    (cons "target" target)))
 
+(defun array-elements-for-test (value)
+  (if (and (consp value) (eq (car value) :array)) (rest value) value))
+
 ;;; --- Protocol tests ---
 
 (defun test-protocol-decode ()
@@ -120,7 +141,14 @@
           (clone-node (first (rest (quasar.protocol:json-value clone "nodes")))))
       (check (not (eq orig-node clone-node)))
       (check (not (eq (quasar.protocol:json-value orig-node "position")
-                      (quasar.protocol:json-value clone-node "position")))))))
+                      (quasar.protocol:json-value clone-node "position"))))))
+  (let* ((parsed (jsown:parse "{\"items\":[{\"id\":\"first\"},{\"id\":\"second\"}]}"))
+         (clone (quasar.protocol:clone-json parsed))
+         (items (quasar.protocol:json-value clone "items")))
+    (check (= 2 (length items)))
+    (check (string= "first" (quasar.protocol:json-value (first items) "id")))
+    (check (not (eq (first items)
+                    (first (quasar.protocol:json-value parsed "items")))))))
 
 ;;; --- Workspace tests ---
 
@@ -172,15 +200,10 @@
 
 (defun test-document-invalid ()
   (let ((workspace (make-workspace :id "inv-test")))
-    (handler-case
-        (quasar.workspace:apply-document-create
-         workspace (quasar.protocol:json-object (cons "dtype" "person")))
-      (quasar.protocol:quasar-error (c)
-        (check (string= (quasar.protocol:quasar-error-code c) "document.invalid")))
-      (:no-error (&rest args)
-        (declare (ignore args))
-        (incf *failures*)
-        (format *error-output* "~&FAIL: invalid doc did not signal~%")))
+    (let* ((applied (quasar.workspace:apply-document-create
+                     workspace (quasar.protocol:json-object (cons "dtype" "person"))))
+           (created (quasar.protocol:json-value (applied-op-result applied) "created")))
+      (check (quasar.protocol:json-value created "_id")))
     (handler-case
         (quasar.workspace:apply-document-create
          workspace (quasar.protocol:json-object (cons "_id" "x")))
@@ -216,7 +239,7 @@
         (quasar.workspace:apply-node-delete
          workspace (make-node "g1" "ghost"))
       (quasar.protocol:quasar-error (c)
-        (check (string= (quasar.protocol:quasar-error-code c) "graph.node-not-found")))
+        (check (string= (quasar.protocol:quasar-error-code c) "graph.not-found")))
       (:no-error (&rest args)
         (declare (ignore args))
         (incf *failures*)
@@ -302,7 +325,7 @@
     (handler-case
         (quasar.workspace:apply-document-create workspace (make-doc "person:dup"))
       (quasar.protocol:quasar-error (c)
-        (check (string= (quasar.protocol:quasar-error-code c) "document.invalid")))
+        (check (string= (quasar.protocol:quasar-error-code c) "document.duplicate-id")))
       (:no-error (&rest args)
         (declare (ignore args))
         (incf *failures*)
@@ -311,7 +334,7 @@
     (handler-case
         (quasar.workspace:apply-node-create workspace (make-node "g" "n1"))
       (quasar.protocol:quasar-error (c)
-        (check (string= (quasar.protocol:quasar-error-code c) "graph.invalid-reference")))
+        (check (string= (quasar.protocol:quasar-error-code c) "graph.duplicate-id")))
       (:no-error (&rest args)
         (declare (ignore args))
         (incf *failures*)
@@ -335,7 +358,7 @@
              (cons "type" "document.create")
              (cons "payload" (make-doc "tx-new")))))
         (quasar.protocol:quasar-error (c)
-          (check (string= (quasar.protocol:quasar-error-code c) "document.invalid")))
+          (check (string= (quasar.protocol:quasar-error-code c) "document.duplicate-id")))
         (:no-error (&rest args)
           (declare (ignore args))
           (incf *failures*)
@@ -451,6 +474,39 @@
         (quasar.workspace:dispatch-operation workspace inverse))
       (check (null (graph-node (workspace-graph workspace "g") "n1"))))))
 
+(defun test-node-delete-inverse-restores-edges ()
+  (let ((workspace (make-workspace :id "inv-node-edges")))
+    (quasar.workspace:apply-node-create workspace (make-node "g" "a"))
+    (quasar.workspace:apply-node-create workspace (make-node "g" "b"))
+    (quasar.workspace:apply-edge-create workspace (make-edge "g" "e1" "a" "b"))
+    (let ((applied (quasar.workspace:apply-node-delete workspace (make-node "g" "a"))))
+      (quasar.workspace:dispatch-operation workspace (applied-op-inverse applied))
+      (check (graph-node (workspace-graph workspace "g") "a"))
+      (check (graph-edge (workspace-graph workspace "g") "e1")))))
+
+(defun test-document-delete-membership-inverse ()
+  (let ((workspace (make-workspace :id "inv-membership")))
+    (quasar.workspace:apply-document-create workspace (make-doc "person:member"))
+    (quasar.workspace:apply-graph-put
+     workspace
+     (quasar.protocol:json-object
+      (cons "id" "case")
+      (cons "name" "Case")
+      (cons "documentIds" (quasar.protocol:json-array "person:member"))))
+    (let ((applied (quasar.workspace:apply-document-delete
+                    workspace
+                    (quasar.protocol:json-object (cons "id" "person:member")))))
+      (check (null (array-elements-for-test
+                    (quasar.protocol:json-value
+                     (workspace-graph workspace "case") "documentIds"))))
+      (quasar.workspace:dispatch-operation workspace (applied-op-inverse applied))
+      (check (gethash "person:member" (workspace-documents workspace)))
+      (check (member "person:member"
+                     (array-elements-for-test
+                      (quasar.protocol:json-value
+                       (workspace-graph workspace "case") "documentIds"))
+                     :test #'string=)))))
+
 (defun test-inverse-round-trip-edge ()
   (let ((workspace (make-workspace :id "inv-edge-test")))
     (quasar.workspace:apply-node-create workspace (make-node "g" "a"))
@@ -485,7 +541,13 @@
     (quasar.store:save-workspace store workspace)
     (let ((loaded (quasar.store:load-workspace store "store-test")))
       (check loaded)
-      (check (gethash "person:store" (workspace-documents loaded))))))
+      (check (gethash "person:store" (workspace-documents loaded)))
+      (quasar.protocol:object-set
+       (gethash "person:store" (workspace-documents loaded)) "changed" t)
+      (let ((reloaded (quasar.store:load-workspace store "store-test")))
+        (check (null (quasar.protocol:json-value
+                      (gethash "person:store" (workspace-documents reloaded))
+                      "changed")))))))
 
 (defun test-store-journal ()
   (let ((store (quasar.store:make-memory-store)))
@@ -528,6 +590,92 @@
                                (workspace-documents loaded))))))
       (stop-control-plane plane))))
 
+(defun test-control-plane-restart-from-store ()
+  (let* ((store (quasar.store:make-memory-store))
+         (first (make-control-plane :store store)))
+    (start-control-plane first)
+    (unwind-protect
+         (check (string= "ok"
+                         (status (call-command
+                                  first
+                                  (make-envelope "document.create"
+                                                 (make-doc "person:restart-plane"))))))
+      (stop-control-plane first))
+    (let ((second (make-control-plane :store store)))
+      (start-control-plane second)
+      (unwind-protect
+           (let ((response (call-command
+                            second
+                            (make-envelope "workspace.snapshot"
+                                           (quasar.protocol:empty-object)))))
+             (check (string= "ok" (status response)))
+             (check (search "person:restart-plane" response)))
+        (stop-control-plane second)))))
+
+(defun test-persistence-failure-does-not-commit ()
+  (let ((plane (make-control-plane :store (make-instance 'failing-store))))
+    (setf *events-box* (cons nil nil))
+    (start-control-plane plane)
+    (let ((sub-id (quasar.control-plane:subscribe plane (event-collector))))
+      (unwind-protect
+           (progn
+             (check (string= "error"
+                             (status (call-command
+                                      plane
+                                      (make-envelope "document.create"
+                                                     (make-doc "person:must-not-commit"))))))
+             (let ((snapshot (call-command
+                              plane
+                              (make-envelope "workspace.snapshot"
+                                             (quasar.protocol:empty-object)))))
+               (check (string= "ok" (status snapshot)))
+               (check (null (search "person:must-not-commit" snapshot)))
+               (check (= 0 (jsown:val (result snapshot) "revision"))))
+             (check (null (car *events-box*))))
+        (quasar.control-plane:unsubscribe plane sub-id)
+        (stop-control-plane plane)))))
+
+(defun test-failed-transaction-has-no-side-effects ()
+  (let* ((store (quasar.store:make-memory-store))
+         (plane (make-control-plane :store store)))
+    (setf *events-box* (cons nil nil))
+    (start-control-plane plane)
+    (let ((sub-id (quasar.control-plane:subscribe plane (event-collector))))
+      (unwind-protect
+           (progn
+             (call-command plane
+                           (make-envelope "document.create" (make-doc "person:base")))
+             (setf (car *events-box*) nil)
+             (let ((before-journal
+                     (length (quasar.store:store-journal-entries store "default")))
+                   (response
+                     (call-command
+                      plane
+                      (make-envelope
+                       "workspace.transaction"
+                       (quasar.protocol:json-object
+                        (cons "operations"
+                              (quasar.protocol:json-array
+                               (quasar.protocol:json-object
+                                (cons "type" "document.create")
+                                (cons "payload" (make-doc "person:partial")))
+                               (quasar.protocol:json-object
+                                (cons "type" "document.create")
+                                (cons "payload" (make-doc "person:base"))))))))))
+               (check (string= "error" (status response)))
+               (check (string= "transaction.failed" (error-code response)))
+               (check (search "document.duplicate-id" response))
+               (check (= before-journal
+                         (length (quasar.store:store-journal-entries store "default"))))
+               (check (null (car *events-box*))))
+             (let ((snapshot (call-command plane
+                                           (make-envelope "workspace.snapshot"
+                                                          (quasar.protocol:empty-object)))))
+               (check (= 1 (jsown:val (result snapshot) "revision")))
+               (check (null (search "person:partial" snapshot)))))
+        (quasar.control-plane:unsubscribe plane sub-id)
+        (stop-control-plane plane)))))
+
 ;;; --- Transaction event sequencing ---
 
 (defun test-transaction-event-sequencing ()
@@ -553,9 +701,9 @@
                   (tx-status (status tx-response)))
              (check (string= tx-status "ok"))
              (sleep 0.5)
-             (let ((events (car *events-box*)))
-               (check (>= (length events) 2))
-               (when (>= (length events) 2)
+             (let ((events (reverse (car *events-box*))))
+               (check (= (length events) 2))
+               (when (= (length events) 2)
                  (let* ((parsed-events (mapcar #'jsown:parse events))
                         (txn-ids (remove-duplicates
                                    (mapcar (lambda (e)
@@ -564,10 +712,23 @@
                                    :test #'string=))
                         (op-ids (mapcar (lambda (e)
                                           (quasar.protocol:json-value e "operationId"))
-                                        parsed-events)))
+                                        parsed-events))
+                        (revisions (mapcar (lambda (e)
+                                            (quasar.protocol:json-value e "revision"))
+                                          parsed-events)))
                    (check (= 1 (length txn-ids)))
                    (check (= (length op-ids)
-                             (length (remove-duplicates op-ids :test #'string=))))))))
+                             (length (remove-duplicates op-ids :test #'string=))))
+                   (check (equal '(1 2)
+                                 (mapcar (lambda (event)
+                                           (quasar.protocol:json-value event "eventIndex"))
+                                         parsed-events)))
+                   (check (every (lambda (event)
+                                   (= 2 (quasar.protocol:json-value event "eventCount")))
+                                 parsed-events))
+                   (check (= 1 (length (remove-duplicates revisions))))
+                   (check (search "person:tx1" (first events)))
+                   (check (search "person:tx2" (second events)))))))
         (quasar.control-plane:unsubscribe plane sub-id)
         (stop-control-plane plane)))))
 
@@ -674,12 +835,17 @@
   (test-transaction-graph-rollback)
   (test-inverse-round-trip-document)
   (test-inverse-round-trip-node)
+  (test-node-delete-inverse-restores-edges)
+  (test-document-delete-membership-inverse)
   (test-inverse-round-trip-edge)
   (test-inverse-round-trip-update)
   (test-store-roundtrip)
   (test-store-journal)
   (test-store-restart-restore)
   (test-control-plane-persistence)
+  (test-control-plane-restart-from-store)
+  (test-persistence-failure-does-not-commit)
+  (test-failed-transaction-has-no-side-effects)
   (test-transaction-event-sequencing)
   (test-unknown-command)
   (test-dispatch-document-create)

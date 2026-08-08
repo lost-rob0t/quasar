@@ -12,10 +12,10 @@ export const MELISSA_ACTOR_PREFIX = "quasar.actor.melissa-";
 export const MELISSA_CONFIGURATION_FIELDS = Object.freeze([
   {
     key: "licenseKey",
-    label: "License Key Using Credits or subscription license key",
+    label: "Melissa license key",
     type: "secret",
     required: true,
-    placeholder: "Paste only the key value from Melissa License Information"
+    placeholder: "Paste subscription or credit license key"
   },
   {
     key: "transmissionReference",
@@ -130,11 +130,7 @@ export function actorConfigurationDefinition(actor) {
 export function actorConfigurationStatus(actor) {
   const configuration = loadActorConfiguration(actor);
   if (isMelissaActor(actor) && !String(configuration.licenseKey || "").trim()) {
-    return {
-      configured: false,
-      missing: ["License Key Using Credits or subscription license key"],
-      configuration
-    };
+    return { configured: false, missing: ["Melissa license key"], configuration };
   }
   return { configured: true, missing: [], configuration };
 }

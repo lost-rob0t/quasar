@@ -2,42 +2,49 @@ import {
   PROTOCOL_VERSION,
   ControlPlaneError,
   type CommandEnvelope,
-  type ResponseEnvelope,
   type EventEnvelope,
   type EventHandler,
+  type ResponseEnvelope
 } from "./protocol";
-import { createEventBus, type EventBus } from "./events";
-import { createReconnectManager, type ReconnectManager } from "./reconnect";
+import { createEventBus } from "./events";
+import { createReconnectManager } from "./reconnect";
 
 const DEFAULT_TIMEOUT = 10_000;
-const DEFAULT_WS_URL =
-  typeof window !== "undefined"
-    ? `ws://${window.location.hostname}:8081`
-    : "ws://127.0.0.1:8081";
+
+export type ConnectionPhase =
+  "connecting" | "connected" | "reconnecting" | "disconnected" | "disposed";
 
 export interface ConnectionState {
+  phase: ConnectionPhase;
   connected: boolean;
+  synchronized: boolean;
   attempts: number;
 }
 
 type ConnectionListener = (state: ConnectionState) => void;
+type SnapshotListener = (snapshot: Record<string, unknown>) => void;
 
 interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (error: ControlPlaneError) => void;
   timer: ReturnType<typeof setTimeout>;
+  workspaceId: string;
 }
 
 export interface ControlPlaneClient {
   send<T = unknown>(command: string, payload?: Record<string, unknown>): Promise<T>;
   subscribe(handler: EventHandler, eventNames?: string[]): () => void;
   onConnectionStateChange(listener: ConnectionListener): () => void;
-  snapshot(): Promise<unknown>;
+  onSnapshot(listener: SnapshotListener): () => void;
+  snapshot(): Promise<Record<string, unknown>>;
   transaction(operations: unknown[], expectedRevision?: number): Promise<unknown>;
   documentCreate(doc: Record<string, unknown>): Promise<unknown>;
   documentUpdate(doc: Record<string, unknown>): Promise<unknown>;
   documentDelete(id: string): Promise<unknown>;
   graphSnapshot(graphId?: string): Promise<unknown>;
+  graphPut(graph: Record<string, unknown>): Promise<unknown>;
+  graphDelete(id: string): Promise<unknown>;
+  graphActivate(id: string): Promise<unknown>;
   nodeCreate(node: Record<string, unknown>): Promise<unknown>;
   nodeUpdate(node: Record<string, unknown>): Promise<unknown>;
   nodeDelete(graphId: string, id: string): Promise<unknown>;
@@ -57,134 +64,179 @@ function nextId(): string {
   return `ui-${Date.now().toString(36)}-${sequence.toString(36)}`;
 }
 
-export function createControlPlaneClient(url: string = DEFAULT_WS_URL): ControlPlaneClient {
-  const eventBus: EventBus = createEventBus();
+function defaultWebSocketUrl(): string {
+  if (typeof window === "undefined") return "ws://127.0.0.1:8081";
+  const scheme = window.location.protocol === "https:" ? "wss" : "ws";
+  const token = document
+    .querySelector<HTMLMetaElement>('meta[name="quasar-session-token"]')
+    ?.content.trim();
+  const query = token ? `?session=${encodeURIComponent(token)}` : "";
+  return `${scheme}://${window.location.hostname}:8081${query}`;
+}
+
+export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPlaneClient {
+  const eventBus = createEventBus();
   const pending = new Map<string, PendingRequest>();
   const connectionListeners = new Set<ConnectionListener>();
-  let ws: WebSocket | null = null;
-  let workspaceId = "default";
-  let revision = 0;
+  const snapshotListeners = new Set<SnapshotListener>();
+  let socket: WebSocket | null = null;
+  let workspaceId =
+    typeof window === "undefined"
+      ? "default"
+      : window.sessionStorage.getItem("quasar-workspace") || "default";
   let disposed = false;
+  let openedOnce = false;
+  let synchronization = 0;
+  let state: ConnectionState = {
+    phase: "connecting",
+    connected: false,
+    synchronized: false,
+    attempts: 0
+  };
 
-  function notifyConnectionState(state: ConnectionState): void {
+  function publishState(next: Partial<ConnectionState>): void {
+    state = { ...state, ...next };
     for (const listener of connectionListeners) {
       try {
         listener(state);
       } catch {
-        // Listener errors must not break notification.
+        // Connection observers do not own the transport lifecycle.
       }
     }
   }
 
-  const reconnect: ReconnectManager = createReconnectManager(
-    () => connect(),
-    (state) => {
-      notifyConnectionState({ connected: state.connected, attempts: state.attempts });
+  const reconnect = createReconnectManager(connect, (next) => {
+    if (!next.connected) {
+      publishState({
+        phase: openedOnce ? "reconnecting" : "connecting",
+        connected: false,
+        synchronized: false,
+        attempts: next.attempts
+      });
     }
-  );
+  });
+
+  function settlePending(id: string, settle: (request: PendingRequest) => void): void {
+    const request = pending.get(id);
+    if (!request) return;
+    pending.delete(id);
+    clearTimeout(request.timer);
+    settle(request);
+  }
 
   function rejectAllPending(reason: string): void {
-    for (const req of pending.values()) {
-      clearTimeout(req.timer);
-      req.reject(new ControlPlaneError("control-plane.unavailable", reason));
+    for (const id of [...pending.keys()]) {
+      settlePending(id, (request) =>
+        request.reject(new ControlPlaneError("control-plane.unavailable", reason))
+      );
     }
-    pending.clear();
   }
 
-  async function resnapshotAfterReconnect(): Promise<void> {
+  function handleMessage(message: unknown): void {
+    if (!message || typeof message !== "object") return;
+    const envelope = message as Record<string, unknown>;
+    if (envelope.protocol !== PROTOCOL_VERSION) return;
+    if (typeof envelope.event === "string") {
+      eventBus.dispatch(envelope as unknown as EventEnvelope);
+      return;
+    }
+    if (typeof envelope.id !== "string") return;
+
+    const response = envelope as unknown as ResponseEnvelope;
+    settlePending(response.id, (request) => {
+      if (response.status === "error") {
+        request.reject(
+          new ControlPlaneError(response.error.code, response.error.message, response.error.details)
+        );
+        return;
+      }
+      const result = response.result as Record<string, unknown> | null;
+      if (typeof result?.revision === "number") {
+        eventBus.setRevision(result.revision, request.workspaceId);
+      }
+      request.resolve(response.result);
+    });
+  }
+
+  async function synchronize(): Promise<void> {
+    const attempt = ++synchronization;
+    const synchronizedWorkspace = workspaceId;
     try {
-      const snap = await send("workspace.snapshot");
-      if (snap && typeof snap === "object" && "revision" in snap) {
-        const r = snap as Record<string, unknown>;
-        if (typeof r.revision === "number") {
-          revision = r.revision;
-          eventBus.setRevision(revision);
+      const current = await snapshot();
+      if (
+        disposed ||
+        socket?.readyState !== WebSocket.OPEN ||
+        attempt !== synchronization ||
+        synchronizedWorkspace !== workspaceId
+      )
+        return;
+      eventBus.reset(synchronizedWorkspace);
+      if (typeof current.revision === "number") {
+        eventBus.setRevision(current.revision, synchronizedWorkspace);
+      }
+      for (const listener of snapshotListeners) {
+        try {
+          listener(current);
+        } catch {
+          // Projection observers cannot interrupt transport synchronization.
         }
       }
+      reconnect.markConnected();
+      openedOnce = true;
+      publishState({ phase: "connected", connected: true, synchronized: true, attempts: 0 });
     } catch {
-      // Snapshot may fail if the workspace was lost; non-fatal.
+      socket?.close();
     }
   }
 
   function connect(): void {
-    if (disposed) return;
+    if (
+      disposed ||
+      socket?.readyState === WebSocket.CONNECTING ||
+      socket?.readyState === WebSocket.OPEN
+    ) {
+      return;
+    }
+    publishState({
+      phase: openedOnce ? "reconnecting" : "connecting",
+      connected: false,
+      synchronized: false
+    });
+    let nextSocket: WebSocket;
     try {
-      ws = new WebSocket(url);
+      nextSocket = new WebSocket(url);
     } catch {
       reconnect.markDisconnected();
       return;
     }
-
-    ws.onopen = () => {
-      reconnect.markConnected();
-      resnapshotAfterReconnect();
+    socket = nextSocket;
+    nextSocket.onopen = () => {
+      if (socket === nextSocket) void synchronize();
     };
-
-    ws.onmessage = (event) => {
+    nextSocket.onmessage = (event) => {
       try {
-        const message = JSON.parse(event.data as string);
-        handleMessage(message);
+        handleMessage(JSON.parse(event.data as string));
       } catch {
-        // Ignore malformed messages.
+        // Invalid server frames are ignored; requests still time out deterministically.
       }
     };
-
-    ws.onclose = () => {
-      ws = null;
+    nextSocket.onclose = () => {
+      if (socket !== nextSocket) return;
+      socket = null;
+      synchronization += 1;
       rejectAllPending("WebSocket connection closed.");
-      if (!disposed) {
-        reconnect.markDisconnected();
-      }
+      if (disposed) return;
+      publishState({ phase: "disconnected", connected: false, synchronized: false });
+      reconnect.markDisconnected();
     };
-
-    ws.onerror = () => {
-      // The close handler will fire and trigger reconnect.
+    nextSocket.onerror = () => {
+      // Browsers follow an error with close; close owns cleanup and retry.
     };
   }
 
-  function handleMessage(message: unknown): void {
-    if (typeof message !== "object" || message === null) return;
-    const env = message as Record<string, unknown>;
-    if (env.protocol !== PROTOCOL_VERSION) return;
-
-    if (typeof env.event === "string") {
-      eventBus.dispatch(env as unknown as EventEnvelope);
-      return;
-    }
-
-    if (typeof env.id === "string") {
-      const response = env as unknown as ResponseEnvelope;
-      const req = pending.get(response.id);
-      if (!req) return;
-      pending.delete(response.id);
-      clearTimeout(req.timer);
-      if (response.status === "ok") {
-        if (typeof response.result === "object" && response.result !== null) {
-          const r = response.result as Record<string, unknown>;
-          if (typeof r.revision === "number") {
-            revision = r.revision;
-            eventBus.setRevision(revision);
-          }
-        }
-        req.resolve(response.result);
-      } else {
-        req.reject(
-          new ControlPlaneError(
-            response.error.code,
-            response.error.message,
-            response.error.details
-          )
-        );
-      }
-    }
-  }
-
-  function send<T = unknown>(
-    command: string,
-    payload: Record<string, unknown> = {}
-  ): Promise<T> {
+  function send<T = unknown>(command: string, payload: Record<string, unknown> = {}): Promise<T> {
     return new Promise((resolve, reject) => {
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
         reject(new ControlPlaneError("control-plane.unavailable", "WebSocket is not connected."));
         return;
       }
@@ -194,96 +246,50 @@ export function createControlPlaneClient(url: string = DEFAULT_WS_URL): ControlP
         id,
         command,
         payload,
-        metadata: {
-          client: "quasar-ui",
-          workspace: workspaceId,
-        },
+        metadata: { client: "quasar-ui", workspace: workspaceId }
       };
       const timer = setTimeout(() => {
-        pending.delete(id);
-        reject(new ControlPlaneError("control-plane.unavailable", `Command ${command} timed out.`));
+        settlePending(id, (request) =>
+          request.reject(
+            new ControlPlaneError("control-plane.unavailable", `Command ${command} timed out.`)
+          )
+        );
       }, DEFAULT_TIMEOUT);
-      pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer });
-      ws.send(JSON.stringify(envelope));
+      pending.set(id, {
+        resolve: resolve as (value: unknown) => void,
+        reject,
+        timer,
+        workspaceId
+      });
+      socket.send(JSON.stringify(envelope));
     });
   }
 
-  function snapshot(): Promise<unknown> {
-    return send("workspace.snapshot");
-  }
-
-  function transaction(operations: unknown[], expectedRevision?: number): Promise<unknown> {
-    const payload: Record<string, unknown> = { operations };
-    if (expectedRevision !== undefined) {
-      payload.expectedRevision = expectedRevision;
-    }
-    return send("workspace.transaction", payload);
-  }
-
-  function documentCreate(doc: Record<string, unknown>): Promise<unknown> {
-    return send("document.create", doc);
-  }
-  function documentUpdate(doc: Record<string, unknown>): Promise<unknown> {
-    return send("document.update", doc);
-  }
-  function documentDelete(id: string): Promise<unknown> {
-    return send("document.delete", { id });
-  }
-
-  function graphSnapshot(graphId: string = "default"): Promise<unknown> {
-    return send("graph.snapshot", { graphId });
-  }
-  function nodeCreate(node: Record<string, unknown>): Promise<unknown> {
-    return send("graph.node.create", node);
-  }
-  function nodeUpdate(node: Record<string, unknown>): Promise<unknown> {
-    return send("graph.node.update", node);
-  }
-  function nodeDelete(graphId: string, id: string): Promise<unknown> {
-    return send("graph.node.delete", { graphId, id });
-  }
-  function edgeCreate(edge: Record<string, unknown>): Promise<unknown> {
-    return send("graph.edge.create", edge);
-  }
-  function edgeUpdate(edge: Record<string, unknown>): Promise<unknown> {
-    return send("graph.edge.update", edge);
-  }
-  function edgeDelete(graphId: string, id: string): Promise<unknown> {
-    return send("graph.edge.delete", { graphId, id });
-  }
-
-  function subscribe(handler: EventHandler, eventNames?: string[]): () => void {
-    return eventBus.subscribe(handler, eventNames);
-  }
-
-  function onConnectionStateChange(listener: ConnectionListener): () => void {
-    connectionListeners.add(listener);
-    return () => {
-      connectionListeners.delete(listener);
-    };
-  }
-
-  function getConnected(): boolean {
-    return ws !== null && ws.readyState === WebSocket.OPEN;
-  }
-
-  function getRevision(): number {
-    return revision;
-  }
+  const snapshot = () => send<Record<string, unknown>>("workspace.snapshot");
+  const transaction = (operations: unknown[], expectedRevision?: number) =>
+    send("workspace.transaction", {
+      operations,
+      ...(expectedRevision === undefined ? {} : { expectedRevision })
+    });
 
   function setWorkspace(id: string): void {
     workspaceId = id;
+    eventBus.setWorkspace(id);
+    if (socket?.readyState === WebSocket.OPEN) void synchronize();
   }
 
   function dispose(): void {
+    if (disposed) return;
     disposed = true;
+    synchronization += 1;
     reconnect.stop();
-    if (ws) {
-      ws.close();
-      ws = null;
-    }
+    const current = socket;
+    socket = null;
+    current?.close();
     rejectAllPending("Client disposed.");
-    eventBus.reset();
+    eventBus.reset(workspaceId);
+    snapshotListeners.clear();
+    publishState({ phase: "disposed", connected: false, synchronized: false });
     connectionListeners.clear();
   }
 
@@ -292,36 +298,43 @@ export function createControlPlaneClient(url: string = DEFAULT_WS_URL): ControlP
 
   return {
     send,
-    subscribe,
-    onConnectionStateChange,
+    subscribe: (handler, names) => eventBus.subscribe(handler, names),
+    onConnectionStateChange(listener) {
+      connectionListeners.add(listener);
+      listener(state);
+      return () => connectionListeners.delete(listener);
+    },
+    onSnapshot(listener) {
+      snapshotListeners.add(listener);
+      return () => snapshotListeners.delete(listener);
+    },
     snapshot,
     transaction,
-    documentCreate,
-    documentUpdate,
-    documentDelete,
-    graphSnapshot,
-    nodeCreate,
-    nodeUpdate,
-    nodeDelete,
-    edgeCreate,
-    edgeUpdate,
-    edgeDelete,
-    getConnected,
-    getRevision,
+    documentCreate: (document) => send("document.create", document),
+    documentUpdate: (document) => send("document.update", document),
+    documentDelete: (id) => send("document.delete", { id }),
+    graphSnapshot: (graphId = "all-documents") => send("graph.snapshot", { graphId }),
+    graphPut: (graph) => send("graph.workspace.put", graph),
+    graphDelete: (id) => send("graph.workspace.delete", { id }),
+    graphActivate: (id) => send("graph.workspace.activate", { id }),
+    nodeCreate: (node) => send("graph.node.create", node),
+    nodeUpdate: (node) => send("graph.node.update", node),
+    nodeDelete: (graphId, id) => send("graph.node.delete", { graphId, id }),
+    edgeCreate: (edge) => send("graph.edge.create", edge),
+    edgeUpdate: (edge) => send("graph.edge.update", edge),
+    edgeDelete: (graphId, id) => send("graph.edge.delete", { graphId, id }),
+    getConnected: () => state.connected && state.synchronized,
+    getRevision: () => eventBus.getRevision(workspaceId),
     setWorkspace,
-    dispose,
+    dispose
   };
 }
 
 let globalClient: ControlPlaneClient | null = null;
 
 export function initializeControlPlane(url?: string): ControlPlaneClient {
-  if (globalClient && !url) {
-    return globalClient;
-  }
-  if (globalClient) {
-    globalClient.dispose();
-  }
+  if (globalClient && !url) return globalClient;
+  globalClient?.dispose();
   globalClient = createControlPlaneClient(url);
   return globalClient;
 }

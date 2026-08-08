@@ -54,6 +54,11 @@ import {
   partitionDocumentsByReview
 } from "../lib/graph";
 import { activeGraphMembershipKey } from "../lib/graph-workspaces";
+import {
+  FORCE_LAYOUT_NODE_LIMIT,
+  graphRenderDecision,
+  safeInitialLayout
+} from "../lib/graph-scale";
 import { themedGraphStyle } from "../lib/graph-style";
 import { clampRenderedPosition } from "../lib/graph-viewport";
 import { operation } from "../lib/operations";
@@ -261,7 +266,13 @@ function GraphCanvas({
       });
     });
     if (graph.nodes.length && !graph.nodes.some((node) => node.position)) {
-      cy.layout({ name: layout || "cose", animate: false, padding: 50, randomize: true }).run();
+      const initialLayout = safeInitialLayout(layout, graph.nodes.length);
+      cy.layout({
+        name: initialLayout,
+        animate: false,
+        padding: 50,
+        randomize: initialLayout === "cose"
+      }).run();
     }
   }, [apiRef, graph, layout]);
 
@@ -649,7 +660,7 @@ function relationEndpoints(relation) {
 }
 
 export default function GraphPage() {
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const location = useLocation();
   const {
     documents,
@@ -688,17 +699,21 @@ export default function GraphPage() {
   const importFocusHandled = useRef(false);
   const importedIds = useMemo(
     () =>
-      location.state?.source === "local-import"
+      ["local-import", "search-results"].includes(location.state?.source)
         ? [...new Set(location.state.importedIds || [])]
         : [],
     [location.state]
   );
   const [query, setQuery] = useState("");
   const [dtype, setDtype] = useState("");
-  const [dataset, setDataset] = useState("");
+  const datasetParam = params.get("dataset") || "";
+  const graphParam = params.get("graph") || "";
+  const [dataset, setDataset] = useState(datasetParam);
   const [predicate, setPredicate] = useState("");
   const [reviewStatus, setReviewStatus] = useState(
-    location.state?.revealUnreviewed || !documents.length ? "all" : "reviewed"
+    location.state?.revealUnreviewed || params.get("review") === "all" || !documents.length
+      ? "all"
+      : "reviewed"
   );
   const [labels, setLabels] = useState(true);
   const [relationDraft, setRelationDraft] = useState(null);
@@ -725,27 +740,44 @@ export default function GraphPage() {
     const allowed = new Set(JSON.parse(membershipKey));
     return documents.filter((document) => allowed.has(document._id));
   }, [documents, membershipKey]);
-  const reviewGroups = useMemo(
-    () => partitionDocumentsByReview(scopedDocuments),
-    [scopedDocuments]
+  const datasetDocuments = useMemo(
+    () =>
+      dataset
+        ? scopedDocuments.filter((document) => document.dataset === dataset)
+        : scopedDocuments,
+    [dataset, scopedDocuments]
   );
-  const graphDocuments = reviewStatus === "all" ? scopedDocuments : reviewGroups.reviewed;
+  const reviewGroups = useMemo(
+    () => partitionDocumentsByReview(datasetDocuments),
+    [datasetDocuments]
+  );
+  const renderDocuments = reviewStatus === "all" ? datasetDocuments : reviewGroups.reviewed;
+  const renderDecision = useMemo(() => graphRenderDecision(renderDocuments), [renderDocuments]);
   const graph = useMemo(
-    () => buildGraph(graphDocuments, workspace?.positions || {}),
-    [graphDocuments, workspace?.positions]
+    () =>
+      renderDecision.allowed
+        ? buildGraph(renderDocuments, workspace?.positions || {})
+        : { nodes: [], edges: [], elements: [] },
+    [renderDecision.allowed, renderDocuments, workspace?.positions]
   );
   const visibleGraph = useMemo(
-    () => filterGraph(graph, { query, dtype, dataset, predicate }),
-    [graph, query, dtype, dataset, predicate]
+    () => filterGraph(graph, { query, dtype, predicate }),
+    [graph, query, dtype, predicate]
   );
   const datasets = useMemo(
-    () => [...new Set(graphDocuments.map((document) => document.dataset || "unknown"))].sort(),
-    [graphDocuments]
+    () => [...new Set(scopedDocuments.map((document) => document.dataset || "unknown"))].sort(),
+    [scopedDocuments]
   );
   const predicates = useMemo(
     () => [...new Set(graph.edges.map((edge) => edge.data.predicate).filter(Boolean))].sort(),
     [graph.edges]
   );
+  const activeFilterLabels = [
+    query && `search “${query}”`,
+    dataset && `dataset “${dataset}”`,
+    dtype && `type “${dtype}”`,
+    predicate && `predicate “${predicate}”`
+  ].filter(Boolean);
   const graphDocumentIds = useMemo(
     () => new Set(graph.nodes.map((node) => node.data.id)),
     [graph.nodes]
@@ -780,6 +812,20 @@ export default function GraphPage() {
     [persistWorkspace]
   );
   const onSelection = useMemo(() => (ids) => select(ids), [select]);
+
+  useEffect(() => {
+    setDataset(datasetParam);
+  }, [datasetParam]);
+
+  useEffect(() => {
+    if (
+      !graphParam ||
+      activeGraph?.id === graphParam ||
+      !graphs?.some((candidate) => candidate.id === graphParam)
+    )
+      return;
+    switchGraph?.(graphParam);
+  }, [activeGraph?.id, graphParam, graphs, switchGraph]);
 
   useEffect(() => {
     setCanvasMenu(null);
@@ -853,6 +899,13 @@ export default function GraphPage() {
   function runLayout(name) {
     const cy = apiRef.current;
     if (!cy) return;
+    if (name === "cose" && graph.nodes.length > FORCE_LAYOUT_NODE_LIMIT) {
+      setNotice({
+        kind: "error",
+        message: `Force layout is limited to ${FORCE_LAYOUT_NODE_LIMIT.toLocaleString()} nodes. Use Grid, Circle, or Concentric for this graph.`
+      });
+      return;
+    }
     persistWorkspace({ layout: name });
     const options =
       name === "breadthfirst"
@@ -867,6 +920,14 @@ export default function GraphPage() {
       persistWorkspace({ positions, layout: name });
     });
     layout.run();
+  }
+
+  function changeDataset(nextDataset) {
+    setDataset(nextDataset);
+    const next = new URLSearchParams(params);
+    if (nextDataset) next.set("dataset", nextDataset);
+    else next.delete("dataset");
+    setParams(next, { replace: true });
   }
 
   function calculatePaths() {
@@ -915,6 +976,9 @@ export default function GraphPage() {
     setDtype("");
     setDataset("");
     setPredicate("");
+    const next = new URLSearchParams(params);
+    next.delete("dataset");
+    setParams(next, { replace: true });
   }
 
   function openQuickAdd(context = null, objectType = "entity") {
@@ -1369,7 +1433,7 @@ export default function GraphPage() {
         <select
           aria-label="Dataset filter"
           value={dataset}
-          onChange={(event) => setDataset(event.target.value)}
+          onChange={(event) => changeDataset(event.target.value)}
         >
           <option value="">All datasets</option>
           {datasets.map((name) => (
@@ -1467,37 +1531,65 @@ export default function GraphPage() {
           onDelete={deleteCurrentGraph}
         />
         <div className="graph-stage" onPointerDown={closeCanvasMenu}>
-          <GraphCanvas
-            graph={visibleGraph}
-            layout={workspace?.layout || "cose"}
-            selectedIds={selectedIds}
-            onSelection={onSelection}
-            onMove={onMove}
-            onViewport={onViewport}
-            onCanvasContext={openCanvasMenu}
-            onNodeContext={openNodeMenu}
-            onEdgeContext={openEdgeMenu}
-            onRelationDraft={setRelationDraft}
-            apiRef={apiRef}
-            edgeHandlesRef={edgeHandlesRef}
-            labels={labels}
-          />
+          {renderDecision.allowed && (
+            <GraphCanvas
+              graph={visibleGraph}
+              layout={workspace?.layout || "cose"}
+              selectedIds={selectedIds}
+              onSelection={onSelection}
+              onMove={onMove}
+              onViewport={onViewport}
+              onCanvasContext={openCanvasMenu}
+              onNodeContext={openNodeMenu}
+              onEdgeContext={openEdgeMenu}
+              onRelationDraft={setRelationDraft}
+              apiRef={apiRef}
+              edgeHandlesRef={edgeHandlesRef}
+              labels={labels}
+            />
+          )}
 
-          {!visibleGraph.nodes.length && !emptyStateDismissed && (
+          {!renderDecision.allowed && (
+            <div className="graph-empty-state graph-load-guard" role="alert">
+              <TriangleAlert size={38} />
+              <h2>Graph load blocked</h2>
+              <p>
+                This view expands to {renderDecision.estimate.documents.toLocaleString()} documents,{" "}
+                {renderDecision.estimate.nodes.toLocaleString()} nodes, and{" "}
+                {renderDecision.estimate.elements.toLocaleString()} total graph elements. The safe
+                cutoff is {renderDecision.limits.maxDocuments.toLocaleString()} documents,{" "}
+                {renderDecision.limits.maxNodes.toLocaleString()} nodes, or{" "}
+                {renderDecision.limits.maxElements.toLocaleString()} elements.
+              </p>
+              <p>Select a dataset above or open a smaller custom graph.</p>
+              <div className="button-row">
+                <Link className="button" to="/documents?group=dataset">
+                  Browse datasets
+                </Link>
+                <button className="button primary" onClick={() => setShowGraphCreate(true)}>
+                  New graph
+                </button>
+              </div>
+            </div>
+          )}
+
+          {renderDecision.allowed && !visibleGraph.nodes.length && !emptyStateDismissed && (
             <div className="graph-empty-state">
               <Network size={38} />
               <h2>{scopedDocuments.length ? "No graph nodes match" : "Start a blank graph"}</h2>
               <p>
-                {graph.nodes.length
-                  ? "Change or clear the active filters."
-                  : reviewGroups.unreviewed.length
-                    ? `${reviewGroups.unreviewed.length.toLocaleString()} unreviewed document(s) are hidden by the current review filter.`
-                    : "Right-click anywhere to create the first node, or use an action below."}
+                {activeFilterLabels.length && scopedDocuments.length
+                  ? `Hidden by ${activeFilterLabels.join(", ")}.`
+                  : graph.nodes.length
+                    ? "No nodes remain after applying the current graph view."
+                    : reviewGroups.unreviewed.length
+                      ? `${reviewGroups.unreviewed.length.toLocaleString()} unreviewed document(s) are hidden by the current review filter.`
+                      : "Right-click anywhere to create the first node, or use an action below."}
               </p>
               <div className="button-row">
-                {graph.nodes.length && (
+                {activeFilterLabels.length > 0 && scopedDocuments.length > 0 && (
                   <button className="button small" onClick={clearFilters}>
-                    Clear filters
+                    Show all {scopedDocuments.length.toLocaleString()} documents
                   </button>
                 )}
                 {!graph.nodes.length && reviewGroups.unreviewed.length > 0 && (
