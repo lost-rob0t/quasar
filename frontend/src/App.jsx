@@ -1,12 +1,12 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Bot,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
   CircleHelp,
+  Code2,
   Database,
-  Download,
   FilePlus2,
   Filter,
   FolderInput,
@@ -30,10 +30,12 @@ import GraphLayoutControl from "./components/GraphLayoutControl";
 import GraphWorkspaceChrome from "./components/GraphWorkspaceChrome";
 import { DocumentPage, DocumentsPage } from "./components/Documents";
 import DocumentEditor from "./components/DocumentEditor";
-import { ImportPage, SettingsPage } from "./components/ImportSettings";
+import { ImportPage } from "./components/ImportSettings";
+import SettingsWorkspace from "./components/SettingsWorkspace";
 import StatsPage from "./components/StatsPage";
 import { AgentBubble, AgentSystemProvider } from "./components/AgentSystem";
 import AgentHub from "./components/AgentHub";
+import ActorManager from "./components/ActorManager";
 import MobileGestureMenu from "./components/MobileGestureMenu";
 
 const navigation = [
@@ -41,8 +43,9 @@ const navigation = [
   { to: "/graph", label: "Graphs", mobileLabel: "Graph", Icon: Network },
   { to: "/documents?group=dataset", label: "Datasets", Icon: Layers3 },
   { to: "/documents", label: "Documents", mobileLabel: "Docs", Icon: TableProperties, end: true },
-  { to: "/documents/new", label: "Add document", mobileLabel: "Add", Icon: FilePlus2 },
+  { to: "/documents/new", label: "Add document", Icon: FilePlus2 },
   { to: "/agents", label: "Agents", Icon: Bot },
+  { to: "/actors", label: "Actors", mobileLabel: "Actors", Icon: Code2 },
   { to: "/import", label: "Import", Icon: FolderInput },
   { to: "/settings", label: "Settings", mobileLabel: "Settings", Icon: Settings }
 ];
@@ -78,46 +81,6 @@ function SyncBadge() {
         </span>
       )}
     </div>
-  );
-}
-
-function InstallButton() {
-  const [installPrompt, setInstallPrompt] = useState(null);
-
-  useEffect(() => {
-    function captureInstallPrompt(event) {
-      event.preventDefault();
-      setInstallPrompt(event);
-    }
-    function clearInstallPrompt() {
-      setInstallPrompt(null);
-    }
-    window.addEventListener("beforeinstallprompt", captureInstallPrompt);
-    window.addEventListener("appinstalled", clearInstallPrompt);
-    return () => {
-      window.removeEventListener("beforeinstallprompt", captureInstallPrompt);
-      window.removeEventListener("appinstalled", clearInstallPrompt);
-    };
-  }, []);
-
-  if (!installPrompt) return null;
-
-  async function install() {
-    await installPrompt.prompt();
-    await installPrompt.userChoice;
-    setInstallPrompt(null);
-  }
-
-  return (
-    <button
-      className="button install-button"
-      type="button"
-      onClick={install}
-      title="Install Quasar"
-    >
-      <Download size={17} />
-      <span>Install</span>
-    </button>
   );
 }
 
@@ -250,7 +213,7 @@ function WorkbenchShell({ children }) {
           <div>
             <SyncBadge />
           </div>
-          <small>Offline-first · v0.9.0</small>
+          <small>Common Lisp control plane · v0.9.0</small>
           <div className="sidebar-user">
             <UserRound size={18} />
             <span>
@@ -283,7 +246,6 @@ function WorkbenchShell({ children }) {
           </form>
           <div className="top-actions">
             <SyncBadge />
-            <InstallButton />
             <NavLink className="button graph-agent-top-action" to="/agents?tab=run">
               <Sparkles size={16} /> AI Agent
             </NavLink>
@@ -328,6 +290,7 @@ function WorkbenchShell({ children }) {
 
         {notice && (
           <div className={`notice notice-${notice.kind || "info"}`} role="status">
+            <CircleAlert size={18} aria-hidden="true" />
             <span>{notice.message}</span>
             <button onClick={() => setNotice(null)} aria-label="Dismiss notification">
               ×
@@ -336,7 +299,7 @@ function WorkbenchShell({ children }) {
         )}
 
         <main className="content">
-          {loading ? <div className="loading-panel">Opening local workspace…</div> : children}
+          {loading ? <div className="loading-panel">Opening Lisp workspace…</div> : children}
           <GraphWorkspaceChrome />
         </main>
       </section>
@@ -374,8 +337,9 @@ export default function App() {
           <Route path="/documents/:id/edit" element={<DocumentEditor mode="edit" />} />
           <Route path="/import" element={<ImportPage />} />
           <Route path="/agents" element={<AgentHub />} />
+          <Route path="/actors" element={<ActorManager />} />
           <Route path="/stats" element={<Navigate to="/" replace />} />
-          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/settings" element={<SettingsWorkspace />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
         <GraphLayoutControl />
