@@ -12,7 +12,7 @@ Cytoscape presentation layer or removing visible routes.
 | Graph membership/view | Cytoscape projection and animation | `graph.workspace.put` transaction | migrated |
 | Drag/layout | live frames local | debounced final graph commit | migrated |
 | Selection/menus | transient interaction | browser only | intentionally local |
-| PouchDB views | query/statistics projection | replaced from Lisp snapshot | projection only |
+| PouchDB views | CouchDB sync staging only | populated only for explicit synchronization | transitional adapter |
 | CouchDB sync | browser connection UI and staging | pulled records commit through Lisp | transitional adapter |
 | Settings/themes | controls and presentation | browser settings store | transitional; export filtered |
 | Actors/research/targets | UI and current browser runtimes | mixed | transitional |

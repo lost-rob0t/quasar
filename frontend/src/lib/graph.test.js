@@ -66,6 +66,8 @@ describe("StarIntel graph projection", () => {
     expect(graph.edges).toHaveLength(2);
     expect(graph.edges[0].data.predicate).toBe("founded");
     expect(graph.nodes[0].data.reviewState).toBe("reviewed");
+    expect(graph.nodes.every((node) => !("document" in node.data))).toBe(true);
+    expect(graph.edges.every((edge) => !("document" in edge.data))).toBe(true);
   });
 
   it("projects research node state into graph presentation data", () => {

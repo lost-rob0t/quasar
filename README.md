@@ -10,8 +10,9 @@ is no frontend submodule or generated overlay.
   menus, and animation remain in the browser.
 - Common Lisp owns canonical documents, named graph definitions, committed
   graph presentation state, revisions, transactions, and the operation journal.
-- Cytoscape and the local PouchDB corpus are projections. Migrated document and
-  graph writes never fall back to PouchDB.
+- Cytoscape is a presentation projection. PouchDB is populated only when an
+  explicit CouchDB synchronization needs browser-local staging. Migrated
+  document and graph writes never fall back to PouchDB.
 - WebSocket callbacks authenticate and validate requests, then enqueue commands
   on the Sento control-plane actor. They never mutate workspace state directly.
 - CLOG serves the production bundle and issues the browser session token.
@@ -114,15 +115,14 @@ Implemented durable commands include:
 Transaction child events have unique operation IDs, a shared transaction ID,
 one committed revision, stable order, event index, and event count.
 File imports are fully prevalidated in the browser, then large corpora are sent
-as ordered, size-bounded transactions below the WebSocket security limit. Each
-chunk is atomic; a later chunk failure is reported with the already committed
-document count instead of claiming whole-corpus rollback.
+as ordered, size-bounded chunks below the WebSocket security limit. Lisp stages
+the chunks in an isolated candidate and commits the entire import once.
 
 ## Transitional boundaries
 
 Actor/research execution and optional browser network integrations have not all
-moved behind Common Lisp commands yet. PouchDB remains a replaceable local query
-projection and CouchDB ingress/egress staging layer; pulled documents are
+moved behind Common Lisp commands yet. PouchDB remains a CouchDB
+ingress/egress staging layer used only during explicit synchronization; pulled documents are
 validated and committed through the control plane before becoming
 authoritative. Browser settings still support existing local integrations, and
 settings transfer filters credential fields. These adapters must not be used as

@@ -304,7 +304,7 @@ export function SettingsPage() {
   async function beginLiveSync() {
     try {
       await persistSettings(form);
-      startSync(form);
+      await startSync(form);
     } catch (error) {
       setNotice({ kind: "error", message: error.message });
     }

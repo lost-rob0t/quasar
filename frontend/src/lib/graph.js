@@ -131,6 +131,7 @@ function nodeData(document, position) {
   const dtype = document.dtype || "document";
   const label = documentLabel(document);
   const research = researchNodeGraphData(document, label);
+  const weight = document.weight ?? document.data?.weight ?? document.assessment?.weight ?? 0;
   return {
     group: "nodes",
     data: {
@@ -140,7 +141,9 @@ function nodeData(document, position) {
       ...(research || {}),
       dataset: document.dataset || "unknown",
       reviewState: reviewState(document),
-      document,
+      summary: document.summary || "",
+      title: document.title || "",
+      weight,
       unresolved: false,
       color: DTYPE_COLORS[dtype] || "#94a3b8",
       shape: DTYPE_SHAPES[dtype] || "ellipse"
@@ -190,8 +193,7 @@ export function buildGraph(documents, positions = {}) {
             dataset: relation.dataset || "unknown",
             reviewState: reviewState(relation),
             directed,
-            confidence,
-            document: relation
+            confidence
           }
         });
       }
@@ -240,8 +242,8 @@ export function filterGraph(graph, queryOrFilters = "", legacyDtype = "") {
       node.data.label,
       node.data.dtype,
       node.data.dataset,
-      node.data.document?.summary,
-      node.data.document?.title
+      node.data.summary,
+      node.data.title
     ]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(needle));

@@ -1,7 +1,7 @@
 export const GRAPH_RENDER_LIMITS = Object.freeze({
-  maxDocuments: 5_000,
-  maxNodes: 4_000,
-  maxElements: 8_000
+  maxDocuments: 2_000,
+  maxNodes: 1_500,
+  maxElements: 3_000
 });
 
 export const FORCE_LAYOUT_NODE_LIMIT = 250;

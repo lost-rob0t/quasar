@@ -29,11 +29,7 @@ function asNumber(value, fallback = 0) {
 }
 
 function nodeWeight(node) {
-  const document = node.data("document") || {};
-  return asNumber(
-    document.weight ?? document.data?.weight ?? document.assessment?.weight ?? node.data("weight"),
-    0
-  );
+  return asNumber(node.data("weight"), 0);
 }
 
 function compareNodes(left, right) {

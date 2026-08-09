@@ -26,7 +26,7 @@ describe("graph scale policy", () => {
   });
 
   it("rejects a graph before Cytoscape receives an oversized element set", () => {
-    const documents = Array.from({ length: 5_001 }, (_, index) => ({
+    const documents = Array.from({ length: 2_001 }, (_, index) => ({
       _id: `node:${index}`,
       dtype: "entity"
     }));

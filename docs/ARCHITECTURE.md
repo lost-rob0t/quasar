@@ -16,8 +16,9 @@ canonical workspace data.
 The control plane owns StarIntel documents, named graph definitions and
 membership, committed positions/viewport/layout/groups, workspace revision,
 transactions, the journal, authorization, capability checks, and audit.
-PouchDB is a replaceable query projection and CouchDB staging adapter. It is
-never a fallback mutation authority.
+PouchDB is populated only as an explicit CouchDB synchronization staging
+adapter. Authoritative snapshot restore does not duplicate the corpus into it,
+and it is never a fallback mutation authority.
 
 ## Canonical graph contract
 

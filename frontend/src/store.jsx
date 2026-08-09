@@ -15,9 +15,7 @@ import {
   replaceDocumentProjection,
   saveSettings,
   startLiveSync,
-  syncOnce,
-  queryView,
-  queryViewCounts
+  syncOnce
 } from "./lib/db";
 import {
   cpDocumentCreate,
@@ -110,7 +108,6 @@ export function QuasarProvider({ children }) {
     setDocuments(nextDocuments);
     setWorkspace(nextWorkspace);
     setSelectedIds(nextWorkspace.selectedIds || []);
-    await replaceDocumentProjection(nextDocuments);
   }, []);
 
   const refresh = useCallback(async () => {
@@ -223,13 +220,16 @@ export function QuasarProvider({ children }) {
           } else {
             result = await cpImportDocuments(chunks);
             committedOperationCount = ops.length;
+            const nextDocuments = [...known.values()];
+            documentsRef.current = nextDocuments;
+            setDocuments(nextDocuments);
           }
         } catch (error) {
           error.committedOperationCount = committedOperationCount;
           failure = error;
         } finally {
           eventRefreshSuspensions.current -= 1;
-          if (!eventRefreshSuspensions.current) {
+          if (!eventRefreshSuspensions.current && (recordHistory || failure)) {
             try {
               await refresh();
             } catch (error) {
@@ -245,7 +245,11 @@ export function QuasarProvider({ children }) {
             redo: command
           });
         }
-        return { ...result, chunkCount: chunks.length };
+        return {
+          ...result,
+          chunkCount: chunks.length,
+          atomic: !recordHistory || chunks.length === 1
+        };
       }
       throw new TypeError(`Unknown operation type: ${command?.type || "<missing>"}`);
     },
@@ -271,7 +275,7 @@ export function QuasarProvider({ children }) {
       const existing = new Map(documentsRef.current.map((document) => [document._id, document]));
       const savedDocuments = [];
       const skipped = [];
-      let chunkCount = 1;
+      let atomicCommit = true;
       for (const { document } of preflight.validated) {
         if (existing.has(document._id) && !replace) {
           skipped.push({ id: document._id, reason: "exists" });
@@ -310,13 +314,13 @@ export function QuasarProvider({ children }) {
           };
           throw error;
         }
-        chunkCount = execution.chunkCount;
+        atomicCommit = execution.atomic;
       }
       const report = {
         saved: savedDocuments.map((document) => ({ id: document._id, ok: true })),
         skipped,
         errors: preflight.errors,
-        atomic: options.atomic !== false && chunkCount === 1,
+        atomic: options.atomic !== false && atomicCommit,
         rolledBack: 0
       };
       if (report.errors.length) {
@@ -597,9 +601,10 @@ export function QuasarProvider({ children }) {
   }, []);
 
   const startSync = useCallback(
-    (configuration = settings) => {
+    async (configuration = settings) => {
       syncRef.current?.cancel?.();
       setSyncStatus({ state: "connecting", message: "Connecting to CouchDB" });
+      await replaceDocumentProjection(documentsRef.current);
       syncRef.current = startLiveSync(configuration, {
         onActive: () => setSyncStatus({ state: "active", message: "Replicating" }),
         onPaused: (error) =>
@@ -635,6 +640,7 @@ export function QuasarProvider({ children }) {
     async (direction = "both", configuration = settings) => {
       setSyncStatus({ state: "active", message: `${direction} synchronization` });
       try {
+        if (direction !== "pull") await replaceDocumentProjection(documentsRef.current);
         const result = await syncOnce(configuration, direction);
         if (direction !== "push") {
           const pulled = await listDocuments();
@@ -918,9 +924,7 @@ export function QuasarProvider({ children }) {
       exportDocuments,
       databaseInfo,
       bulkSaveDocuments: executeBatch,
-      ensureStarIntelViews,
-      queryView,
-      queryViewCounts
+      ensureStarIntelViews
     }),
     [
       documents,

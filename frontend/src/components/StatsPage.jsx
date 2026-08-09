@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   ArrowRight,
   CheckCircle2,
@@ -80,55 +80,16 @@ function ReviewSummary({ stats }) {
 }
 
 export default function StatsPage() {
-  const { documents, workspace, queryViewCounts } = useQuasar();
-  const [viewCounts, setViewCounts] = useState(null);
+  const { documents, workspace } = useQuasar();
   const reviewGroups = useMemo(() => partitionDocumentsByReview(documents), [documents]);
   const reviewedGraph = useMemo(
     () => buildGraph(reviewGroups.reviewed, workspace?.positions || {}),
     [reviewGroups.reviewed, workspace?.positions]
   );
-  const baseStats = useMemo(
+  const stats = useMemo(
     () => graphStatistics(documents, reviewedGraph),
     [documents, reviewedGraph]
   );
-
-  useEffect(() => {
-    let active = true;
-    Promise.all([
-      queryViewCounts("starintel-core-v1", "review_count"),
-      queryViewCounts("starintel-core-v1", "review_dtype_count"),
-      queryViewCounts("starintel-core-v1", "review_dataset_count")
-    ])
-      .then(([review, dtype, dataset]) => {
-        if (!active) return;
-        setViewCounts({ review, dtype, dataset });
-      })
-      .catch(() => active && setViewCounts(null));
-    return () => {
-      active = false;
-    };
-  }, [documents, queryViewCounts]);
-
-  const stats = useMemo(() => {
-    if (!viewCounts) return baseStats;
-    const review = Object.fromEntries(viewCounts.review.map(({ key, count }) => [key, count]));
-    const byReview = (rows, reviewStatus) =>
-      Object.fromEntries(
-        rows.filter(({ key }) => key?.[0] === reviewStatus).map(({ key, count }) => [key[1], count])
-      );
-    const reviewedDocuments = review.reviewed || 0;
-    const unreviewedDocuments = review.unreviewed || 0;
-    const total = reviewedDocuments + unreviewedDocuments;
-    return {
-      ...baseStats,
-      reviewedDocuments,
-      unreviewedDocuments,
-      reviewPercent: total ? Math.round((reviewedDocuments / total) * 100) : 0,
-      reviewedByDtype: byReview(viewCounts.dtype, "reviewed"),
-      unreviewedByDtype: byReview(viewCounts.dtype, "unreviewed"),
-      reviewedByDataset: byReview(viewCounts.dataset, "reviewed")
-    };
-  }, [baseStats, viewCounts]);
 
   if (!documents.length) {
     return (
