@@ -12,7 +12,7 @@
     "build": "vite build && cp dist/index.html dist/404.html",
     "preview": "vite preview",
     "format": "prettier --write .",
-    "format:check": "prettier --write . && git diff --exit-code -- .",
+    "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc --noEmit",
     "test": "npm run test:unit && npm run test:integration",
