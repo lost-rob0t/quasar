@@ -34,6 +34,7 @@ import "../graph-full-viewport-modern.css";
 import "../melissa-actors.css";
 import "../actor-configuration.css";
 import "../settings-runtime-log.css";
+import "../kinpaku-shell.css";
 
 function runtimeContext(): string {
   return `route=${window.location.pathname} online=${navigator.onLine}`;
