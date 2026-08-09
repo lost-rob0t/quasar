@@ -88,7 +88,9 @@ export default function SettingsWorkspace() {
           </div>
           <span className={`runtime-connection ${online ? "online" : "offline"}`}>
             {online ? <Wifi size={15} /> : <WifiOff size={15} />}
-            {online ? "WebSocket connected" : `${connection.phase} · ${connection.attempts} retries`}
+            {online
+              ? "WebSocket connected"
+              : `${connection.phase} · ${connection.attempts} retries`}
           </span>
         </div>
 
@@ -117,7 +119,11 @@ export default function SettingsWorkspace() {
                 {entry.count > 1 && <span className="runtime-log-count">×{entry.count}</span>}
                 <time dateTime={entry.timestamp}>{formatTimestamp(entry.timestamp)}</time>
               </summary>
-              {entry.details ? <pre>{entry.details}</pre> : <p className="muted">No extra details.</p>}
+              {entry.details ? (
+                <pre>{entry.details}</pre>
+              ) : (
+                <p className="muted">No extra details.</p>
+              )}
             </details>
           ))}
           {!entries.length && (
