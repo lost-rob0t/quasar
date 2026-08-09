@@ -87,6 +87,18 @@ window.addEventListener("error", (event) => {
 window.addEventListener("unhandledrejection", (event) => {
   logRuntimeFailure("promise", event.reason);
 });
+window.addEventListener("quasar:control-plane-error", (event) => {
+  const detail = (event as CustomEvent<Record<string, unknown>>).detail || {};
+  const message = String(detail.message || "Common Lisp control-plane error.");
+  const fields = { ...detail };
+  delete fields.message;
+  recordRuntimeDiagnostic({
+    level: "error",
+    source: "control-plane",
+    message,
+    details: JSON.stringify(fields)
+  });
+});
 
 initializeTheme();
 const controlPlane = initializeControlPlane();
