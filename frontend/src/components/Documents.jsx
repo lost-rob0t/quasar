@@ -369,7 +369,11 @@ export function DocumentsPage() {
             </select>
           </label>
           {hasSearchScope && (
-            <button className="button small document-clear-filters" type="button" onClick={clearFilters}>
+            <button
+              className="button small document-clear-filters"
+              type="button"
+              onClick={clearFilters}
+            >
               <X size={14} /> Clear filters
             </button>
           )}
