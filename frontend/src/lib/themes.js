@@ -1,5 +1,5 @@
 const STORAGE_KEY = "starintel-theme";
-export const DEFAULT_THEME = "midnight";
+export const DEFAULT_THEME = "black-gold";
 
 export const THEMES = Object.freeze([
   {
@@ -88,26 +88,26 @@ export const THEMES = Object.freeze([
     label: "Black & Gold",
     scheme: "dark",
     tokens: {
-      bg: "#050505",
-      deep: "#000000",
-      panel: "#11100b",
-      panel2: "#1b180d",
-      surface: "#0c0b08",
-      line: "#554413",
-      text: "#f6e7ae",
-      strong: "#fff7d6",
-      muted: "#b7a569",
-      accent: "#ffd000",
-      accent2: "#ffe772",
-      warm: "#ffae00",
-      danger: "#ff4b32",
-      success: "#d7b631",
-      purple: "#b99620",
-      pink: "#ff6b35",
-      orange: "#ff8c00",
-      teal: "#cfa800",
-      blue: "#f1d45d",
-      neutral: "#8e7a40"
+      bg: "#090806",
+      deep: "#050403",
+      panel: "#12100b",
+      panel2: "#1a1710",
+      surface: "#0e0c08",
+      line: "#4b452f",
+      text: "#e8e6df",
+      strong: "#f5f3ed",
+      muted: "#b2ada1",
+      accent: "#e3b92f",
+      accent2: "#f0d47a",
+      warm: "#d89a26",
+      danger: "#d45b45",
+      success: "#4fb8aa",
+      purple: "#aa8643",
+      pink: "#c96a54",
+      orange: "#cf8b2f",
+      teal: "#4fb8aa",
+      blue: "#7eb8aa",
+      neutral: "#716b5d"
     }
   },
   {
