@@ -21,6 +21,7 @@ import { routerBasename } from "./base-path";
 import { recordRuntimeDiagnostic, redactDiagnostic } from "./runtime-diagnostics";
 import { initializeControlPlane } from "../control-plane";
 import "../styles.css";
+import "../document-search.css";
 import "../dashboard.css";
 import "../dashboard-theme.css";
 import "../mobile.css";
