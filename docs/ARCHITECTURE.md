@@ -50,6 +50,15 @@ journal persistence succeeds does it install the candidate, acknowledge, and
 broadcast. A persistence or validation failure changes no live object, appends
 no journal record, and emits no event.
 
+Large document imports use the same single-writer actor through a bounded
+staging protocol. The browser sends size-limited chunks; Lisp validates them
+into one isolated candidate, persists that candidate and its replayable encoded
+chunks once, then installs it with one revision and one event. Chunk receipt is
+never authoritative, and an abort, validation failure, revision conflict, or
+persistence failure leaves the live workspace unchanged. Only one staging
+import is retained at a time, so a disconnected client cannot accumulate
+unbounded candidate workspaces.
+
 The memory store used by development and tests implements the same atomic
 contract and returns deep clones on load. It survives control-plane recreation
 when the same store instance is supplied. A process-durable store remains a

@@ -71,7 +71,7 @@ CouchDB integration replaces this implementation, not the protocol."))
       (replace next-journal journal)
       (vector-push-extend (quasar.protocol:clone-json operation) next-journal)
       (setf (gethash workspace-id (memory-store-workspaces store))
-            (quasar.workspace:copy-workspace workspace)
+            workspace
             (gethash workspace-id (memory-store-journals store)) next-journal)))
   workspace)
 

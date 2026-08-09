@@ -85,6 +85,9 @@ Handles two representations:
     "graph.duplicate-id"
     "graph.invalid-reference"
     "transaction.failed"
+    "import.busy"
+    "import.invalid-session"
+    "import.invalid-operation"
     "security.unauthorized"
     "security.forbidden"
     "security.origin-denied"
@@ -126,7 +129,7 @@ Handles two representations:
 (defun decode-command (encoded)
   "Parse and validate a v1 command envelope. Returns a COMMAND-ENVELOPE."
   (handler-case
-      (let* ((object (jsown:parse encoded))
+      (let* ((object (jsown:with-injective-reader (jsown:parse encoded)))
              (protocol (json-value object "protocol"))
              (id (json-value object "id"))
              (command (json-value object "command"))

@@ -23,6 +23,7 @@ import {
   cpDocumentCreate,
   cpDocumentUpdate,
   cpDocumentDelete,
+  cpImportDocuments,
   cpSnapshot,
   cpTransaction
 } from "./control-plane/mutations";
@@ -216,9 +217,12 @@ export function QuasarProvider({ children }) {
         let failure = null;
         eventRefreshSuspensions.current += 1;
         try {
-          for (const chunk of chunks) {
-            result = await cpTransaction(chunk);
-            committedOperationCount += chunk.length;
+          if (recordHistory) {
+            result = await cpTransaction(ops);
+            committedOperationCount = ops.length;
+          } else {
+            result = await cpImportDocuments(chunks);
+            committedOperationCount = ops.length;
           }
         } catch (error) {
           error.committedOperationCount = committedOperationCount;

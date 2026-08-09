@@ -67,8 +67,9 @@ function insertIndent(event, value, onChange) {
 }
 
 export default function ActorManager() {
-  const { actors, persistSettings, runActor, selectedIds, settings = {}, setNotice } = useQuasar();
-  const customActors = Array.isArray(settings.actors) ? settings.actors : [];
+  const { actors, persistSettings, runActor, selectedIds, settings, setNotice } = useQuasar();
+  const currentSettings = settings || {};
+  const customActors = Array.isArray(currentSettings.actors) ? currentSettings.actors : [];
   const allActors = useMemo(() => [...BUILTIN_ACTORS, ...customActors], [customActors]);
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(allActors[0]?.id || NEW_ACTOR);
@@ -81,7 +82,7 @@ export default function ActorManager() {
   const builtin = Boolean(selectedActor && isBuiltinActor(selectedActor));
   const editable = !builtin;
   const canRunSelected = Boolean(
-    selectedActor && selectedIds.length && (builtin || settings.actorsEnabled)
+    selectedActor && selectedIds.length && (builtin || currentSettings.actorsEnabled)
   );
   const filteredActors = allActors.filter((actor) => {
     const needle = query.trim().toLowerCase();

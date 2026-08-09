@@ -42,6 +42,7 @@ export interface ControlPlaneClient {
   onSnapshot(listener: SnapshotListener): () => void;
   snapshot(): Promise<Record<string, unknown>>;
   transaction(operations: unknown[], expectedRevision?: number): Promise<unknown>;
+  importDocuments(chunks: unknown[][]): Promise<unknown>;
   documentCreate(doc: Record<string, unknown>): Promise<unknown>;
   documentUpdate(doc: Record<string, unknown>): Promise<unknown>;
   documentDelete(id: string): Promise<unknown>;
@@ -385,6 +386,31 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
       TRANSACTION_TIMEOUT
     );
 
+  async function importDocuments(chunks: unknown[][]): Promise<unknown> {
+    const started = await send<Record<string, unknown>>(
+      "document.import.begin",
+      {},
+      TRANSACTION_TIMEOUT
+    );
+    const sessionId = String(started.sessionId || "");
+    if (!sessionId) {
+      throw new ControlPlaneError("protocol.invalid-envelope", "Import session ID is missing.");
+    }
+    try {
+      for (const operations of chunks) {
+        await send("document.import.chunk", { sessionId, operations }, TRANSACTION_TIMEOUT);
+      }
+      return await send("document.import.commit", { sessionId }, TRANSACTION_TIMEOUT);
+    } catch (error) {
+      try {
+        await send("document.import.abort", { sessionId }, DEFAULT_TIMEOUT);
+      } catch {
+        // A failed chunk may already have invalidated the session.
+      }
+      throw error;
+    }
+  }
+
   function setWorkspace(id: string): void {
     traceTransport("workspace", { from: workspaceId, to: id });
     workspaceId = id;
@@ -425,6 +451,7 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
     },
     snapshot,
     transaction,
+    importDocuments,
     documentCreate: (document) => send("document.create", document),
     documentUpdate: (document) => send("document.update", document),
     documentDelete: (id) => send("document.delete", { id }),

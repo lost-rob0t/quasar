@@ -128,6 +128,18 @@
                  (quasar.protocol:encode-error
                   "1" "workspace.not-found" "nope"))))
 
+(defun test-protocol-preserves-json-scalars ()
+  (let* ((envelope (quasar.protocol:decode-command
+                    "{\"protocol\":\"quasar.control.v1\",\"id\":\"scalars\",\"command\":\"document.create\",\"payload\":{\"falseValue\":false,\"nullValue\":null,\"trueValue\":true},\"metadata\":{\"client\":\"test\",\"workspace\":\"default\"}}"))
+         (payload (quasar.protocol:command-envelope-payload envelope))
+         (encoded (quasar.protocol:encode payload)))
+    (check (eq :false (quasar.protocol:json-value payload "falseValue")))
+    (check (eq :null (quasar.protocol:json-value payload "nullValue")))
+    (check (eq :true (quasar.protocol:json-value payload "trueValue")))
+    (check (search "\"falseValue\":false" encoded))
+    (check (search "\"nullValue\":null" encoded))
+    (check (search "\"trueValue\":true" encoded))))
+
 (defun test-clone-json ()
   (let* ((original (quasar.protocol:json-object
                     (cons "nodes" (quasar.protocol:json-array
@@ -634,6 +646,62 @@
              (check (search "person:restart-plane" response)))
         (stop-control-plane second)))))
 
+(defun test-staged-import-commits-once ()
+  (let* ((store (quasar.store:make-memory-store))
+         (plane (make-control-plane :store store)))
+    (setf *events-box* (cons nil nil))
+    (start-control-plane plane)
+    (let ((sub-id (quasar.control-plane:subscribe plane (event-collector))))
+      (unwind-protect
+           (let* ((begin (call-command
+                          plane
+                          (make-envelope "document.import.begin"
+                                         (quasar.protocol:empty-object))))
+                  (session-id (jsown:val (result begin) "sessionId"))
+                  (operations
+                    (quasar.protocol:json-array
+                     (quasar.protocol:json-object
+                      (cons "type" "document.create")
+                      (cons "payload" (make-doc "person:import-1")))
+                     (quasar.protocol:json-object
+                      (cons "type" "document.create")
+                      (cons "payload" (make-doc "person:import-2"))))))
+             (check (string= "ok" (status begin)))
+             (check (string=
+                     "ok"
+                     (status
+                      (call-command
+                       plane
+                       (make-envelope
+                        "document.import.chunk"
+                        (quasar.protocol:json-object
+                         (cons "sessionId" session-id)
+                         (cons "operations" operations)))))))
+             (check (null (search "person:import-1"
+                                  (call-command
+                                   plane
+                                   (make-envelope "workspace.snapshot"
+                                                  (quasar.protocol:empty-object))))))
+             (let ((commit
+                     (call-command
+                      plane
+                      (make-envelope
+                       "document.import.commit"
+                       (quasar.protocol:json-object (cons "sessionId" session-id))))))
+               (check (string= "ok" (status commit)))
+               (check (= 1 (jsown:val (result commit) "revision")))
+               (check (= 2 (jsown:val (result commit) "documentCount"))))
+             (check (= 1 (length (car *events-box*))))
+             (check (= 1 (length (quasar.store:store-journal-entries store "default"))))
+             (let ((snapshot
+                     (call-command plane
+                                   (make-envelope "workspace.snapshot"
+                                                  (quasar.protocol:empty-object)))))
+               (check (search "person:import-1" snapshot))
+               (check (search "person:import-2" snapshot))))
+        (quasar.control-plane:unsubscribe plane sub-id)
+        (stop-control-plane plane)))))
+
 (defun test-persistence-failure-does-not-commit ()
   (let ((plane (make-control-plane :store (make-instance 'failing-store))))
     (setf *events-box* (cons nil nil))
@@ -882,6 +950,7 @@
         *events-box* (cons nil nil))
   (test-protocol-decode)
   (test-protocol-encode)
+  (test-protocol-preserves-json-scalars)
   (test-clone-json)
   (test-workspace-revision)
   (test-graph-put-preserves-membership-null)
@@ -910,6 +979,7 @@
   (test-store-restart-restore)
   (test-control-plane-persistence)
   (test-control-plane-restart-from-store)
+  (test-staged-import-commits-once)
   (test-persistence-failure-does-not-commit)
   (test-failed-transaction-has-no-side-effects)
   (test-transaction-event-sequencing)

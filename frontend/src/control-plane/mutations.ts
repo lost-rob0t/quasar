@@ -84,6 +84,10 @@ export async function cpTransaction(
   return (await client().transaction(operations, expectedRevision)) as Record<string, unknown>;
 }
 
+export async function cpImportDocuments(chunks: unknown[][]): Promise<Record<string, unknown>> {
+  return (await client().importDocuments(chunks)) as Record<string, unknown>;
+}
+
 export function isControlPlaneConnected(): boolean {
   const c = getControlPlane();
   return c !== null && c.getConnected();

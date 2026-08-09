@@ -7,6 +7,19 @@ vi.mock("../store", () => ({ useQuasar: () => context.current }));
 import ActorManager from "./ActorManager";
 
 describe("ActorManager", () => {
+  it("renders while settings are still loading", () => {
+    context.current = {
+      actors: [],
+      persistSettings: vi.fn(),
+      runActor: vi.fn(),
+      selectedIds: [],
+      settings: null,
+      setNotice: vi.fn()
+    };
+
+    expect(renderToStaticMarkup(<ActorManager />)).toContain("Actor studio");
+  });
+
   it("renders actor CRUD, code, config, and runtime controls", () => {
     context.current = {
       actors: [],

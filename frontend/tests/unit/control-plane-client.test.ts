@@ -144,6 +144,33 @@ describe("control-plane client lifecycle", () => {
     client.dispose();
   });
 
+  it("stages document chunks before committing an import", async () => {
+    const client = createControlPlaneClient("ws://quasar.test");
+    const socket = await connect(client);
+    const importing = client.importDocuments([
+      [{ type: "document.create", payload: { _id: "document:1", dtype: "note" } }],
+      [{ type: "document.create", payload: { _id: "document:2", dtype: "note" } }]
+    ]);
+
+    await vi.waitFor(() => expect(socket.sent).toHaveLength(2));
+    expect(JSON.parse(socket.sent[1]).command).toBe("document.import.begin");
+    socket.respond({ sessionId: "import-1", baseRevision: 3 }, 1);
+    await vi.waitFor(() => expect(socket.sent).toHaveLength(3));
+    expect(JSON.parse(socket.sent[2])).toMatchObject({
+      command: "document.import.chunk",
+      payload: { sessionId: "import-1" }
+    });
+    socket.respond({ sessionId: "import-1", documentCount: 1 }, 2);
+    await vi.waitFor(() => expect(socket.sent).toHaveLength(4));
+    socket.respond({ sessionId: "import-1", documentCount: 2 }, 3);
+    await vi.waitFor(() => expect(socket.sent).toHaveLength(5));
+    expect(JSON.parse(socket.sent[4]).command).toBe("document.import.commit");
+    socket.respond({ operationId: "import-1", revision: 4, documentCount: 2 }, 4);
+
+    await expect(importing).resolves.toMatchObject({ revision: 4, documentCount: 2 });
+    client.dispose();
+  });
+
   it("disposes idempotently without reconnecting or retaining timers", async () => {
     vi.useFakeTimers();
     const client = createControlPlaneClient("ws://quasar.test");

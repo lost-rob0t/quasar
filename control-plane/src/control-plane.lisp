@@ -11,6 +11,8 @@
           :reader control-plane-store)
    (subscribers :initform (make-hash-table :test #'equal)
                 :reader control-plane-subscribers)
+   (import-sessions :initform (make-hash-table :test #'equal)
+                    :reader control-plane-import-sessions)
    (started-p :initform nil :accessor control-plane-started-p)
    (lock :initform (bt:make-lock) :reader control-plane-lock))
   (:documentation
@@ -72,6 +74,116 @@ the store has no record."
 
 (defun next-transaction-id ()
   (format nil "txn-~36R-~36R" (get-universal-time) (random most-positive-fixnum)))
+
+(defstruct import-session
+  workspace
+  workspace-id
+  base-revision
+  (document-count 0)
+  (encoded-chunks (make-array 0 :adjustable t :fill-pointer 0)))
+
+(defun import-session-for (plane payload envelope)
+  (let* ((id (quasar.protocol:ensure-string
+              (quasar.protocol:json-value payload "sessionId")
+              "sessionId" "import.invalid-session"))
+         (session (gethash id (control-plane-import-sessions plane)))
+         (workspace-id (or (quasar.protocol:command-envelope-workspace envelope)
+                           "default")))
+    (unless (and session (string= workspace-id (import-session-workspace-id session)))
+      (error 'quasar.protocol:quasar-error
+             :code "import.invalid-session"
+             :message "The document import session does not exist."))
+    (values session id)))
+
+(defun handle-import-begin (plane payload envelope)
+  (declare (ignore payload))
+  (let* ((workspace (workspace-for plane envelope))
+         (workspace-id (quasar.workspace:workspace-id workspace)))
+    (loop for session being the hash-values of (control-plane-import-sessions plane)
+          unless (string= workspace-id (import-session-workspace-id session))
+            do (error 'quasar.protocol:quasar-error
+                      :code "import.busy"
+                      :message "Another workspace is already importing documents."))
+    (clrhash (control-plane-import-sessions plane))
+    (let* ((id (next-transaction-id))
+           (session (make-import-session
+                     :workspace (quasar.workspace:copy-workspace workspace)
+                     :workspace-id workspace-id
+                     :base-revision (quasar.workspace:workspace-revision workspace))))
+      (setf (gethash id (control-plane-import-sessions plane)) session)
+      (quasar.protocol:json-object
+       (cons "sessionId" id)
+       (cons "baseRevision" (import-session-base-revision session))))))
+
+(defun handle-import-chunk (plane payload envelope)
+  (multiple-value-bind (session id) (import-session-for plane payload envelope)
+    (let ((operations (quasar.protocol:ensure-array
+                       (quasar.protocol:json-value payload "operations")
+                       "operations" "protocol.invalid-envelope")))
+      (handler-case
+          (progn
+            (dolist (operation (array-elements operations))
+              (let ((type (quasar.protocol:json-value operation "type")))
+                (unless (member type '("document.create" "document.update") :test #'string=)
+                  (error 'quasar.protocol:quasar-error
+                         :code "import.invalid-operation"
+                         :message "Import chunks may only create or update documents."))
+                (quasar.workspace:dispatch-operation
+                 (import-session-workspace session) operation)))
+            (vector-push-extend (quasar.protocol:encode operations)
+                                (import-session-encoded-chunks session))
+            (incf (import-session-document-count session)
+                  (length (array-elements operations)))
+            (quasar.protocol:json-object
+             (cons "sessionId" id)
+             (cons "documentCount" (import-session-document-count session))))
+        (error (condition)
+          (remhash id (control-plane-import-sessions plane))
+          (error condition))))))
+
+(defun handle-import-abort (plane payload envelope)
+  (multiple-value-bind (session id) (import-session-for plane payload envelope)
+    (declare (ignore session))
+    (remhash id (control-plane-import-sessions plane))
+    (quasar.protocol:json-object (cons "sessionId" id) (cons "aborted" t))))
+
+(defun handle-import-commit (plane payload envelope)
+  (multiple-value-bind (session id) (import-session-for plane payload envelope)
+    (let* ((current (workspace-for plane envelope))
+           (candidate (import-session-workspace session))
+           (base-revision (import-session-base-revision session)))
+      (unless (= base-revision (quasar.workspace:workspace-revision current))
+        (remhash id (control-plane-import-sessions plane))
+        (error 'quasar.protocol:quasar-error
+               :code "workspace.revision-conflict"
+               :message "The workspace changed during document import."))
+      (let* ((revision (setf (quasar.workspace:workspace-revision candidate)
+                             (1+ base-revision)))
+             (operation-id (next-operation-id))
+             (result (quasar.protocol:json-object
+                      (cons "operationId" operation-id)
+                      (cons "revision" revision)
+                      (cons "workspaceId" (import-session-workspace-id session))
+                      (cons "documentCount" (import-session-document-count session)))))
+        (quasar.store:commit-workspace
+         (control-plane-store plane) candidate
+         (quasar.protocol:json-object
+          (cons "operationId" operation-id)
+          (cons "workspaceId" (import-session-workspace-id session))
+          (cons "baseRevision" base-revision)
+          (cons "committedRevision" revision)
+          (cons "command" "document.import")
+          (cons "encodedChunks"
+                (cons :array (coerce (import-session-encoded-chunks session) 'list)))
+          (cons "timestamp" (get-universal-time))
+          (cons "client" (or (quasar.protocol:command-envelope-client envelope) "unknown"))))
+        (setf (gethash (import-session-workspace-id session)
+                       (control-plane-workspaces plane))
+              candidate)
+        (remhash id (control-plane-import-sessions plane))
+        (broadcast-event plane "documents.imported"
+                         (import-session-workspace-id session) revision operation-id result)
+        result))))
 
 ;;; --- Command handlers ---
 
@@ -202,8 +314,6 @@ returns a result envelope with revision, operation ID, and canonical data."
           (cons "baseRevision" base-revision)
           (cons "committedRevision" revision)
           (cons "commands" (quasar.protocol:clone-json operations))
-          (cons "results" (apply #'quasar.protocol:json-array
-                                  (mapcar #'quasar.protocol:clone-json results)))
           (cons "timestamp" (get-universal-time))
           (cons "client" (or (quasar.protocol:command-envelope-client envelope)
                               "unknown"))))
@@ -264,6 +374,14 @@ returns a result envelope with revision, operation ID, and canonical data."
   (register-command plane "workspace.transaction"
    (lambda (payload envelope)
      (handle-transaction plane payload envelope)))
+  (register-command plane "document.import.begin"
+   (lambda (payload envelope) (handle-import-begin plane payload envelope)))
+  (register-command plane "document.import.chunk"
+   (lambda (payload envelope) (handle-import-chunk plane payload envelope)))
+  (register-command plane "document.import.commit"
+   (lambda (payload envelope) (handle-import-commit plane payload envelope)))
+  (register-command plane "document.import.abort"
+   (lambda (payload envelope) (handle-import-abort plane payload envelope)))
   (register-command plane "document.list"
    (lambda (payload envelope)
      (handle-document-list plane payload envelope)))
