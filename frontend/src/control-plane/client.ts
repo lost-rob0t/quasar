@@ -14,6 +14,7 @@ const TRANSACTION_TIMEOUT = 120_000;
 const SNAPSHOT_PAGE_BYTES = 512 * 1024;
 const SNAPSHOT_PAGE_INTERVAL_MS = 25;
 const MAX_SNAPSHOT_PAGES = 10_000;
+const CONTROL_PLANE_ERROR_EVENT = "quasar:control-plane-error";
 
 export type ConnectionPhase =
   "connecting" | "connected" | "reconnecting" | "disconnected" | "disposed";
@@ -79,6 +80,15 @@ function diagnosticsEnabled(): boolean {
 function traceTransport(event: string, fields: Record<string, unknown> = {}): void {
   if (!diagnosticsEnabled()) return;
   console.debug(`[quasar-control:${event}] ${JSON.stringify(fields)}`);
+}
+
+function reportControlPlaneError(message: string, fields: Record<string, unknown> = {}): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent(CONTROL_PLANE_ERROR_EVENT, {
+      detail: { message, ...fields }
+    })
+  );
 }
 
 function nextId(): string {
@@ -185,6 +195,10 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
     });
     settlePending(response.id, (request) => {
       if (response.status === "error") {
+        reportControlPlaneError(response.error.message, {
+          code: response.error.code,
+          workspace: request.workspaceId
+        });
         request.reject(
           new ControlPlaneError(response.error.code, response.error.message, response.error.details)
         );
@@ -231,15 +245,21 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
         revision: current.revision
       });
     } catch (error) {
+      const code =
+        error instanceof ControlPlaneError
+          ? error.code
+          : error instanceof Error
+            ? error.name
+            : "unknown";
       traceTransport("synchronize-failed", {
         attempt,
         workspace: synchronizedWorkspace,
-        error:
-          error instanceof ControlPlaneError
-            ? error.code
-            : error instanceof Error
-              ? error.name
-              : "unknown"
+        error: code
+      });
+      reportControlPlaneError("Workspace synchronization failed.", {
+        code,
+        workspace: synchronizedWorkspace,
+        attempt
       });
       socket?.close();
     }
@@ -262,7 +282,11 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
     let nextSocket: WebSocket;
     try {
       nextSocket = new WebSocket(url);
-    } catch {
+    } catch (error) {
+      reportControlPlaneError("WebSocket construction failed.", {
+        error: error instanceof Error ? error.message : String(error),
+        workspace: workspaceId
+      });
       reconnect.markDisconnected();
       return;
     }
@@ -275,7 +299,9 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
       try {
         handleMessage(JSON.parse(event.data as string));
       } catch {
-        // Invalid server frames are ignored; requests still time out deterministically.
+        reportControlPlaneError("Invalid control-plane WebSocket frame received.", {
+          workspace: workspaceId
+        });
       }
     };
     nextSocket.onclose = () => {
@@ -290,6 +316,7 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
     };
     nextSocket.onerror = () => {
       traceTransport("socket-error", { workspace: workspaceId });
+      reportControlPlaneError("WebSocket transport error.", { workspace: workspaceId });
       // Browsers follow an error with close; close owns cleanup and retry.
     };
   }
@@ -301,6 +328,10 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
   ): Promise<T> {
     return new Promise((resolve, reject) => {
       if (!socket || socket.readyState !== WebSocket.OPEN) {
+        reportControlPlaneError("WebSocket is not connected.", {
+          command,
+          workspace: workspaceId
+        });
         reject(new ControlPlaneError("control-plane.unavailable", "WebSocket is not connected."));
         return;
       }
@@ -313,6 +344,10 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
         metadata: { client: "quasar-ui", workspace: workspaceId }
       };
       const timer = setTimeout(() => {
+        reportControlPlaneError(`Command ${command} timed out.`, {
+          command,
+          workspace: workspaceId
+        });
         settlePending(id, (request) =>
           request.reject(
             new ControlPlaneError("control-plane.unavailable", `Command ${command} timed out.`)

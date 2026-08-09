@@ -2,23 +2,20 @@ import { Component, StrictMode, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "../App.jsx";
-import AutoDigHostBridge, {
-  isAutoDigEmbedded
-} from "../integrations/auto-dig/AutoDigHostBridge.jsx";
+import AutoDigHostBridge from "../integrations/auto-dig/AutoDigHostBridge.jsx";
 import ActorConfigurationBridge from "../components/ActorConfigurationBridge.jsx";
 import GraphContextRadialBridge from "../components/GraphContextRadialBridge.jsx";
 import GraphObjectTypePickerBridge from "../components/GraphObjectTypePickerBridge.jsx";
 import MelissaActorBridge from "../components/MelissaActorBridge.jsx";
 import MobileGraphToolTray from "../components/MobileGraphToolTray.jsx";
 import OperatorUiEnhancer from "../components/OperatorUiEnhancer.jsx";
-import PwaInstallBridge from "../components/PwaInstallBridge.jsx";
+import ProviderBrandIcons from "../components/ProviderBrandIcons.jsx";
 import ReviewActorBridge from "../components/ReviewActorBridge.jsx";
 import RunAllTransformationsBridge from "../components/RunAllTransformationsBridge.jsx";
 import { QuasarProvider } from "../store.jsx";
-import { registerServiceWorker } from "../lib/service-worker-registration.js";
 import { initializeTheme } from "../lib/themes.js";
 import { routerBasename } from "./base-path";
-import { redactDiagnostic } from "./runtime-diagnostics";
+import { recordRuntimeDiagnostic, redactDiagnostic } from "./runtime-diagnostics";
 import { initializeControlPlane } from "../control-plane";
 import "../styles.css";
 import "../dashboard.css";
@@ -37,6 +34,9 @@ import "../graph-workspace-shell.css";
 import "../graph-full-viewport-modern.css";
 import "../melissa-actors.css";
 import "../actor-configuration.css";
+import "../settings-runtime-log.css";
+import "../agent-tab-icons.css";
+import "../kinpaku-shell.css";
 
 function runtimeContext(): string {
   return `route=${window.location.pathname} online=${navigator.onLine}`;
@@ -44,13 +44,17 @@ function runtimeContext(): string {
 
 function logRuntimeFailure(source: string, error: unknown, details = ""): void {
   const normalized = error instanceof Error ? error : new Error(String(error));
-  console.error(
-    redactDiagnostic(
-      `[quasar-runtime:${source}] ${normalized.name}: ${normalized.message}\n` +
-        `${normalized.stack || "No JavaScript stack available"}\n` +
-        `${runtimeContext()}${details ? `\n${details}` : ""}`
-    )
+  const diagnostic = redactDiagnostic(
+    `${normalized.name}: ${normalized.message}\n${normalized.stack || "No JavaScript stack available"}\n` +
+      `${runtimeContext()}${details ? `\n${details}` : ""}`
   );
+  recordRuntimeDiagnostic({
+    level: "error",
+    source,
+    message: `${normalized.name}: ${normalized.message}`,
+    details: diagnostic
+  });
+  console.error(`[quasar-runtime:${source}] ${diagnostic}`);
 }
 
 class RuntimeErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -78,17 +82,54 @@ class RuntimeErrorBoundary extends Component<{ children: ReactNode }, { error: E
   }
 }
 
-if (import.meta.env.DEV) {
-  window.addEventListener("error", (event) => {
-    logRuntimeFailure("window", event.error || event.message, `${event.filename}:${event.lineno}`);
+window.addEventListener("error", (event) => {
+  logRuntimeFailure("window", event.error || event.message, `${event.filename}:${event.lineno}`);
+});
+window.addEventListener("unhandledrejection", (event) => {
+  logRuntimeFailure("promise", event.reason);
+});
+window.addEventListener("quasar:control-plane-error", (event) => {
+  const detail = (event as CustomEvent<Record<string, unknown>>).detail || {};
+  const message = String(detail.message || "Common Lisp control-plane error.");
+  const fields = { ...detail };
+  delete fields.message;
+  recordRuntimeDiagnostic({
+    level: "error",
+    source: "control-plane",
+    message,
+    details: JSON.stringify(fields)
   });
-  window.addEventListener("unhandledrejection", (event) => {
-    logRuntimeFailure("promise", event.reason);
-  });
-}
+});
 
 initializeTheme();
-initializeControlPlane();
+const controlPlane = initializeControlPlane();
+let lastControlPlanePhase = "connecting";
+controlPlane.onConnectionStateChange((state) => {
+  if (state.connected && state.synchronized) {
+    if (lastControlPlanePhase !== "connected") {
+      recordRuntimeDiagnostic({
+        level: "info",
+        source: "control-plane",
+        message: "WebSocket connected and workspace synchronized."
+      });
+    }
+    lastControlPlanePhase = "connected";
+    return;
+  }
+
+  if (
+    (state.phase === "disconnected" || state.phase === "reconnecting") &&
+    state.phase !== lastControlPlanePhase
+  ) {
+    recordRuntimeDiagnostic({
+      level: "warning",
+      source: "control-plane",
+      message: "WebSocket is not connected.",
+      details: `phase=${state.phase} attempts=${state.attempts}`
+    });
+  }
+  lastControlPlanePhase = state.phase;
+});
 
 const rootElement = document.getElementById("root");
 
@@ -104,7 +145,7 @@ createRoot(rootElement).render(
           <App />
           <AutoDigHostBridge />
           <OperatorUiEnhancer />
-          <PwaInstallBridge />
+          <ProviderBrandIcons />
           <MelissaActorBridge />
           <ReviewActorBridge />
           <ActorConfigurationBridge />
@@ -117,7 +158,3 @@ createRoot(rootElement).render(
     </RuntimeErrorBoundary>
   </StrictMode>
 );
-
-if ("serviceWorker" in navigator && import.meta.env.PROD && !isAutoDigEmbedded()) {
-  window.addEventListener("load", () => registerServiceWorker().catch(() => {}));
-}
