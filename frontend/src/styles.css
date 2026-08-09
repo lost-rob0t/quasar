@@ -2158,6 +2158,12 @@ td small {
   border-color: #b45309;
   color: #fcd34d;
 }
+.sync-offline {
+  align-items: center;
+  justify-content: center;
+  color: var(--danger);
+  text-align: center;
+}
 .sync-error,
 .sync-denied {
   border-color: #be123c;
