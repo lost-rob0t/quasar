@@ -76,7 +76,7 @@ function rejectedHandshake(url, origin, expectedStatus) {
 function secureExchange(token) {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(`ws://127.0.0.1:8081?session=${encodeURIComponent(token)}`, {
-      headers: { Origin: "http://127.0.0.1:8080" },
+      headers: { Origin: "http://127.0.0.1:8080" }
     });
     const responses = new Map();
     const timer = setTimeout(() => {
@@ -91,8 +91,8 @@ function secureExchange(token) {
             id,
             command,
             payload,
-            metadata: { client: "production-smoke", workspace },
-          }),
+            metadata: { client: "production-smoke", workspace }
+          })
         );
       send("capabilities", "system.capabilities");
       send("starlang", "starlang.load", { source: "(error \"must not run\")" });
@@ -122,8 +122,8 @@ function secureExchange(token) {
         if (responses.get("malformed")?.error?.code !== "protocol.invalid-envelope")
           fail(
             `Malformed input did not return the stable protocol error: ${JSON.stringify(
-              responses.get("malformed"),
-            )}`,
+              responses.get("malformed")
+            )}`
           );
         resolve();
       } catch (error) {
@@ -170,7 +170,7 @@ function rateLimitExchange(token) {
 if (!process.argv.includes("--skip-build")) {
   const build = spawnSync("bash", ["scripts/run-production", "--build-only"], {
     cwd: repoRoot,
-    stdio: "inherit",
+    stdio: "inherit"
   });
   if (build.status !== 0) process.exit(build.status ?? 1);
 }
@@ -179,7 +179,7 @@ if (!existsSync(executable)) fail("quasar-server was not built");
 const server = spawn(executable, [], {
   cwd: repoRoot,
   stdio: ["ignore", "pipe", "pipe"],
-  detached: process.platform !== "win32",
+  detached: process.platform !== "win32"
 });
 let output = "";
 server.stdout.on("data", (data) => (output += data));
@@ -190,6 +190,8 @@ try {
   const html = await root.text();
   const token = html.match(/name="quasar-session-token" content="([^"]+)"/)?.[1];
   if (!token || html.includes(token, html.indexOf("</head>") + 7)) fail("Session token missing");
+  if (/rel=["']manifest["']/i.test(html)) fail("Lisp port must not advertise a web app manifest");
+  if (/mobile-web-app-capable/i.test(html)) fail("Lisp port must not advertise app installation");
   const asset = html.match(/(?:src|href)="(\/assets\/[^"]+)"/)?.[1];
   if (!asset) fail("Hashed production asset missing from index");
   const assetResponse = await waitForPage(asset);
@@ -197,15 +199,12 @@ try {
     fail("Production asset content type is incorrect");
   const nested = await waitForPage("/documents/production-smoke");
   if (!(await nested.text()).includes('<div id="root"></div>')) fail("Nested SPA route failed");
-  for (const path of ["/manifest.webmanifest", "/sw.js", "/sw-runtime.js"]) {
-    await waitForPage(path);
-  }
 
   await rejectedHandshake("ws://127.0.0.1:8081", "http://127.0.0.1:8080", 401);
   await rejectedHandshake(
     `ws://127.0.0.1:8081?session=${encodeURIComponent(token)}`,
     "https://untrusted.example",
-    403,
+    403
   );
   await secureExchange(token);
   await rateLimitExchange(token);
@@ -224,7 +223,7 @@ try {
   }
   await Promise.race([
     new Promise((resolve) => server.once("exit", resolve)),
-    new Promise((resolve) => setTimeout(resolve, 8_000)),
+    new Promise((resolve) => setTimeout(resolve, 8_000))
   ]);
   if (server.exitCode === null && server.pid) {
     try {
