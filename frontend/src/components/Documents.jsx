@@ -318,7 +318,7 @@ export function DocumentsPage() {
 
       <div className="document-search-panel">
         <div className="document-search-primary">
-          <label className="document-search-field">
+          <div className="document-search-field">
             <Search size={19} aria-hidden="true" />
             <input
               value={query}
@@ -338,7 +338,7 @@ export function DocumentsPage() {
                 <X size={16} />
               </button>
             )}
-          </label>
+          </div>
           <div className="document-result-summary" aria-live="polite">
             <strong>{visible.length.toLocaleString()}</strong>
             <span>{visible.length === 1 ? "result" : "results"}</span>
@@ -379,7 +379,7 @@ export function DocumentsPage() {
       <div className="document-list-meta">
         <span>
           {visible.length
-            ? `Showing ${pageStart + 1.toLocaleString()}–${pageEnd.toLocaleString()} of ${visible.length.toLocaleString()}`
+            ? `Showing ${(pageStart + 1).toLocaleString()}–${pageEnd.toLocaleString()} of ${visible.length.toLocaleString()}`
             : "No matching documents"}
         </span>
         <label className="document-page-size">
