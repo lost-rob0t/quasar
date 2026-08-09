@@ -8,9 +8,12 @@ test("opens the datasets navigation as a dataset index", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Documents" })).toHaveCount(0);
 });
 
-test("does not expose browser app installation in the Common Lisp port", async ({ page }) => {
+test("exposes browser app installation from the Common Lisp port", async ({ page }) => {
   await page.goto("/graph");
 
-  await expect(page.getByRole("button", { name: "Install Quasar" })).toHaveCount(0);
-  await expect(page.locator('link[rel="manifest"]')).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Install Quasar" })).toBeVisible();
+  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute(
+    "href",
+    "/manifest.webmanifest"
+  );
 });

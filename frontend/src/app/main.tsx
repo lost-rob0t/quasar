@@ -2,16 +2,20 @@ import { Component, StrictMode, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "../App.jsx";
-import AutoDigHostBridge from "../integrations/auto-dig/AutoDigHostBridge.jsx";
+import AutoDigHostBridge, {
+  isAutoDigEmbedded
+} from "../integrations/auto-dig/AutoDigHostBridge.jsx";
 import ActorConfigurationBridge from "../components/ActorConfigurationBridge.jsx";
 import GraphContextRadialBridge from "../components/GraphContextRadialBridge.jsx";
 import GraphObjectTypePickerBridge from "../components/GraphObjectTypePickerBridge.jsx";
 import MelissaActorBridge from "../components/MelissaActorBridge.jsx";
 import MobileGraphToolTray from "../components/MobileGraphToolTray.jsx";
 import OperatorUiEnhancer from "../components/OperatorUiEnhancer.jsx";
+import PwaInstallBridge from "../components/PwaInstallBridge.jsx";
 import ReviewActorBridge from "../components/ReviewActorBridge.jsx";
 import RunAllTransformationsBridge from "../components/RunAllTransformationsBridge.jsx";
 import { QuasarProvider } from "../store.jsx";
+import { registerServiceWorker } from "../lib/service-worker-registration.js";
 import { initializeTheme } from "../lib/themes.js";
 import { routerBasename } from "./base-path";
 import { recordRuntimeDiagnostic, redactDiagnostic } from "./runtime-diagnostics";
@@ -144,6 +148,7 @@ createRoot(rootElement).render(
           <App />
           <AutoDigHostBridge />
           <OperatorUiEnhancer />
+          <PwaInstallBridge />
           <MelissaActorBridge />
           <ReviewActorBridge />
           <ActorConfigurationBridge />
@@ -156,3 +161,7 @@ createRoot(rootElement).render(
     </RuntimeErrorBoundary>
   </StrictMode>
 );
+
+if ("serviceWorker" in navigator && import.meta.env.PROD && !isAutoDigEmbedded()) {
+  window.addEventListener("load", () => registerServiceWorker().catch(() => {}));
+}

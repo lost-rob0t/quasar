@@ -82,10 +82,7 @@ function traceTransport(event: string, fields: Record<string, unknown> = {}): vo
   console.debug(`[quasar-control:${event}] ${JSON.stringify(fields)}`);
 }
 
-function reportControlPlaneError(
-  message: string,
-  fields: Record<string, unknown> = {}
-): void {
+function reportControlPlaneError(message: string, fields: Record<string, unknown> = {}): void {
   if (typeof window === "undefined") return;
   window.dispatchEvent(
     new CustomEvent(CONTROL_PLANE_ERROR_EVENT, {
