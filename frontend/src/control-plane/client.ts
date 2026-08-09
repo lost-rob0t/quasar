@@ -84,7 +84,7 @@ function traceTransport(event: string, fields: Record<string, unknown> = {}): vo
 
 function reportControlPlaneError(
   message: string,
-  fields: Record<string, unknown> = {}
+  fields: Record<string, unknown> = {},
 ): void {
   if (typeof window === "undefined") return;
   window.dispatchEvent(
