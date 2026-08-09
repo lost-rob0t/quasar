@@ -17,11 +17,7 @@ const MAX_SNAPSHOT_PAGES = 10_000;
 const CONTROL_PLANE_ERROR_EVENT = "quasar:control-plane-error";
 
 export type ConnectionPhase =
-  | "connecting"
-  | "connected"
-  | "reconnecting"
-  | "disconnected"
-  | "disposed";
+  "connecting" | "connected" | "reconnecting" | "disconnected" | "disposed";
 
 export interface ConnectionState {
   phase: ConnectionPhase;
@@ -93,10 +89,7 @@ function reportControlPlaneError(
   if (typeof window === "undefined") return;
   window.dispatchEvent(
     new CustomEvent(CONTROL_PLANE_ERROR_EVENT, {
-      detail: {
-        message,
-        ...fields
-      }
+      detail: { message, ...fields }
     })
   );
 }
@@ -318,6 +311,7 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
       if (socket !== nextSocket) return;
       socket = null;
       traceTransport("close", { workspace: workspaceId, disposed, pending: pending.size });
+      synchronization += 1;
       rejectAllPending("WebSocket connection closed.");
       if (disposed) return;
       publishState({ phase: "disconnected", connected: false, synchronized: false });
@@ -406,130 +400,132 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
         return complete;
       }
       const nextOffset = Number(documentPage?.nextOffset);
-      if (!Number.isSafeInteger(nextOffset) || nextOffset <= offset) {
+      if (!Number.isInteger(nextOffset) || nextOffset <= offset) {
         throw new ControlPlaneError(
-          "protocol.invalid-response",
-          "Workspace snapshot pagination did not advance."
+          "protocol.invalid-envelope",
+          "Control plane returned an invalid snapshot page."
         );
       }
       offset = nextOffset;
       await new Promise((resolve) => setTimeout(resolve, SNAPSHOT_PAGE_INTERVAL_MS));
     }
     throw new ControlPlaneError(
-      "protocol.invalid-response",
-      "Workspace snapshot exceeded the maximum page count."
+      "protocol.invalid-envelope",
+      "Workspace snapshot exceeded the page limit."
     );
   }
-
-  async function transaction(operations: unknown[], expectedRevision?: number): Promise<unknown> {
-    const payload: Record<string, unknown> = { operations };
-    if (typeof expectedRevision === "number") payload.expectedRevision = expectedRevision;
-    return send("workspace.transaction", payload, TRANSACTION_TIMEOUT);
-  }
+  const transaction = (operations: unknown[], expectedRevision?: number) =>
+    send(
+      "workspace.transaction",
+      {
+        operations,
+        ...(expectedRevision === undefined ? {} : { expectedRevision })
+      },
+      TRANSACTION_TIMEOUT
+    );
 
   async function importDocuments(chunks: unknown[][]): Promise<unknown> {
-    const importId = nextId();
+    const started = await send<Record<string, unknown>>(
+      "document.import.begin",
+      {},
+      TRANSACTION_TIMEOUT
+    );
+    const sessionId = String(started.sessionId || "");
+    if (!sessionId) {
+      throw new ControlPlaneError("protocol.invalid-envelope", "Import session ID is missing.");
+    }
     try {
-      await send("workspace.import.begin", { importId }, TRANSACTION_TIMEOUT);
-      for (let index = 0; index < chunks.length; index += 1) {
-        await send(
-          "workspace.import.chunk",
-          { importId, index, documents: chunks[index] },
-          TRANSACTION_TIMEOUT
-        );
+      for (const operations of chunks) {
+        await send("document.import.chunk", { sessionId, operations }, TRANSACTION_TIMEOUT);
       }
-      return await send("workspace.import.commit", { importId }, TRANSACTION_TIMEOUT);
+      return await send("document.import.commit", { sessionId }, TRANSACTION_TIMEOUT);
     } catch (error) {
-      if (socket?.readyState === WebSocket.OPEN) {
-        try {
-          await send("workspace.import.abort", { importId }, DEFAULT_TIMEOUT);
-        } catch {
-          // Preserve the original staged-import failure.
-        }
+      try {
+        await send("document.import.abort", { sessionId }, DEFAULT_TIMEOUT);
+      } catch {
+        // A failed chunk may already have invalidated the session.
       }
       throw error;
     }
   }
 
-  function subscribe(handler: EventHandler, eventNames: string[] = []): () => void {
-    return eventBus.subscribe(handler, eventNames);
-  }
-
-  function onConnectionStateChange(listener: ConnectionListener): () => void {
-    connectionListeners.add(listener);
-    listener(state);
-    return () => connectionListeners.delete(listener);
-  }
-
-  function onSnapshot(listener: SnapshotListener): () => void {
-    snapshotListeners.add(listener);
-    return () => snapshotListeners.delete(listener);
-  }
-
-  function getConnected(): boolean {
-    return state.connected && state.synchronized;
-  }
-
-  function getRevision(): number {
-    return eventBus.getRevision(workspaceId);
-  }
-
-  function setWorkspace(nextWorkspaceId: string): void {
-    const normalized = nextWorkspaceId.trim() || "default";
-    if (normalized === workspaceId) return;
-    workspaceId = normalized;
-    if (typeof window !== "undefined") {
-      window.sessionStorage.setItem("quasar-workspace", workspaceId);
-    }
-    synchronization += 1;
-    eventBus.reset(workspaceId);
-    if (socket?.readyState === WebSocket.OPEN) {
-      void synchronize();
-    }
+  function setWorkspace(id: string): void {
+    traceTransport("workspace", { from: workspaceId, to: id });
+    workspaceId = id;
+    eventBus.setWorkspace(id);
+    if (socket?.readyState === WebSocket.OPEN) void synchronize();
   }
 
   function dispose(): void {
+    if (disposed) return;
     disposed = true;
+    traceTransport("dispose", { workspace: workspaceId, pending: pending.size });
     synchronization += 1;
-    reconnect.dispose();
-    publishState({ phase: "disposed", connected: false, synchronized: false });
-    rejectAllPending("Control plane disposed.");
+    reconnect.stop();
     const current = socket;
     socket = null;
     current?.close();
-    eventBus.clear();
-    connectionListeners.clear();
+    rejectAllPending("Client disposed.");
+    eventBus.reset(workspaceId);
     snapshotListeners.clear();
+    publishState({ phase: "disposed", connected: false, synchronized: false });
+    connectionListeners.clear();
   }
 
+  reconnect.start();
   connect();
 
   return {
     send,
-    subscribe,
-    onConnectionStateChange,
-    onSnapshot,
+    subscribe: (handler, names) => eventBus.subscribe(handler, names),
+    onConnectionStateChange(listener) {
+      connectionListeners.add(listener);
+      listener(state);
+      return () => connectionListeners.delete(listener);
+    },
+    onSnapshot(listener) {
+      snapshotListeners.add(listener);
+      return () => snapshotListeners.delete(listener);
+    },
     snapshot,
     transaction,
     importDocuments,
-    documentCreate: (doc) => send("document.create", { document: doc }, TRANSACTION_TIMEOUT),
-    documentUpdate: (doc) => send("document.update", { document: doc }, TRANSACTION_TIMEOUT),
-    documentDelete: (id) => send("document.delete", { id }, TRANSACTION_TIMEOUT),
-    graphSnapshot: (graphId) => send("graph.snapshot", graphId ? { graphId } : {}),
-    graphPut: (graph) => send("graph.workspace.put", { graph }, TRANSACTION_TIMEOUT),
-    graphDelete: (id) => send("graph.workspace.delete", { id }, TRANSACTION_TIMEOUT),
-    graphActivate: (id) => send("graph.workspace.activate", { id }, TRANSACTION_TIMEOUT),
-    nodeCreate: (node) => send("graph.node.create", { node }, TRANSACTION_TIMEOUT),
-    nodeUpdate: (node) => send("graph.node.update", { node }, TRANSACTION_TIMEOUT),
-    nodeDelete: (graphId, id) =>
-      send("graph.node.delete", { graphId, id }, TRANSACTION_TIMEOUT),
-    edgeCreate: (edge) => send("graph.edge.create", { edge }, TRANSACTION_TIMEOUT),
-    edgeUpdate: (edge) => send("graph.edge.update", { edge }, TRANSACTION_TIMEOUT),
-    edgeDelete: (graphId, id) =>
-      send("graph.edge.delete", { graphId, id }, TRANSACTION_TIMEOUT),
-    getConnected,
-    getRevision,
+    documentCreate: (document) => send("document.create", document),
+    documentUpdate: (document) => send("document.update", document),
+    documentDelete: (id) => send("document.delete", { id }),
+    graphSnapshot: (graphId = "all-documents") => send("graph.snapshot", { graphId }),
+    graphPut: (graph) => send("graph.workspace.put", graph),
+    graphDelete: (id) => send("graph.workspace.delete", { id }),
+    graphActivate: (id) => send("graph.workspace.activate", { id }),
+    nodeCreate: (node) => send("graph.node.create", node),
+    nodeUpdate: (node) => send("graph.node.update", node),
+    nodeDelete: (graphId, id) => send("graph.node.delete", { graphId, id }),
+    edgeCreate: (edge) => send("graph.edge.create", edge),
+    edgeUpdate: (edge) => send("graph.edge.update", edge),
+    edgeDelete: (graphId, id) => send("graph.edge.delete", { graphId, id }),
+    getConnected: () => state.connected && state.synchronized,
+    getRevision: () => eventBus.getRevision(workspaceId),
     setWorkspace,
     dispose
   };
+}
+
+let globalClient: ControlPlaneClient | null = null;
+
+export function initializeControlPlane(url?: string): ControlPlaneClient {
+  if (globalClient && !url) return globalClient;
+  globalClient?.dispose();
+  globalClient = createControlPlaneClient(url);
+  return globalClient;
+}
+
+export function getControlPlane(): ControlPlaneClient | null {
+  return globalClient;
+}
+
+export function getControlPlaneOrThrow(): ControlPlaneClient {
+  if (!globalClient) {
+    throw new ControlPlaneError("control-plane.unavailable", "Control plane is not initialized.");
+  }
+  return globalClient;
 }
