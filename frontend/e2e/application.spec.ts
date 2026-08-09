@@ -18,16 +18,15 @@ test("opens the local workspace through the control plane", async ({ page }) => 
     "title",
     "CouchDB: Local only"
   );
-  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute(
-    "href",
-    "/manifest.webmanifest"
-  );
+  await expect(page.locator('link[rel="manifest"]')).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Install Quasar" })).toHaveCount(0);
   expect(failedApplicationRequests).toEqual([]);
 
   await page.getByRole("link", { name: "Settings" }).click();
   await expect(page.getByRole("heading", { name: "StarIntel server" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "RabbitMQ graph ingest" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Install/update map-reduce views" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Runtime error log" })).toBeVisible();
 });
 
 test("creates a graph node through the compact editor and preserves its full-editor draft", async ({
@@ -208,7 +207,7 @@ test.describe("responsive application shell", () => {
     await expect(compactEditor).toBeHidden();
   });
 
-  test("fits agent chat inside the mobile PWA viewport", async ({ page }) => {
+  test("fits agent chat inside the mobile Lisp workspace viewport", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/agents?tab=run");
 
