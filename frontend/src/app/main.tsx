@@ -9,6 +9,7 @@ import GraphObjectTypePickerBridge from "../components/GraphObjectTypePickerBrid
 import MelissaActorBridge from "../components/MelissaActorBridge.jsx";
 import MobileGraphToolTray from "../components/MobileGraphToolTray.jsx";
 import OperatorUiEnhancer from "../components/OperatorUiEnhancer.jsx";
+import ProviderBrandIcons from "../components/ProviderBrandIcons.jsx";
 import ReviewActorBridge from "../components/ReviewActorBridge.jsx";
 import RunAllTransformationsBridge from "../components/RunAllTransformationsBridge.jsx";
 import { QuasarProvider } from "../store.jsx";
@@ -144,6 +145,7 @@ createRoot(rootElement).render(
           <App />
           <AutoDigHostBridge />
           <OperatorUiEnhancer />
+          <ProviderBrandIcons />
           <MelissaActorBridge />
           <ReviewActorBridge />
           <ActorConfigurationBridge />
