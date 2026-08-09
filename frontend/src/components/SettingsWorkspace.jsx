@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Bug,
   CheckCircle2,
@@ -42,12 +42,11 @@ export default function SettingsWorkspace() {
     synchronized: false,
     attempts: 0
   });
-
-  function refresh() {
+  const refresh = useCallback(() => {
     setEntries(readRuntimeDiagnostics());
-  }
+  }, []);
 
-  useEffect(() => subscribeRuntimeDiagnostics(refresh), []);
+  useEffect(() => subscribeRuntimeDiagnostics(refresh), [refresh]);
   useEffect(() => {
     const client = getControlPlane();
     if (!client) return undefined;
