@@ -14,7 +14,7 @@ import {
   clearRuntimeDiagnostics,
   readRuntimeDiagnostics,
   subscribeRuntimeDiagnostics
-} from "../app/runtime-diagnostics";
+} from "./runtime-diagnostics";
 import { SettingsPage } from "./ImportSettings";
 
 function levelIcon(level) {
