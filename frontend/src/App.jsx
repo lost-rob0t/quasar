@@ -19,7 +19,6 @@ import {
   Search,
   Settings,
   Sparkles,
-  TableProperties,
   Undo2,
   UserRound
 } from "lucide-react";
@@ -42,7 +41,7 @@ const navigation = [
   { to: "/", label: "Home", mobileLabel: "Home", Icon: House, end: true },
   { to: "/graph", label: "Graphs", mobileLabel: "Graph", Icon: Network },
   { to: "/documents?group=dataset", label: "Datasets", Icon: Layers3 },
-  { to: "/documents", label: "Documents", mobileLabel: "Docs", Icon: TableProperties, end: true },
+  { to: "/documents", label: "Documents", mobileLabel: "Docs", Icon: Search, end: true },
   { to: "/documents/new", label: "Add document", Icon: FilePlus2 },
   { to: "/agents", label: "Agents", Icon: Bot },
   { to: "/actors", label: "Actors", mobileLabel: "Actors", Icon: Code2 },
