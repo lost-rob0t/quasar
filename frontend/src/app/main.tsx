@@ -36,6 +36,7 @@ import "../actor-configuration.css";
 import "../settings-runtime-log.css";
 import "../agent-tab-icons.css";
 import "../kinpaku-shell.css";
+import "../workbench-unified.css";
 
 function runtimeContext(): string {
   return `route=${window.location.pathname} online=${navigator.onLine}`;

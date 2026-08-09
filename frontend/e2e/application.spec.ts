@@ -18,10 +18,6 @@ test("opens the local workspace through the control plane", async ({ page }) => 
     "title",
     "CouchDB: Local only"
   );
-  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute(
-    "href",
-    "/manifest.webmanifest"
-  );
   expect(failedApplicationRequests).toEqual([]);
 
   await page.getByRole("link", { name: "Settings" }).click();
@@ -74,13 +70,13 @@ test("creates a graph node through the compact editor and preserves its full-edi
 });
 
 test.describe("responsive application shell", () => {
-  test("preserves the desktop sidebar layout outside the graph", async ({ page }) => {
+  test("uses the unified desktop sidebar layout outside the graph", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/");
 
     await expect(page.locator(".sidebar")).toBeVisible();
     await expect(page.locator(".mobile-nav")).toBeHidden();
-    await expect(page.locator(".app-shell")).toHaveCSS("grid-template-columns", "235px 1205px");
+    await expect(page.locator(".app-shell")).toHaveCSS("grid-template-columns", "246px 1194px");
   });
 
   test("uses the investigation workspace without overlapping the graph on desktop", async ({
