@@ -1,5 +1,17 @@
 import { useMemo } from "react";
-import { ArrowLeft, Download, Edit3, ExternalLink, Network, Plus, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Edit3,
+  ExternalLink,
+  Network,
+  Plus,
+  Search,
+  Trash2,
+  X
+} from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { dtypes, documentLabel } from "starintel_doc";
 import { connectedDocumentIds } from "../lib/document-delete";
@@ -7,6 +19,9 @@ import { graphRenderDecision } from "../lib/graph-scale";
 import { documentsToJsonl, downloadText } from "../lib/importer";
 import { operation } from "../lib/operations";
 import { useQuasar } from "../store";
+
+const DEFAULT_PAGE_SIZE = 50;
+const PAGE_SIZES = [25, 50, 100, 250];
 
 function includesDocument(document, query) {
   if (!query) return true;
@@ -43,6 +58,31 @@ function datasetRows(documents) {
   return [...rows.values()]
     .map((row) => ({ ...row, types: [...row.types].sort() }))
     .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function parsePageSize(value) {
+  const parsed = Number.parseInt(value || "", 10);
+  return PAGE_SIZES.includes(parsed) ? parsed : DEFAULT_PAGE_SIZE;
+}
+
+function parsePage(value) {
+  const parsed = Number.parseInt(value || "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
+function paginationRange(current, total) {
+  if (total <= 7) return Array.from({ length: total }, (_, index) => index + 1);
+
+  const pages = [1];
+  if (current > 4) pages.push("left-ellipsis");
+
+  const start = Math.max(2, current - 1);
+  const end = Math.min(total - 1, current + 1);
+  for (let page = start; page <= end; page += 1) pages.push(page);
+
+  if (current < total - 3) pages.push("right-ellipsis");
+  pages.push(total);
+  return pages;
 }
 
 function DatasetsPage({ documents, query, setQuery }) {
@@ -134,6 +174,8 @@ export function DocumentsPage() {
   const dtype = params.get("dtype") || "";
   const dataset = params.get("dataset") || "";
   const group = params.get("group") || "";
+  const requestedPage = parsePage(params.get("page"));
+  const pageSize = parsePageSize(params.get("perPage"));
   const hasSearchScope = Boolean(query || dtype || dataset);
   const datasets = useMemo(
     () => [...new Set(documents.map((document) => document.dataset).filter(Boolean))].sort(),
@@ -150,14 +192,48 @@ export function DocumentsPage() {
     [documents, dtype, dataset, query]
   );
 
+  const pageCount = Math.max(1, Math.ceil(visible.length / pageSize));
+  const page = Math.min(requestedPage, pageCount);
+  const pageStart = visible.length ? (page - 1) * pageSize : 0;
+  const pageEnd = Math.min(pageStart + pageSize, visible.length);
+  const pageDocuments = useMemo(
+    () => visible.slice(pageStart, pageEnd),
+    [visible, pageStart, pageEnd]
+  );
+  const pages = useMemo(() => paginationRange(page, pageCount), [page, pageCount]);
   const graphDecision = useMemo(() => graphRenderDecision(visible), [visible]);
 
-  const set = (key, value) => {
+  const set = (key, value, { resetPage = true } = {}) => {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value);
     else next.delete(key);
+    if (resetPage) next.delete("page");
     setParams(next);
   };
+
+  function setPage(nextPage) {
+    const next = new URLSearchParams(params);
+    if (nextPage <= 1) next.delete("page");
+    else next.set("page", String(nextPage));
+    setParams(next);
+  }
+
+  function setPageSize(nextSize) {
+    const next = new URLSearchParams(params);
+    if (nextSize === DEFAULT_PAGE_SIZE) next.delete("perPage");
+    else next.set("perPage", String(nextSize));
+    next.delete("page");
+    setParams(next);
+  }
+
+  function clearFilters() {
+    const next = new URLSearchParams(params);
+    next.delete("q");
+    next.delete("dtype");
+    next.delete("dataset");
+    next.delete("page");
+    setParams(next);
+  }
 
   function importSearchToGraph() {
     if (!hasSearchScope || !visible.length || !graphDecision.allowed) return;
@@ -206,8 +282,8 @@ export function DocumentsPage() {
   }
 
   return (
-    <section>
-      <div className="page-heading">
+    <section className="documents-workspace">
+      <div className="page-heading documents-heading">
         <div>
           <span className="eyebrow">Corpus</span>
           <h1>Documents</h1>
@@ -232,7 +308,7 @@ export function DocumentsPage() {
             className="button"
             onClick={() => downloadText("starintel-documents.jsonl", documentsToJsonl(visible))}
           >
-            <Download size={16} /> Export visible
+            <Download size={16} /> Export results
           </button>
           <Link className="button primary" to="/documents/new">
             <Plus size={16} /> Add document
@@ -240,34 +316,85 @@ export function DocumentsPage() {
         </div>
       </div>
 
-      <div className="filter-bar">
-        <input
-          value={query}
-          onChange={(event) => set("q", event.target.value)}
-          placeholder="Search all document fields"
-        />
-        <select value={dtype} onChange={(event) => set("dtype", event.target.value)}>
-          <option value="">All dtypes</option>
-          {dtypes.map((name) => (
-            <option key={name} value={name}>
-              {name}
-            </option>
-          ))}
-        </select>
-        <select value={dataset} onChange={(event) => set("dataset", event.target.value)}>
-          <option value="">All datasets</option>
-          {datasets.map((name) => (
-            <option key={name} value={name}>
-              {name}
-            </option>
-          ))}
-        </select>
-        <span className="result-count">
-          {visible.length} / {documents.length}
-        </span>
+      <div className="document-search-panel">
+        <div className="document-search-primary">
+          <label className="document-search-field">
+            <Search size={19} aria-hidden="true" />
+            <input
+              value={query}
+              onChange={(event) => set("q", event.target.value)}
+              aria-label="Search documents"
+              placeholder="Search names, IDs, summaries, sources, and document fields…"
+              autoComplete="off"
+            />
+            {query && (
+              <button
+                className="document-search-clear"
+                type="button"
+                onClick={() => set("q", "")}
+                title="Clear search"
+                aria-label="Clear document search"
+              >
+                <X size={16} />
+              </button>
+            )}
+          </label>
+          <div className="document-result-summary" aria-live="polite">
+            <strong>{visible.length.toLocaleString()}</strong>
+            <span>{visible.length === 1 ? "result" : "results"}</span>
+          </div>
+        </div>
+
+        <div className="document-filter-row">
+          <label className="document-filter-control">
+            <span>Type</span>
+            <select value={dtype} onChange={(event) => set("dtype", event.target.value)}>
+              <option value="">All dtypes</option>
+              {dtypes.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="document-filter-control document-filter-dataset">
+            <span>Dataset</span>
+            <select value={dataset} onChange={(event) => set("dataset", event.target.value)}>
+              <option value="">All datasets</option>
+              {datasets.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {hasSearchScope && (
+            <button className="button small document-clear-filters" type="button" onClick={clearFilters}>
+              <X size={14} /> Clear filters
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="table-panel">
+      <div className="document-list-meta">
+        <span>
+          {visible.length
+            ? `Showing ${pageStart + 1.toLocaleString()}–${pageEnd.toLocaleString()} of ${visible.length.toLocaleString()}`
+            : "No matching documents"}
+        </span>
+        <label className="document-page-size">
+          <span>Rows</span>
+          <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+            {PAGE_SIZES.map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="table-panel documents-table-panel">
         <table>
           <thead>
             <tr>
@@ -280,7 +407,7 @@ export function DocumentsPage() {
             </tr>
           </thead>
           <tbody>
-            {visible.map((document) => (
+            {pageDocuments.map((document) => (
               <tr key={document._id}>
                 <td>
                   <Link
@@ -318,6 +445,54 @@ export function DocumentsPage() {
         </table>
         {!visible.length && <div className="empty-state compact">No matching documents.</div>}
       </div>
+
+      {visible.length > 0 && (
+        <nav className="document-pagination" aria-label="Document result pages">
+          <button
+            className="pagination-button pagination-step"
+            type="button"
+            onClick={() => setPage(page - 1)}
+            disabled={page <= 1}
+            aria-label="Previous page"
+          >
+            <ChevronLeft size={16} />
+            <span>Previous</span>
+          </button>
+          <div className="pagination-pages">
+            {pages.map((item) =>
+              typeof item === "number" ? (
+                <button
+                  className={`pagination-button${item === page ? " active" : ""}`}
+                  type="button"
+                  key={item}
+                  onClick={() => setPage(item)}
+                  aria-current={item === page ? "page" : undefined}
+                  aria-label={`Page ${item}`}
+                >
+                  {item}
+                </button>
+              ) : (
+                <span className="pagination-ellipsis" key={item} aria-hidden="true">
+                  …
+                </span>
+              )
+            )}
+          </div>
+          <button
+            className="pagination-button pagination-step"
+            type="button"
+            onClick={() => setPage(page + 1)}
+            disabled={page >= pageCount}
+            aria-label="Next page"
+          >
+            <span>Next</span>
+            <ChevronRight size={16} />
+          </button>
+          <span className="pagination-status">
+            Page {page.toLocaleString()} of {pageCount.toLocaleString()}
+          </span>
+        </nav>
+      )}
     </section>
   );
 }
