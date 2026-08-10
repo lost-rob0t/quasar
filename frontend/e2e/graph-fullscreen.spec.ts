@@ -55,7 +55,10 @@ test("uses a compact modern shell in full viewport", async ({ page }) => {
   await expect(graphMenu).toBeVisible();
 
   await graphMenu.click();
-  await expect(page.getByRole("dialog", { name: "Navigation" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Graph", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Docs", exact: true })).toBeVisible();
+  const navigationDialog = page.getByRole("dialog", { name: "Navigation" });
+  await expect(navigationDialog).toBeVisible();
+  await expect(navigationDialog.getByRole("link", { name: "Graphs", exact: true })).toBeVisible();
+  await expect(
+    navigationDialog.getByRole("link", { name: "Documents", exact: true })
+  ).toBeVisible();
 });
