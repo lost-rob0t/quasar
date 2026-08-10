@@ -1,108 +1,146 @@
-# Melissa browser actors
+# Melissa actors
 
-Quasar ships an installable Melissa actor pack for browser-side person, business, address, property, contact, identity, and IP enrichment.
+Melissa DataSource transforms are owned by the Quasar Common Lisp control plane.
 
-## Included actors
+The browser no longer stores Melissa credentials, installs a Melissa actor pack, or calls Melissa endpoints from actor code. Browser actors receive only their ordinary execution context and capability API.
 
-| Actor                               | Melissa service        | Main output                                                                   |
-| ----------------------------------- | ---------------------- | ----------------------------------------------------------------------------- |
-| Melissa person search               | Personator Search      | Person matches plus current/previous addresses, phones, emails, and relations |
-| Melissa people and business search  | People Business Search | Partial person and business matches                                           |
-| Melissa consumer verify and append  | Personator Consumer    | Check, Verify, Append, and Move results                                       |
-| Melissa identity check              | Personator Identity    | Check and Screen results                                                      |
-| Melissa reverse geocoder            | Reverse GeoCoder       | Nearby `location` documents                                                   |
-| Melissa property lookup             | Property               | `asset` property records, locations, owners, and relations                    |
-| Melissa global address verification | Global Address         | Corrected and geocoded `location` documents                                   |
-| Melissa global name                 | Global Name            | Parsed `person` or `org` documents                                            |
-| Melissa global phone                | Global Phone           | Validated `phone` documents                                                   |
-| Melissa global email                | Global Email           | Validated `email` documents                                                   |
-| Melissa global IP                   | Global IP              | IP entities and related geolocation documents                                 |
+## Runtime ownership
 
-## Configuration
+The Common Lisp subsystem provides:
 
-Open **Settings**, then select **Melissa actors** in the lower-right corner.
+- typed Melissa request, lookup, normalize, forward, completion, and error messages;
+- canonical `person` and `target` entities;
+- a supervised Sento actor topology;
+- a round-robin concurrent lookup-worker pool;
+- stable request IDs and requestor preservation through the pipeline;
+- backend transport for supported Melissa DataSource APIs;
+- asynchronous `melissa.request` and synchronous `melissa.status` control-plane commands;
+- backend-only credentials and configuration;
+- worker crash detection, replacement, and router rebuild.
 
-The configuration panel stores these values locally in the current browser:
+`QUASAR_MELISSA_LICENSE_KEY` is read by the backend. It is not a browser setting and is never placed in browser actor execution context.
 
-- Melissa license key or customer ID
-- Default country and transmission reference
-- Personator Search columns and options
-- Personator Consumer action: Check, Verify, Append, or Move
-- Personator Identity action: Check or Screen
-- People Business Search record and match limits
-- Reverse geocoder distance and record limits
-- Other service-specific option and column strings
-- Optional CORS proxy template
+## Browser boundary
 
-The license key is stored under `quasar:melissa-actor-config:v1` in browser `localStorage`. It is not embedded in actor manifests, StarIntel documents, or Quasar settings exports. Actor manifests are persisted in Quasar's local settings database and reload with the application.
+The browser still owns presentation and transient execution for browser-safe actors. It does not own configured or privileged Melissa behavior.
 
-### Personator Search defaults
+The former browser configuration registry, Melissa actor pack, Melissa credential storage, Melissa search helpers, endpoint interception, and configuration UI are removed. Startup contains only a migration bridge that removes persisted `quasar.actor.melissa-*` actors and deletes the obsolete browser storage keys.
 
-Quasar requests these non-default Personator Search columns:
+A regression test guards this boundary and fails if browser actor execution regains `context.configuration`, configured-context wrapping, the former actor-configuration module, or Run-all configuration gating.
 
-```text
-PreviousAddress,DateOfBirth,DateOfDeath,Email,MelissaIdentityKey,MoveDate,Phone,Suffix
+## Control-plane protocol
+
+The backend bridge registers:
+
+- async `melissa.request`
+- sync `melissa.status`
+
+A request carries one canonical entity plus optional service options. It uses the same `quasar.control.v1` envelope as the rest of the control plane:
+
+```json
+{
+  "protocol": "quasar.control.v1",
+  "id": "lookup-1",
+  "command": "melissa.request",
+  "payload": {
+    "entity": {
+      "_id": "person:example",
+      "dataset": "example",
+      "dtype": "person",
+      "title": "Example Person",
+      "data": {
+        "name": "Example Person"
+      },
+      "extensions": {}
+    },
+    "options": {
+      "service": "personator-search"
+    }
+  },
+  "metadata": {
+    "client": "quasar-ui",
+    "workspace": "default"
+  }
+}
 ```
 
-The default search options are:
+Successful replies use the normal result envelope:
 
-```text
-SearchType:Auto,SearchConditions:progressive,RecordsPerPage:10,MaxEmail:10,MaxPhone:10
+```json
+{
+  "protocol": "quasar.control.v1",
+  "status": "ok",
+  "id": "lookup-1",
+  "result": {
+    "_id": "person:example",
+    "dataset": "example",
+    "dtype": "person",
+    "title": "Example Person",
+    "data": {},
+    "extensions": {
+      "melissa.api": {}
+    }
+  }
+}
 ```
 
-These settings can be changed in Melissa actor configuration. The actor itself follows Melissa's documented minimum search sets: a last name, phone, email, MAK, MIK, free-form input, or a complete address combination.
+Failures use the standard error envelope with code `melissa-failed`. The error details include the failing actor stage and whether retry is appropriate.
 
-A `GE08` response means the configured key is not entitled to Personator Search. Quasar reports the failure and creates no documents.
+## Actor topology
 
-## CORS proxy
-
-Melissa requests are sent directly from the browser by default. When a deployment cannot call a Melissa endpoint because of browser CORS policy, set a proxy template containing `{url}`:
+The request path is:
 
 ```text
-https://proxy.example/fetch?url={url}
+control-plane command
+  -> Melissa HTTP/control-plane bridge
+  -> request router
+  -> round-robin lookup worker
+  -> normalizer
+  -> requestor forwarder
+  -> original request-specific reply actor
+  -> control-plane response callback
 ```
 
-Quasar substitutes the URL-encoded Melissa request at runtime. The proxy must be controlled by the operator because the expanded request contains the Melissa license key.
+Each bridge request receives its own reply actor. External request IDs are correlation data, not the bridge's ownership key, so two callers may use the same external ID without stealing each other's callbacks.
+
+Unexpected worker faults are reported to the original requestor, the failed worker terminates through Sento lifecycle handling, and the supervisor replaces it and rebuilds the worker router.
+
+Stopping the Melissa integration fails outstanding bridge requests, unregisters both Melissa commands, and shuts down the supervised actor subsystem.
+
+## Supported services
+
+The backend transport currently knows these Melissa services:
+
+- Personator Search
+- People Business Search
+- Personator Consumer
+- Personator Identity
+- Reverse GeoCoder
+- Property
+- Global Address
+- Global Name
+- Global Phone
+- Global Email
+- Global IP
+
+Service selection and service-specific options belong in the control-plane request's `options` object. Credentials remain backend-only.
 
 ## Input conventions
 
-Actors read standard StarIntel v0.9 fields and common aliases. Examples:
+The transport reads canonical entity data and common StarIntel aliases, including:
 
-- Person: `full_name`, `fname`, `mname`, `lname`, `dob`
-- Address/location: `street`, `street2`, `city`, `state`, `region`, `postal`, `country`, `lat`, `long`
-- Email: `address` or `value`
-- Phone: `number` or `value`
-- Melissa identifiers: `mak`, `mik`, `melissa_address_key`, `melissa_identity_key`
-- Property: `apn`, `fips`, `account`, or `free_form`
-- IP: `ip`, `ip_address`, or `address`
+- person names: `full_name`, `name`, `fname`, `first_name`, `lname`, `last_name`;
+- address fields: `street`, `address`, `city`, `state`, `postal`, `country`;
+- contact fields: `email`, `phone`;
+- Melissa identifiers: `mak`, `mik`, `melissa_address_key`, `melissa_identity_key`;
+- geospatial fields: `latitude`, `lat`, `longitude`, `long`, `lng`, `lon`;
+- property fields: `apn`, `fips`, `account`, `free_form`;
+- network fields: `ip`, `ip_address`.
 
-A selected input may override configured Personator Consumer behavior with `data.melissa_action`, `data.melissa_options`, or `data.melissa_columns`.
+The transport checks the minimum required input for the selected service before sending a network request.
 
-## Document output
+## Normalization
 
-Every result passes through the normal StarIntel v0.9 validator before it is committed. Melissa raw response records remain under `extensions["melissa.api"].record`; typed fields are projected into schema-valid `person`, `org`, `location`, `asset`, `phone`, `email`, `entity`, and `relation` documents.
+The normalizer preserves the original canonical entity identity and enriches supported fields from the selected Melissa record. Melissa provenance is written under `extensions["melissa.api"]`.
 
-Personator Search handles its documented nested response structure directly:
-
-- `CurrentAddress` becomes a `location` linked with `located-at`.
-- Every entry in `PreviousAddresses` becomes a `location` linked with `previously-located-at`.
-- Every entry in `PhoneRecords` becomes a `phone` linked with `has-phone`.
-- Every entry in `EmailRecords` becomes an `email` linked with `has-email`.
-- `MelissaIdentityKey` becomes a Melissa external identifier on the person.
-- `DateOfBirth` is normalized to a schema-valid date while the raw value remains in the extension.
-
-Service-level `GE##` and `SE##` errors abort the actor. Record-level `UE##` errors are skipped. Neither path produces StarIntel documents.
-
-Relations are explicit and directed. Typical predicates include:
-
-- `matched-to`
-- `verified-as`
-- `identity-check-result`
-- `located-at`
-- `previously-located-at`
-- `has-phone`
-- `has-email`
-- `property-record`
-- `owned-by`
-- `normalized-as`
-- `resolved-to`
+A record set in which every record contains an error result code is a normalization failure, not a successful empty enrichment. That failure is forwarded to the original requestor and does not produce `melissa-completed`.

@@ -8,8 +8,10 @@
   :serial t
   :pathname "../control-plane/tests/"
   :components ((:file "control-plane-tests")
-               (:file "workspace-integrity-tests"))
+               (:file "workspace-integrity-tests")
+               (:file "melissa-tests"))
   :perform (test-op (operation component)
              (declare (ignore operation component))
              (uiop:symbol-call :quasar.tests :run-tests)
-             (funcall (find-symbol "RUN-WORKSPACE-INTEGRITY-TESTS" "QUASAR.TESTS"))))
+             (funcall (find-symbol "RUN-WORKSPACE-INTEGRITY-TESTS" "QUASAR.TESTS"))
+             (funcall (find-symbol "RUN-MELISSA-TESTS" "QUASAR.TESTS"))))

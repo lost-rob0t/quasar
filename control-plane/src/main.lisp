@@ -15,13 +15,24 @@
                 (ws-port 8081)
                 (frontend-url "/")
                 (insecure-development-p nil)
-                (open-browser-p nil))
+                (open-browser-p nil)
+                (melissa-worker-count 3)
+                (melissa-license-key (uiop:getenv "QUASAR_MELISSA_LICENSE_KEY"))
+                melissa-config
+                melissa-transport)
   (when *control-plane*
     (stop))
   (setf quasar.ui:*frontend-url* frontend-url
         *control-plane* (make-control-plane))
   (start-control-plane *control-plane*)
   (install-starlang-commands *control-plane*)
+  (quasar.actors.melissa.bridge:start-melissa-integration
+   *control-plane*
+   :config (or melissa-config
+               (quasar.actors.melissa:make-melissa-config
+                :license-key melissa-license-key))
+   :worker-count melissa-worker-count
+   :transport melissa-transport)
   (setf *websocket-server*
         (make-websocket-server *control-plane* :host host :port ws-port
                                :insecure-development-p insecure-development-p))
@@ -43,6 +54,7 @@
     (setf *websocket-server* nil))
   (stop-ui)
   (when *control-plane*
+    (quasar.actors.melissa.bridge:stop-melissa-integration *control-plane*)
     (stop-control-plane *control-plane*)
     (setf *control-plane* nil))
   (setf *browser-session-token* nil)

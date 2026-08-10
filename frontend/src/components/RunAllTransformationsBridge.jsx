@@ -3,7 +3,6 @@ import { Play } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useLocation } from "react-router-dom";
 import { assertDocument } from "starintel_doc";
-import { actorConfigurationStatus } from "../lib/actor-configuration";
 import { isBuiltinActor } from "../lib/actors";
 import { operation } from "../lib/operations";
 import {
@@ -57,9 +56,7 @@ function summaryMessage({ actorRuns, actorsTouched, produced, failures, skipped 
   const details = [];
   if (skipped) {
     details.push(
-      `${skipped} actor${
-        skipped === 1 ? " was" : "s were"
-      } already ineligible, manual-only, disabled, or unconfigured`
+      `${skipped} actor${skipped === 1 ? " was" : "s were"} ineligible, manual-only, or disabled`
     );
   }
   if (failures) {
@@ -131,15 +128,6 @@ export default function RunAllTransformationsBridge() {
             actorId: actor.id,
             status: "skipped",
             reason: "Custom actor execution is disabled."
-          });
-          continue;
-        }
-        const configurationStatus = actorConfigurationStatus(actor);
-        if (!configurationStatus.configured) {
-          reports.push({
-            actorId: actor.id,
-            status: "skipped",
-            reason: `Missing ${configurationStatus.missing.join(", ")}.`
           });
           continue;
         }
