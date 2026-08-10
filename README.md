@@ -1,13 +1,52 @@
 # Quasar
 
-Quasar is the Common Lisp control plane and CLOG WebSocket host for the existing
-Quasar investigation workspace.
+Quasar is the **canonical Common Lisp control plane and runtime** for the Quasar
+investigation workspace. It is not synonymous with `quasar-ui`.
+
+`lost-rob0t/quasar-ui` is the browser UI and standalone web edition. It provides
+the React/Vite/Cytoscape interface, mobile/PWA behavior, browser-local editing,
+and a bounded standalone capability set. It does **not** provide the complete
+capability set available when Quasar is connected to the StarIntel runtime and
+external StarIntel services.
+
+The full deployment is layered:
+
+```text
+quasar-ui
+  browser UI / graph renderer / standalone subset
+        |
+        | versioned commands, projections, capability discovery
+        v
+quasar
+  canonical Common Lisp control plane and runtime
+        |
+        | StarIntel APIs and service adapters
+        v
+starintel-server
+  persistent ingest / storage / search / routing / RabbitMQ services
+        |
+        +-----------------------------+
+        |                             |
+        v                             v
+star-bbpd                       other actor services
+  external recon actors          collectors / analyzers / tools
+```
+
+`star-bbpd`, for example, is an external Python/Pykka actor service that consumes
+RabbitMQ targets, runs reconnaissance tools such as Subfinder, Nmap, Httpx,
+Katana and DNS workflows, and publishes derived StarIntel documents and
+relations. Those capabilities are not reimplemented inside the browser UI.
+
+See [`docs/CAPABILITY-BOUNDARY.md`](docs/CAPABILITY-BOUNDARY.md) for the normative
+component boundary.
 
 The browser UI is preserved as the `frontend/` git submodule, pinned to
 `lost-rob0t/quasar-ui`. React, Cytoscape, the mobile shell, documents, graphs,
 datasets, imports, settings, themes, agents, research nodes, statistics, and the
 PWA remain browser features. Durable or privileged operations move behind one
-versioned command channel owned by Common Lisp.
+versioned command channel owned by Common Lisp. Backend ingest, persistence,
+search, routing, and external actor services remain behind their corresponding
+StarIntel service boundaries.
 
 ## Architecture
 
@@ -22,13 +61,21 @@ Quasar Common Lisp control plane
         +-- single-writer actor
         +-- canonical workspace state
         +-- command registry and capability discovery
+        +-- persistent Sento supervision
+        +-- privileged/local runtime integrations
         +-- StarLang adapter
-        +-- future CouchDB/RabbitMQ/Brave/MCP adapters
+        +-- StarIntel Server adapters
+        +-- external actor-service adapters
 ```
 
 CLOG hosts the browser session and transports commands. It does **not** recreate
 every React component as a CLOG object. High-frequency graph interaction remains
 inside Cytoscape; committed operations cross to Lisp.
+
+The UI must discover runtime capabilities rather than assume every deployment
+has every backend or actor service enabled. Missing services reduce the exposed
+capability set; they do not silently become browser implementations with weaker
+semantics.
 
 ## Checkout
 
@@ -100,3 +147,5 @@ Implemented:
 - tests and CI.
 
 The complete UI binding ledger is in [`docs/UI-MIGRATION.md`](docs/UI-MIGRATION.md).
+The wider runtime/service split is in
+[`docs/CAPABILITY-BOUNDARY.md`](docs/CAPABILITY-BOUNDARY.md).
