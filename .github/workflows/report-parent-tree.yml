@@ -1,0 +1,33 @@
+name: Report parent tree
+
+on:
+  push:
+    branches:
+      - agent/monorepo-ui-control-plane
+
+permissions:
+  contents: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: tree
+        shell: bash
+        run: echo "sha=$(git rev-parse HEAD^1^{tree})" >> "$GITHUB_OUTPUT"
+      - uses: actions/github-script@v7
+        env:
+          TREE_SHA: ${{ steps.tree.outputs.sha }}
+        with:
+          script: |
+            await github.rest.repos.createOrUpdateFileContents({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              path: "tree-sha-2.txt",
+              message: "Record final merge-resolution tree",
+              content: Buffer.from(`${process.env.TREE_SHA}\n`).toString("base64"),
+              branch: "chore/merge-resolution-report"
+            });
