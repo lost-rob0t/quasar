@@ -220,6 +220,36 @@
                           :test #'string=))
           collect graph-id))
 
+(defun edge-graphs-referencing-document (workspace document-id)
+  (loop for graph-id being the hash-keys of (workspace-graphs workspace)
+        using (hash-value graph)
+        when (find document-id (array-elements (graph-edges graph))
+                   :key (lambda (edge)
+                          (quasar.protocol:json-value edge "documentId"))
+                   :test #'string=)
+          collect graph-id))
+
+(defun graph-has-node-document-reference-p (graph document-id)
+  (and document-id
+       (find document-id (array-elements (graph-nodes graph))
+             :key (lambda (node)
+                    (quasar.protocol:json-value node "documentId"))
+             :test #'string=)))
+
+(defun reconcile-graph-document-membership (graph previous-document-id current-document-id)
+  (let ((document-ids (quasar.protocol:json-value graph "documentIds")))
+    (when (and (consp document-ids) (eq (car document-ids) :array))
+      (when (and previous-document-id
+                 (not (equal previous-document-id current-document-id))
+                 (not (graph-has-node-document-reference-p graph previous-document-id)))
+        (setf (rest document-ids)
+              (delete previous-document-id (rest document-ids) :test #'string=)))
+      (when (and current-document-id
+                 (not (member current-document-id (rest document-ids) :test #'string=)))
+        (setf (rest document-ids)
+              (append (rest document-ids) (list current-document-id))))))
+  graph)
+
 (defun graphs-referencing-document (workspace document-id)
   "Return list of (graph-id . graph) pairs that reference document-id."
   (loop for graph-id being the hash-keys of (workspace-graphs workspace)
@@ -384,7 +414,15 @@
   (let ((id (quasar.protocol:json-value payload "_id")))
     (require-valid-document workspace payload)
     (let ((previous (require-document workspace id)))
-      (let ((canonical (quasar.protocol:clone-json payload)))
+      (let ((canonical (quasar.protocol:clone-json payload))
+            (edge-graphs (edge-graphs-referencing-document workspace id)))
+        (when (and edge-graphs
+                   (not (string= (or (quasar.protocol:json-value canonical "dtype") "")
+                                 "relation")))
+          (error 'quasar.protocol:quasar-error
+                 :code "graph.invalid-reference"
+                 :message (format nil "Document ~A is referenced by relation edges in ~{~A~^, ~}; remove or retarget those edges before changing dtype."
+                                  id edge-graphs)))
         (setf (gethash id (workspace-documents workspace)) canonical)
         (make-applied-op
          :event "document.updated"
@@ -474,16 +512,8 @@
            (graph (ensure-graph workspace graph-id))
            (nodes (graph-nodes graph)))
       (add-array-item nodes canonical "id" "graph.duplicate-id")
-      (let ((document-ids (quasar.protocol:json-value graph "documentIds"))
-            (document-id (quasar.protocol:json-value canonical "documentId")))
-        (when (and document-ids document-id
-                   (not (eq document-ids :null))
-                   (not (member document-id (array-elements document-ids)
-                                :test #'string=)))
-          (quasar.protocol:object-set
-           graph "documentIds"
-           (apply #'quasar.protocol:json-array
-                  (append (array-elements document-ids) (list document-id))))))
+      (reconcile-graph-document-membership
+       graph nil (quasar.protocol:json-value canonical "documentId"))
       (make-applied-op
        :event "graph.node.created"
        :result (quasar.protocol:json-object
@@ -504,8 +534,11 @@
                     (quasar.protocol:json-value payload "id") "id" "document.invalid")))
     (require-valid-node workspace payload)
     (let ((previous (require-graph-node graph node-id)))
-      (let ((canonical (quasar.protocol:clone-json payload)))
+      (let* ((canonical (quasar.protocol:clone-json payload))
+             (previous-document-id (quasar.protocol:json-value previous "documentId"))
+             (current-document-id (quasar.protocol:json-value canonical "documentId")))
         (replace-array-item (graph-nodes graph) canonical "id" "graph.node-not-found")
+        (reconcile-graph-document-membership graph previous-document-id current-document-id)
         (make-applied-op
          :event "graph.node.updated"
          :result (quasar.protocol:json-object
@@ -529,11 +562,8 @@
                                           (string= (quasar.protocol:json-value e "target") node-id))
                                  collect (quasar.protocol:clone-json e))))
         (remove-node-from-graph graph node-id)
-        (let* ((document-id (quasar.protocol:json-value previous "documentId"))
-               (document-ids (quasar.protocol:json-value graph "documentIds")))
-          (when (and document-ids document-id)
-            (setf (rest document-ids)
-                  (delete document-id (rest document-ids) :test #'string=))))
+        (reconcile-graph-document-membership
+         graph (quasar.protocol:json-value previous "documentId") nil)
         (make-applied-op
          :event "graph.node.deleted"
          :result (quasar.protocol:json-object
