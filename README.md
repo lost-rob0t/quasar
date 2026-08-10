@@ -1,8 +1,33 @@
 # Quasar
 
-Quasar is a React/Cytoscape investigation UI backed by a Common Lisp
-single-writer control plane. The UI is tracked directly in this monorepo; there
-is no frontend submodule or generated overlay.
+Quasar is the canonical Common Lisp control plane and runtime for the Quasar investigation workspace, with the React/Cytoscape UI tracked directly under `frontend/` in this monorepo. The UI is a presentation and standalone-web layer; it is not the complete Quasar or StarIntel capability set.
+
+The full deployment is layered:
+
+```text
+Quasar UI (`frontend/`, sourced from quasar-ui)
+  browser UI / graph renderer / standalone subset
+        |
+        | versioned commands, projections, capability discovery
+        v
+quasar
+  canonical Common Lisp control plane and runtime
+        |
+        | StarIntel APIs and service adapters
+        v
+starintel-server
+  persistent ingest / storage / search / routing / RabbitMQ services
+        |
+        +-----------------------------+
+        |                             |
+        v                             v
+star-bbpd                       other actor services
+  external recon actors          collectors / analyzers / tools
+```
+
+`star-bbpd`, for example, is an external Python/Pykka actor service that consumes RabbitMQ targets, runs reconnaissance tools such as Subfinder, Nmap, Httpx, Katana and DNS workflows, and publishes derived StarIntel documents and relations. Those capabilities are not reimplemented inside the browser UI.
+
+See [Architecture](docs/ARCHITECTURE.md), the [UI migration ledger](docs/UI-MIGRATION.md), and the [capability boundary](docs/CAPABILITY-BOUNDARY.md) for the detailed ownership split.
 
 ## Architecture
 
@@ -18,9 +43,8 @@ is no frontend submodule or generated overlay.
 - CLOG serves the production bundle and issues the browser session token.
 - StarLang remains a Common Lisp subsystem and `starlang.load` is excluded from
   the normal browser capability set.
-
-See [Architecture](docs/ARCHITECTURE.md) and the
-[UI migration ledger](docs/UI-MIGRATION.md) for the detailed boundaries.
+- Runtime and external-service controls discover capabilities rather than
+  assuming `starintel-server`, BBPD, or other actor services are always present.
 
 ## Development
 
@@ -121,9 +145,13 @@ the chunks in an isolated candidate and commits the entire import once.
 ## Transitional boundaries
 
 Actor/research execution and optional browser network integrations have not all
-moved behind Common Lisp commands yet. PouchDB remains a CouchDB
-ingress/egress staging layer used only during explicit synchronization; pulled documents are
-validated and committed through the control plane before becoming
-authoritative. Browser settings still support existing local integrations, and
-settings transfer filters credential fields. These adapters must not be used as
-fallback authority for document or graph mutations.
+moved behind Common Lisp or their owning StarIntel service commands yet. PouchDB
+remains a CouchDB ingress/egress staging layer used only during explicit
+synchronization; pulled documents are validated and committed through the
+control plane before becoming authoritative. Browser settings still support
+existing local integrations, and settings transfer filters credential fields.
+These adapters must not be used as fallback authority for document or graph
+mutations.
+
+Missing backend or external capabilities reduce the advertised capability set;
+they do not silently become browser implementations with weaker semantics.
