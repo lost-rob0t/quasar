@@ -25,15 +25,36 @@ describe("graph scale policy", () => {
     });
   });
 
-  it("rejects a graph before Cytoscape receives an oversized element set", () => {
+  it("keeps graphs above the old hard cutoffs renderable", () => {
     const documents = Array.from({ length: 2_001 }, (_, index) => ({
       _id: `node:${index}`,
       dtype: "entity"
     }));
 
     expect(graphRenderDecision(documents)).toMatchObject({
-      allowed: false,
+      allowed: true,
+      mode: "large",
       exceeded: ["documents", "nodes"]
+    });
+  });
+
+  it("still reports which advisory scale thresholds were crossed", () => {
+    const documents = [
+      {
+        _id: "r",
+        dtype: "relation",
+        data: {
+          subject: Array.from({ length: 100 }, (_, index) => `s:${index}`),
+          object: Array.from({ length: 100 }, (_, index) => `o:${index}`)
+        }
+      }
+    ];
+
+    expect(graphRenderDecision(documents)).toMatchObject({
+      allowed: true,
+      mode: "large",
+      exceeded: ["elements"],
+      estimate: { documents: 1, nodes: 200, edges: 10_000, elements: 10_200 }
     });
   });
 
