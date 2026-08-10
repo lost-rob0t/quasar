@@ -1,10 +1,12 @@
 import { useEffect, useRef } from "react";
 import {
-  Activity,
   Bot,
+  ChevronRight,
+  Code2,
   FilePlus2,
   FolderInput,
-  Menu,
+  House,
+  Layers3,
   Network,
   Redo2,
   Settings,
@@ -16,11 +18,13 @@ import { NavLink } from "react-router-dom";
 import { useQuasar } from "../store";
 
 const navigation = [
-  { to: "/", label: "Home", Icon: Activity, end: true },
-  { to: "/graph", label: "Graph", Icon: Network },
-  { to: "/documents", label: "Docs", Icon: TableProperties },
-  { to: "/documents/new", label: "Add", Icon: FilePlus2 },
+  { to: "/", label: "Home", Icon: House, end: true },
+  { to: "/graph", label: "Graphs", Icon: Network },
+  { to: "/documents?group=dataset", label: "Datasets", Icon: Layers3 },
+  { to: "/documents", label: "Documents", Icon: TableProperties, end: true },
+  { to: "/documents/new", label: "Add document", Icon: FilePlus2 },
   { to: "/agents", label: "Agents", Icon: Bot },
+  { to: "/actors", label: "Actors", Icon: Code2 },
   { to: "/import", label: "Import", Icon: FolderInput },
   { to: "/settings", label: "Settings", Icon: Settings }
 ];
@@ -106,9 +110,15 @@ export default function MobileGestureMenu({ open, onOpenChange }) {
           >
             <header>
               <span className="mobile-gesture-grip" aria-hidden="true" />
-              <strong>
-                <Menu size={17} /> Menu
-              </strong>
+              <div className="mobile-gesture-heading">
+                <span className="mobile-gesture-brand-mark" aria-hidden="true">
+                  ✦
+                </span>
+                <span>
+                  <strong>Quasar</strong>
+                  <small>StarIntel workspace</small>
+                </span>
+              </div>
               <button
                 className="icon-button"
                 type="button"
@@ -118,24 +128,8 @@ export default function MobileGestureMenu({ open, onOpenChange }) {
                 <X size={18} />
               </button>
             </header>
-            <div className="mobile-gesture-actions" aria-label="History actions">
-              <button
-                className="button"
-                type="button"
-                disabled={!canUndo}
-                onClick={() => runHistory(undo)}
-              >
-                <Undo2 size={18} /> Undo
-              </button>
-              <button
-                className="button"
-                type="button"
-                disabled={!canRedo}
-                onClick={() => runHistory(redo)}
-              >
-                <Redo2 size={18} /> Redo
-              </button>
-            </div>
+
+            <div className="mobile-gesture-section-label">Navigation</div>
             <nav className="mobile-gesture-grid" aria-label="Mobile navigation">
               {navigation.map(({ to, label, Icon, end }) => (
                 <NavLink
@@ -147,12 +141,39 @@ export default function MobileGestureMenu({ open, onOpenChange }) {
                   }
                   onClick={() => onOpenChange(false)}
                 >
-                  <Icon size={22} aria-hidden="true" />
-                  <span>{label}</span>
+                  <span className="mobile-gesture-link-icon">
+                    <Icon size={19} aria-hidden="true" />
+                  </span>
+                  <strong>{label}</strong>
+                  <ChevronRight
+                    className="mobile-gesture-link-chevron"
+                    size={16}
+                    aria-hidden="true"
+                  />
                 </NavLink>
               ))}
             </nav>
-            <small>Swipe down to close</small>
+
+            <div className="mobile-gesture-section-label">History</div>
+            <div className="mobile-gesture-actions" aria-label="History actions">
+              <button
+                className="button"
+                type="button"
+                disabled={!canUndo}
+                onClick={() => runHistory(undo)}
+              >
+                <Undo2 size={17} /> Undo
+              </button>
+              <button
+                className="button"
+                type="button"
+                disabled={!canRedo}
+                onClick={() => runHistory(redo)}
+              >
+                <Redo2 size={17} /> Redo
+              </button>
+            </div>
+            <small className="mobile-gesture-hint">Swipe down to close</small>
           </section>
         </div>
       )}
