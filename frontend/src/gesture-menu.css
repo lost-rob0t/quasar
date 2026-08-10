@@ -72,84 +72,184 @@
     z-index: 122;
     display: grid;
     align-items: end;
-    background: #0009;
-    backdrop-filter: blur(4px);
+    background: #000a;
+    backdrop-filter: blur(7px);
   }
 
   .mobile-gesture-sheet {
     width: 100%;
-    max-height: min(72dvh, 620px);
+    max-height: min(86dvh, 740px);
     overflow-y: auto;
-    padding: 0.55rem 0.8rem max(1rem, env(safe-area-inset-bottom));
+    padding: 0.8rem 0.85rem max(1rem, env(safe-area-inset-bottom));
     border: 1px solid var(--line);
     border-right: 0;
     border-bottom: 0;
     border-left: 0;
-    border-radius: 18px 18px 0 0;
-    background: color-mix(in srgb, var(--panel) 97%, transparent);
-    box-shadow: 0 -20px 60px #000a;
+    border-radius: 20px 20px 0 0;
+    background: color-mix(in srgb, var(--panel) 98%, transparent);
+    box-shadow: 0 -24px 70px #000c;
     touch-action: pan-y;
   }
 
   .mobile-gesture-sheet > header {
+    position: relative;
     display: grid;
-    grid-template-columns: 44px 1fr 44px;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    gap: 0.7rem;
     align-items: center;
-    min-height: 48px;
-  }
-
-  .mobile-gesture-sheet > header > strong {
-    display: flex;
-    gap: 0.45rem;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.82rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    min-height: 62px;
+    padding: 0.25rem 0 0.55rem;
   }
 
   .mobile-gesture-grip {
-    justify-self: start;
-    width: 34px;
+    position: absolute;
+    top: -0.25rem;
+    left: 50%;
+    width: 40px;
+    transform: translateX(-50%);
+  }
+
+  .mobile-gesture-heading {
+    display: flex;
+    min-width: 0;
+    gap: 0.7rem;
+    align-items: center;
+    padding-top: 0.35rem;
+  }
+
+  .mobile-gesture-heading > span:last-child {
+    display: grid;
+    min-width: 0;
+    gap: 0.1rem;
+  }
+
+  .mobile-gesture-heading strong {
+    color: var(--text);
+    font-size: 1rem;
+    line-height: 1.1;
+  }
+
+  .mobile-gesture-heading small {
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 0.72rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-gesture-brand-mark {
+    display: grid;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    place-items: center;
+    border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line));
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+    color: var(--accent);
+    font-size: 1rem;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+
+  .mobile-gesture-sheet > header > .icon-button {
+    justify-self: end;
+  }
+
+  .mobile-gesture-section-label {
+    padding: 0.55rem 0.35rem 0.35rem;
+    color: var(--muted);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
   }
 
   .mobile-gesture-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.55rem;
-    padding: 0.6rem 0;
+    grid-template-columns: 1fr;
+    gap: 0.3rem;
+    padding: 0 0 0.45rem;
   }
 
   .mobile-gesture-link {
     display: grid;
-    min-height: 76px;
-    place-items: center;
-    align-content: center;
-    gap: 0.38rem;
-    padding: 0.6rem 0.35rem;
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    background: var(--surface);
+    grid-template-columns: 34px minmax(0, 1fr) 18px;
+    min-height: 48px;
+    gap: 0.65rem;
+    align-items: center;
+    padding: 0.4rem 0.55rem;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
     color: var(--muted);
-    font-size: 0.72rem;
+    font-size: 0.8rem;
     text-decoration: none;
   }
 
-  .mobile-gesture-link.active {
-    border-color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  .mobile-gesture-link:hover,
+  .mobile-gesture-link:focus-visible {
+    border-color: var(--line);
+    background: var(--surface);
     color: var(--text);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
   }
 
-  .mobile-gesture-sheet > small {
+  .mobile-gesture-link.active {
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+    background: color-mix(in srgb, var(--accent) 13%, var(--surface));
+    color: var(--text);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+
+  .mobile-gesture-link-icon {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--surface);
+    color: color-mix(in srgb, var(--text) 84%, var(--muted));
+  }
+
+  .mobile-gesture-link.active .mobile-gesture-link-icon {
+    border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+    color: var(--accent);
+  }
+
+  .mobile-gesture-link > strong {
+    overflow: hidden;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-gesture-link-chevron {
+    justify-self: end;
+    opacity: 0.48;
+  }
+
+  .mobile-gesture-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem;
+    padding: 0 0 0.65rem;
+  }
+
+  .mobile-gesture-actions .button {
+    min-height: 42px;
+    justify-content: center;
+  }
+
+  .mobile-gesture-hint {
     display: block;
+    padding-top: 0.1rem;
     color: var(--muted);
+    font-size: 0.67rem;
     text-align: center;
   }
 }
 
-@media (max-width: 420px) {
+@media (min-width: 600px) and (max-width: 850px) {
   .mobile-gesture-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
