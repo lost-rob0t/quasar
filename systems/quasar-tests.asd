@@ -7,7 +7,9 @@
                "quasar-starlang")
   :serial t
   :pathname "../control-plane/tests/"
-  :components ((:file "control-plane-tests"))
+  :components ((:file "control-plane-tests")
+               (:file "workspace-integrity-tests"))
   :perform (test-op (operation component)
              (declare (ignore operation component))
-             (uiop:symbol-call :quasar.tests :run-tests)))
+             (uiop:symbol-call :quasar.tests :run-tests)
+             (funcall (find-symbol "RUN-WORKSPACE-INTEGRITY-TESTS" "QUASAR.TESTS"))))
