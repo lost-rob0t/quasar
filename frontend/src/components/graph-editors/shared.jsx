@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Plus, Search, X } from "lucide-react";
 import { documentLabel } from "starintel_doc";
 import { fieldTypeHint } from "../../lib/schema-form";
@@ -58,13 +58,18 @@ export function GraphModalShell({
   const modalRef = useRef(null);
   const returnFocusRef = useRef(null);
   const dragRef = useRef(null);
+  const dirtyRef = useRef(dirty);
+  const onCloseRef = useRef(onClose);
   const [dragPosition, setDragPosition] = useState(null);
   const [dragging, setDragging] = useState(false);
 
-  function requestClose() {
-    if (dirty && !window.confirm("Discard unsaved changes?")) return;
-    onClose();
-  }
+  dirtyRef.current = dirty;
+  onCloseRef.current = onClose;
+
+  const requestClose = useCallback(() => {
+    if (dirtyRef.current && !window.confirm("Discard unsaved changes?")) return;
+    onCloseRef.current();
+  }, []);
 
   function clampDragPosition(left, top) {
     const layer = layerRef.current;
@@ -152,7 +157,7 @@ export function GraphModalShell({
       root.removeEventListener("keydown", keydown);
       returnFocusRef.current?.focus?.();
     };
-  }, [dirty, onClose]);
+  }, [requestClose]);
 
   const style = dragPosition
     ? {
