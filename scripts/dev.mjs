@@ -198,7 +198,7 @@ startProcess(
     "--non-interactive",
     "--eval", "(setf asdf:*central-registry* nil)",
     "--eval", "(asdf:clear-configuration)",
-    "--eval", "(ql:quickload (list :jsown :sento :bordeaux-threads :clog :websocket-driver) :silent t)",
+    "--eval", "(ql:quickload (list :babel :dexador :jsown :quri :sento :bordeaux-threads :clog :websocket-driver) :silent t)",
     "--eval", "(asdf:load-asd (truename \"systems/quasar-control.asd\"))",
     "--eval", "(asdf:load-asd (truename \"systems/quasar-starlang.asd\"))",
     "--eval", "(asdf:load-asd (truename \"systems/quasar-web.asd\"))",
