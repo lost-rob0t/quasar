@@ -100,7 +100,20 @@ window.addEventListener("quasar:control-plane-error", (event) => {
     message,
     details: JSON.stringify(fields)
   });
+  console.error(`[quasar-control:error] ${message}`, fields);
 });
+
+// Control-plane transport tracing is deliberately on by default during local
+// Vite development. Add ?debug=0 for a quiet browser session. Production
+// builds remain unaffected because diagnosticsEnabled() is DEV-only.
+if (import.meta.env.DEV) {
+  try {
+    const requested = new URLSearchParams(window.location.search).get("debug");
+    if (requested !== "0") window.localStorage.setItem("quasar-debug", "1");
+  } catch {
+    // Storage may be unavailable in privacy-restricted browser contexts.
+  }
+}
 
 initializeTheme();
 const controlPlane = initializeControlPlane();
