@@ -27,5 +27,8 @@
                (:file "actors/melissa/lookup")
                (:file "actors/melissa/router")
                (:file "actors/melissa/supervisor")
-               (:file "actors/melissa/bridge"))
+               (:file "actors/melissa/bridge")
+               ;; Loaded last so diagnostics wrap the final async-aware
+               ;; control-plane dispatch implementation.
+               (:file "debug-logging"))
   :in-order-to ((test-op (test-op "quasar-tests"))))
