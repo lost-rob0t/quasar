@@ -29,6 +29,22 @@
   border-bottom: 1px solid var(--line);
 }
 
+@media (min-width: 851px) {
+  .graph-compact-editor > header.graph-editor-drag-handle {
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+  }
+
+  .graph-compact-editor.is-dragging > header.graph-editor-drag-handle {
+    cursor: grabbing;
+  }
+
+  .graph-compact-editor > header.graph-editor-drag-handle .icon-button {
+    cursor: pointer;
+  }
+}
+
 .graph-compact-editor > header h2 {
   min-width: 0;
   margin: 0;
