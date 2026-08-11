@@ -5,8 +5,7 @@
     (cond
       ((string= level "debug") :debug)
       ((string= level "info") :info)
-      ((string= level "warn") :warn)
-      ((string= level "warning") :warn)
+      ((member level '("warn" "warning") :test #'string=) :warn)
       ((string= level "error") :error)
       ((string= level "off") :off)
       (t :debug))))
@@ -20,8 +19,8 @@
     (:off 100)))
 
 (defun configured-log-level ()
-  ;; Developer processes are intentionally noisy by default. CI stays at INFO
-  ;; unless QUASAR_LOG_LEVEL explicitly asks for DEBUG.
+  ;; Local developer processes are intentionally verbose by default. CI is
+  ;; quieter unless QUASAR_LOG_LEVEL=debug is explicitly requested.
   (parse-log-level
    (or (uiop:getenv "QUASAR_LOG_LEVEL")
        (and (uiop:getenv "CI") "info")
@@ -46,10 +45,7 @@
     (terpri *error-output*)
     (finish-output *error-output*)))
 
-(defun envelope-workspace-id (envelope)
-  (or (quasar.protocol:command-envelope-workspace envelope) "default"))
-
-(defun condition-details-for-log (condition)
+(defun safe-error-details (condition)
   (or (quasar.protocol:quasar-error-details condition)
       (quasar.protocol:empty-object)))
 
@@ -78,7 +74,7 @@
           :dtype dtype
           :graph-id graph-id)))
 
-(defun operation-context-details (context &optional cause)
+(defun operation-context-details (context cause)
   (quasar.protocol:json-object
    (cons "operationIndex" (getf context :index))
    (cons "operationType" (or (getf context :type) :null))
@@ -89,8 +85,7 @@
    (cons "cause" (or cause (quasar.protocol:empty-object)))))
 
 (defun commit-operations (workspace operations)
-  "Apply every operation and attach the failing operation context to errors.
-WORKSPACE is expected to be an isolated candidate copy owned by the caller."
+  "Apply every operation with per-operation diagnostics and enriched failures."
   (let ((applied-operations '())
         (inverses '()))
     (loop for operation in operations
@@ -136,229 +131,14 @@ WORKSPACE is expected to be an isolated candidate copy owned by the caller."
                    (error 'quasar.protocol:quasar-error
                           :code (quasar.protocol:quasar-error-code condition)
                           :message (quasar.protocol:quasar-error-message condition)
-                          :details (operation-context-details context cause))))
-               (error (condition)
-                 (quasar.control-plane::diagnostic-log
-                  :error "workspace" "operation.crashed"
-                  :workspace (workspace-id workspace)
-                  :index index
-                  :type (getf context :type)
-                  :id (getf context :id)
-                  :document-id (getf context :document-id)
-                  :dtype (getf context :dtype)
-                  :graph-id (getf context :graph-id)
-                  :condition (princ-to-string condition))
-                 (error 'quasar.protocol:quasar-error
-                        :code "operation.internal-error"
-                        :message (format nil "Unexpected failure applying operation ~D (~A)."
-                                         index (or (getf context :type) "unknown"))
-                        :details (operation-context-details context))))
+                          :details (operation-context-details context cause))))))
     (values (nreverse applied-operations) (nreverse inverses))))
 
 (in-package #:quasar.control-plane)
 
-(defun run-operation (plane envelope operation)
-  "Apply and persist one operation with structured developer diagnostics."
-  (let* ((workspace (workspace-for plane envelope))
-         (base-revision (quasar.workspace:workspace-revision workspace))
-         (type (quasar.protocol:json-value operation "type"))
-         (payload (or (quasar.protocol:json-value operation "payload")
-                      (quasar.protocol:empty-object)))
-         (document-id (or (quasar.protocol:json-value payload "documentId")
-                          (quasar.protocol:json-value payload "_id")))
-         (graph-id (quasar.protocol:json-value payload "graphId")))
-    (diagnostic-log :debug "control-plane" "operation.begin"
-                    :request-id (quasar.protocol:command-envelope-id envelope)
-                    :workspace (quasar.workspace:workspace-id workspace)
-                    :revision base-revision
-                    :type type
-                    :document-id document-id
-                    :graph-id graph-id
-                    :client (quasar.protocol:command-envelope-client envelope))
-    (handler-case
-        (let* ((candidate (quasar.workspace:copy-workspace workspace))
-               (applied (quasar.workspace:dispatch-operation candidate operation))
-               (operation-id (next-operation-id)))
-          (incf (quasar.workspace:workspace-revision candidate))
-          (let ((result-obj (applied-op-result applied)))
-            (quasar.protocol:object-set result-obj "operationId" operation-id)
-            (quasar.protocol:object-set result-obj "revision"
-                                        (quasar.workspace:workspace-revision candidate))
-            (quasar.protocol:object-set result-obj "event" (applied-op-event applied)))
-          (diagnostic-log :debug "control-plane" "operation.persist"
-                          :operation-id operation-id
-                          :workspace (quasar.workspace:workspace-id candidate)
-                          :base-revision base-revision
-                          :revision (quasar.workspace:workspace-revision candidate)
-                          :type type)
-          (quasar.store:commit-workspace
-           (control-plane-store plane) candidate
-           (quasar.protocol:json-object
-            (cons "operationId" operation-id)
-            (cons "workspaceId" (quasar.workspace:workspace-id candidate))
-            (cons "baseRevision" base-revision)
-            (cons "committedRevision" (quasar.workspace:workspace-revision candidate))
-            (cons "command" (quasar.protocol:clone-json operation))
-            (cons "result" (quasar.protocol:clone-json (applied-op-result applied)))
-            (cons "timestamp" (get-universal-time))
-            (cons "client" (or (quasar.protocol:command-envelope-client envelope) "unknown"))))
-          (setf (gethash (quasar.workspace:workspace-id candidate)
-                         (control-plane-workspaces plane))
-                candidate)
-          (broadcast-event plane
-                           (applied-op-event applied)
-                           (quasar.workspace:workspace-id candidate)
-                           (quasar.workspace:workspace-revision candidate)
-                           operation-id
-                           (applied-op-result applied))
-          (diagnostic-log :info "control-plane" "operation.committed"
-                          :operation-id operation-id
-                          :workspace (quasar.workspace:workspace-id candidate)
-                          :revision (quasar.workspace:workspace-revision candidate)
-                          :type type
-                          :event (applied-op-event applied))
-          (applied-op-result applied))
-      (quasar.protocol:quasar-error (condition)
-        (diagnostic-log :error "control-plane" "operation.failed"
-                        :request-id (quasar.protocol:command-envelope-id envelope)
-                        :workspace (quasar.workspace:workspace-id workspace)
-                        :type type
-                        :document-id document-id
-                        :graph-id graph-id
-                        :code (quasar.protocol:quasar-error-code condition)
-                        :message (quasar.protocol:quasar-error-message condition)
-                        :details (condition-details-for-log condition))
-        (error condition))
-      (error (condition)
-        (diagnostic-log :error "control-plane" "operation.crashed"
-                        :request-id (quasar.protocol:command-envelope-id envelope)
-                        :workspace (quasar.workspace:workspace-id workspace)
-                        :type type
-                        :document-id document-id
-                        :graph-id graph-id
-                        :condition (princ-to-string condition))
-        (error condition)))))
-
-(defun handle-transaction (plane payload envelope)
-  (let* ((workspace (workspace-for plane envelope))
-         (operations (quasar.protocol:ensure-array
-                      (quasar.protocol:json-value payload "operations")
-                      "operations" "protocol.invalid-envelope"))
-         (operation-list (array-elements operations))
-         (expected-revision (quasar.protocol:json-value payload "expectedRevision")))
-    (when (null operation-list)
-      (error 'quasar.protocol:quasar-error
-             :code "transaction.failed"
-             :message "A transaction must contain at least one operation."))
-    (when (and expected-revision
-               (/= expected-revision (quasar.workspace:workspace-revision workspace)))
-      (diagnostic-log :warn "transaction" "revision-conflict"
-                      :request-id (quasar.protocol:command-envelope-id envelope)
-                      :workspace (quasar.workspace:workspace-id workspace)
-                      :expected expected-revision
-                      :current (quasar.workspace:workspace-revision workspace))
-      (error 'quasar.protocol:quasar-error
-             :code "workspace.revision-conflict"
-             :message (format nil "Expected revision ~A but current is ~A."
-                              expected-revision
-                              (quasar.workspace:workspace-revision workspace))))
-    (let* ((candidate (quasar.workspace:copy-workspace workspace))
-           (base-revision (quasar.workspace:workspace-revision workspace))
-           (transaction-id (next-transaction-id)))
-      (diagnostic-log :debug "transaction" "begin"
-                      :transaction-id transaction-id
-                      :request-id (quasar.protocol:command-envelope-id envelope)
-                      :workspace (quasar.workspace:workspace-id workspace)
-                      :base-revision base-revision
-                      :expected-revision expected-revision
-                      :operation-count (length operation-list)
-                      :client (quasar.protocol:command-envelope-client envelope))
-      (let ((applied-operations
-              (handler-case
-                  (multiple-value-bind (applied inverses)
-                      (quasar.workspace:commit-operations candidate operation-list)
-                    (declare (ignore inverses))
-                    applied)
-                (quasar.protocol:quasar-error (condition)
-                  (let ((details (condition-details-for-log condition)))
-                    (diagnostic-log :error "transaction" "rollback"
-                                    :transaction-id transaction-id
-                                    :request-id (quasar.protocol:command-envelope-id envelope)
-                                    :workspace (quasar.workspace:workspace-id workspace)
-                                    :base-revision base-revision
-                                    :code (quasar.protocol:quasar-error-code condition)
-                                    :message (quasar.protocol:quasar-error-message condition)
-                                    :details details)
-                    (error 'quasar.protocol:quasar-error
-                           :code "transaction.failed"
-                           :message "One or more operations failed; the transaction was rolled back."
-                           :details (quasar.protocol:json-object
-                                     (cons "code" (quasar.protocol:quasar-error-code condition))
-                                     (cons "message" (quasar.protocol:quasar-error-message condition))
-                                     (cons "details" details))))))))
-        (let* ((revision (incf (quasar.workspace:workspace-revision candidate)))
-               (event-count (length applied-operations))
-               (results
-                 (loop for applied in applied-operations
-                       for n from 1
-                       for operation-id = (format nil "~A:~D" transaction-id n)
-                       collect (let ((result (applied-op-result applied)))
-                                 (quasar.protocol:object-set result "operationId" operation-id)
-                                 (quasar.protocol:object-set result "transactionId" transaction-id)
-                                 (quasar.protocol:object-set result "eventIndex" n)
-                                 (quasar.protocol:object-set result "eventCount" event-count)
-                                 (quasar.protocol:object-set result "revision" revision)
-                                 (quasar.protocol:object-set result "event"
-                                                             (applied-op-event applied))
-                                 result))))
-          (diagnostic-log :debug "transaction" "persist"
-                          :transaction-id transaction-id
-                          :workspace (quasar.workspace:workspace-id candidate)
-                          :base-revision base-revision
-                          :revision revision
-                          :operation-count event-count)
-          (quasar.store:commit-workspace
-           (control-plane-store plane) candidate
-           (quasar.protocol:json-object
-            (cons "transactionId" transaction-id)
-            (cons "workspaceId" (quasar.workspace:workspace-id candidate))
-            (cons "baseRevision" base-revision)
-            (cons "committedRevision" revision)
-            (cons "commands" (quasar.protocol:clone-json operations))
-            (cons "timestamp" (get-universal-time))
-            (cons "client" (or (quasar.protocol:command-envelope-client envelope)
-                                "unknown"))))
-          (setf (gethash (quasar.workspace:workspace-id candidate)
-                         (control-plane-workspaces plane))
-                candidate)
-          (loop for applied in applied-operations
-                for result in results
-                for n from 1
-                do (broadcast-event plane
-                                    (applied-op-event applied)
-                                    (quasar.workspace:workspace-id candidate)
-                                    revision
-                                    (quasar.protocol:json-value result "operationId")
-                                    result
-                                    :transaction-id transaction-id
-                                    :event-index n
-                                    :event-count event-count))
-          (diagnostic-log :info "transaction" "committed"
-                          :transaction-id transaction-id
-                          :request-id (quasar.protocol:command-envelope-id envelope)
-                          :workspace (quasar.workspace:workspace-id candidate)
-                          :revision revision
-                          :operation-count event-count)
-          (quasar.protocol:json-object
-           (cons "operationId" transaction-id)
-           (cons "transactionId" transaction-id)
-           (cons "revision" revision)
-           (cons "workspaceId" (quasar.workspace:workspace-id candidate))
-           (cons "results" (apply #'quasar.protocol:json-array results))))))))
-
 (defun dispatch-message (plane message)
-  ;; This definition intentionally comes after the Melissa async-control-plane
-  ;; extension and preserves async command dispatch while adding diagnostics.
+  ;; Loaded after Melissa's async-control-plane extension, so this preserves
+  ;; async dispatch while making every command/error visible in debug output.
   (destructuring-bind (&key envelope reply) message
     (let* ((id (quasar.protocol:command-envelope-id envelope))
            (command (quasar.protocol:command-envelope-command envelope))
@@ -366,7 +146,7 @@ WORKSPACE is expected to be an isolated candidate copy owned by the caller."
            (handler (gethash command (control-plane-handlers plane)))
            (async-table (gethash plane *async-handler-tables*))
            (async-handler (and async-table (gethash command async-table)))
-           (workspace (envelope-workspace-id envelope))
+           (workspace (or (quasar.protocol:command-envelope-workspace envelope) "default"))
            (client (or (quasar.protocol:command-envelope-client envelope) "unknown")))
       (diagnostic-log :debug "control-plane" "command.received"
                       :request-id id
@@ -400,7 +180,7 @@ WORKSPACE is expected to be an isolated candidate copy owned by the caller."
                           :workspace workspace
                           :code (quasar.protocol:quasar-error-code condition)
                           :message (quasar.protocol:quasar-error-message condition)
-                          :details (condition-details-for-log condition))
+                          :details (safe-error-details condition))
           (funcall reply (quasar.protocol:quasar-error-to-envelope id condition)))
         (error (condition)
           (diagnostic-log :error "control-plane" "command.crashed"
