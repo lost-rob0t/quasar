@@ -23,13 +23,16 @@
   "Return T if VALUE is a JSON array.
 Handles two representations:
   - Our convention: (:array . elements)
-  - JSOWN native (from jsown:parse): a plain list of elements where the
-    first element is neither the :OBJ keyword (object) nor a string
-    (key-value pair)."
+  - JSOWN native (from jsown:parse): a plain list of elements.
+A JSOWN object (:obj . pairs) is excluded by the :OBJ tag. Scalars
+(strings, numbers, :null/:false/:true keywords) are not cons cells and
+are therefore excluded. This function is only ever called on JSOWN
+*values* (never on bare key-value pairs), so a plain list whose first
+element is a string — e.g. JSOWN's parse of [\"doc1\"] — is a valid
+array, not an object pair."
   (or (null value)
       (and (consp value)
-           (not (eq (car value) :obj))
-           (not (stringp (car value))))))
+           (not (eq (car value) :obj)))))
 
 (defun object-keys (object)
   (mapcar #'car (rest object)))

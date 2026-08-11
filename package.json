@@ -20,10 +20,11 @@
     "test:lisp": "bash scripts/test-lisp",
     "test:e2e": "npm --prefix frontend run test:e2e",
     "test:integration:stack": "node scripts/smoke-startup.mjs",
+    "check:control-plane-deps": "node scripts/check-control-plane-deps.mjs",
     "typecheck": "npm --prefix frontend run typecheck",
     "lint": "npm --prefix frontend run lint",
     "format": "npm --prefix frontend run format",
-    "check": "npm --prefix frontend run check"
+    "check": "npm --prefix frontend run check && node scripts/check-control-plane-deps.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.2.0",

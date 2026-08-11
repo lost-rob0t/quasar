@@ -63,14 +63,7 @@ jobs:
       - name: Load the real quasar-web system
         run: |
           output=$(mktemp)
-          sbcl --non-interactive \
-            --eval '(setf asdf:*central-registry* nil)' \
-            --eval '(asdf:clear-configuration)' \
-            --eval '(ql:quickload (list :jsown :sento :bordeaux-threads :clog :websocket-driver) :silent t)' \
-            --eval '(asdf:load-asd (truename "systems/quasar-control.asd"))' \
-            --eval '(asdf:load-asd (truename "systems/quasar-starlang.asd"))' \
-            --eval '(asdf:load-asd (truename "systems/quasar-web.asd"))' \
-            --eval '(asdf:load-system :quasar-web)' 2>&1 | tee "$output"
+          LOAD_ONLY=1 bash scripts/run-control-plane 2>&1 | tee "$output"
           if grep -iE '(undefined.*function|UNDEFINED-FUNCTION|; caught.*ERROR.*condition)' "$output"; then
             echo "quasar-web produced a compilation error or undefined function" >&2
             exit 1

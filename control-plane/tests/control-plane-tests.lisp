@@ -196,6 +196,35 @@
                    (quasar.protocol:encode-result
                     "graph" (workspace-graph workspace "empty"))))))
 
+(defun test-graph-put-accepts-jsown-string-array-document-ids ()
+  "Regression: graph.put with a non-empty documentIds array of strings.
+JSOWN parses [\"doc1\"] as a plain list (\"doc1\") whose first element is
+a string. The array-p predicate must recognise this as an array, and
+apply-graph-put must normalise it to the (:array ...) convention so that
+downstream membership reconciliation sees a uniform representation."
+  (let ((workspace (make-workspace :id "jsown-doc-ids")))
+    (apply-document-create workspace (make-doc "person:jsown"))
+    (quasar.workspace:apply-graph-put
+     workspace
+     (jsown:parse
+      "{\"id\":\"case\",\"name\":\"Case\",\"documentIds\":[\"person:jsown\"]}"))
+    (let ((ids (quasar.protocol:json-value
+                (workspace-graph workspace "case") "documentIds")))
+      (check (and (consp ids) (eq (car ids) :array)))
+      (check (member "person:jsown" (rest ids) :test #'string=)))
+    ;; A second graph.put (update path) must also succeed — this is the
+    ;; exact scenario that failed in the dev environment: the UI re-sends
+    ;; the graph with its reconciled documentIds after adding a node.
+    (quasar.workspace:apply-graph-put
+     workspace
+     (jsown:parse
+      "{\"id\":\"case\",\"name\":\"Case\",\"documentIds\":[\"person:jsown\"],\"nodes\":[{\"id\":\"n1\",\"graphId\":\"case\",\"documentId\":\"person:jsown\"}]}"))
+    (let ((graph (workspace-graph workspace "case")))
+      (check (graph-node graph "n1"))
+      (check (member "person:jsown"
+                     (rest (quasar.protocol:json-value graph "documentIds"))
+                     :test #'string=)))))
+
 ;;; --- Document CRUD ---
 
 (defun test-document-crud ()
@@ -954,6 +983,7 @@
   (test-clone-json)
   (test-workspace-revision)
   (test-graph-put-preserves-membership-null)
+  (test-graph-put-accepts-jsown-string-array-document-ids)
   (test-document-crud)
   (test-document-not-found)
   (test-document-invalid)

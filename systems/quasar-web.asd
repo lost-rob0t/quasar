@@ -12,6 +12,7 @@
   :serial t
   :pathname "../control-plane/src/"
   :components ((:file "websocket-server")
+               (:file "actors/melissa/web-capabilities")
                (:file "clog-host")
                (:file "main"))
   :in-order-to ((test-op (test-op "quasar-tests"))))
