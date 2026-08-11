@@ -182,29 +182,15 @@ validateDependencies();
 
 const env = { ...process.env };
 
-// Isolate ASDF source registry from user-local CL projects (e.g. Lem's qlot)
-// that may provide incompatible versions of named-readtables or other deps.
-const homeDir = process.env.HOME || "/home/unseen";
-env.CL_SOURCE_REGISTRY =
-  `(:source-registry (:tree "${homeDir}/quicklisp/local-projects/")` +
-  ` (:tree "${homeDir}/quicklisp/dists/quicklisp/software/")` +
-  ` (:tree "${repoRoot}systems/") :ignore-inherited-configuration)`;
-
-// Start the Lisp control plane + WebSocket server + CLOG host
+// Start the Lisp control plane + WebSocket server + CLOG host via the
+// canonical launcher (scripts/run-control-plane). This is the single
+// source of truth for the SBCL invocation and Quicklisp dependency set;
+// scripts/check-control-plane-deps.mjs guards against drift from the
+// ASDF system definitions.
 startProcess(
   "control-plane",
-  "sbcl",
-  [
-    "--non-interactive",
-    "--eval", "(setf asdf:*central-registry* nil)",
-    "--eval", "(asdf:clear-configuration)",
-    "--eval", "(ql:quickload (list :babel :dexador :jsown :quri :sento :bordeaux-threads :clog :websocket-driver) :silent t)",
-    "--eval", "(asdf:load-asd (truename \"systems/quasar-control.asd\"))",
-    "--eval", "(asdf:load-asd (truename \"systems/quasar-starlang.asd\"))",
-    "--eval", "(asdf:load-asd (truename \"systems/quasar-web.asd\"))",
-    "--eval", "(asdf:load-system :quasar-web)",
-    "--eval", "(quasar.app:main :open-browser-p nil :insecure-development-p t)",
-  ],
+  "bash",
+  [join(repoRoot, "scripts", "run-control-plane")],
   { env },
 );
 

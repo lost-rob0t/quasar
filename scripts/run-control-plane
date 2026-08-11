@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
+# Canonical Quasar control-plane launcher.
+#
+# This script is the single source of truth for the SBCL invocation that
+# boots the CLOG host + WebSocket control plane. scripts/dev.mjs and CI
+# reuse this launcher rather than maintaining their own inline SBCL
+# commands, so the Quicklisp dependency set cannot drift between them.
+# scripts/check-control-plane-deps.mjs statically verifies that the
+# dependency list below matches the union of :depends-on entries declared
+# in the ASDF system definitions under systems/.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -14,12 +23,22 @@ fi
 
 cd "$repo_root"
 
-sbcl --non-interactive \
-  --eval '(setf asdf:*central-registry* nil)' \
-  --eval '(asdf:clear-configuration)' \
-  --eval '(ql:quickload (list :babel :dexador :jsown :quri :sento :bordeaux-threads :clog :websocket-driver) :silent t)' \
-  --eval '(asdf:load-asd (truename "systems/quasar-control.asd"))' \
-  --eval '(asdf:load-asd (truename "systems/quasar-starlang.asd"))' \
-  --eval '(asdf:load-asd (truename "systems/quasar-web.asd"))' \
-  --eval '(asdf:load-system :quasar-web)' \
-  --eval '(quasar.app:main :open-browser-p nil :insecure-development-p t)'
+# When LOAD_ONLY=1 the system is loaded but quasar.app:main is not started;
+# CI uses this to verify the real ASDF system compiles without running the
+# server.
+sbcl_args=(
+  --non-interactive
+  --eval '(setf asdf:*central-registry* nil)'
+  --eval '(asdf:clear-configuration)'
+  --eval '(ql:quickload (list :babel :bordeaux-threads :clack :clog :dexador :jsown :quri :sento :websocket-driver) :silent t)'
+  --eval '(asdf:load-asd (truename "systems/quasar-control.asd"))'
+  --eval '(asdf:load-asd (truename "systems/quasar-starlang.asd"))'
+  --eval '(asdf:load-asd (truename "systems/quasar-web.asd"))'
+  --eval '(asdf:load-system :quasar-web)'
+)
+
+if [[ "${LOAD_ONLY:-0}" != "1" ]]; then
+  sbcl_args+=(--eval '(quasar.app:main :open-browser-p nil :insecure-development-p t)')
+fi
+
+sbcl "${sbcl_args[@]}"
