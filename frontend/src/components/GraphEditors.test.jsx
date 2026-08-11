@@ -40,6 +40,7 @@ describe("compact graph editors", () => {
   it("renders a compact schema-driven person editor", () => {
     const html = render(<CompactNodeEditor document={person} onClose={vi.fn()} />);
     expect(html).toContain('role="dialog"');
+    expect(html).toContain('data-draggable="true"');
     expect(html).toContain("Edit Person");
     expect(html).toContain("Fields for person");
     expect(html).toContain("First Name");

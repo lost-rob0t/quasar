@@ -38,6 +38,14 @@ function focusableElements(root) {
   ];
 }
 
+function editorDragEnabled() {
+  return (
+    typeof window === "undefined" ||
+    typeof window.matchMedia !== "function" ||
+    window.matchMedia("(min-width: 851px)").matches
+  );
+}
+
 export function GraphModalShell({
   title,
   position,
@@ -46,12 +54,68 @@ export function GraphModalShell({
   children,
   className = ""
 }) {
+  const layerRef = useRef(null);
   const modalRef = useRef(null);
   const returnFocusRef = useRef(null);
+  const dragRef = useRef(null);
+  const [dragPosition, setDragPosition] = useState(null);
+  const [dragging, setDragging] = useState(false);
 
   function requestClose() {
     if (dirty && !window.confirm("Discard unsaved changes?")) return;
     onClose();
+  }
+
+  function clampDragPosition(left, top) {
+    const layer = layerRef.current;
+    const modal = modalRef.current;
+    if (!layer || !modal) return { x: left, y: top };
+    const layerBounds = layer.getBoundingClientRect();
+    const modalBounds = modal.getBoundingClientRect();
+    const maxLeft = Math.max(8, layerBounds.width - modalBounds.width - 8);
+    const maxTop = Math.max(8, layerBounds.height - modalBounds.height - 8);
+    return {
+      x: Math.max(8, Math.min(left, maxLeft)),
+      y: Math.max(8, Math.min(top, maxTop))
+    };
+  }
+
+  function beginDrag(event) {
+    if (!editorDragEnabled() || event.button !== 0 || event.isPrimary === false) return;
+    if (event.target.closest("button, input, select, textarea, a")) return;
+    const layer = layerRef.current;
+    const modal = modalRef.current;
+    if (!layer || !modal) return;
+    const layerBounds = layer.getBoundingClientRect();
+    const modalBounds = modal.getBoundingClientRect();
+    dragRef.current = {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      left: modalBounds.left - layerBounds.left,
+      top: modalBounds.top - layerBounds.top
+    };
+    setDragging(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  }
+
+  function moveDrag(event) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const next = clampDragPosition(
+      drag.left + event.clientX - drag.clientX,
+      drag.top + event.clientY - drag.clientY
+    );
+    setDragPosition(next);
+  }
+
+  function endDrag(event) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    setDragging(false);
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
   }
 
   useEffect(() => {
@@ -90,8 +154,12 @@ export function GraphModalShell({
     };
   }, [dirty, onClose]);
 
-  const style =
-    position?.rendered && position?.bounds
+  const style = dragPosition
+    ? {
+        "--graph-editor-left": `${dragPosition.x}px`,
+        "--graph-editor-top": `${dragPosition.y}px`
+      }
+    : position?.rendered && position?.bounds
       ? {
           "--graph-editor-left": `${Math.max(8, Math.min(position.rendered.x, position.bounds.width - 470))}px`,
           "--graph-editor-top": `${Math.max(8, Math.min(position.rendered.y, position.bounds.height - 560))}px`
@@ -100,18 +168,26 @@ export function GraphModalShell({
 
   return (
     <div
+      ref={layerRef}
       className="graph-editor-layer"
       onMouseDown={(event) => event.target === event.currentTarget && requestClose()}
     >
       <section
         ref={modalRef}
-        className={`graph-compact-editor ${className}`}
+        className={`graph-compact-editor${dragging ? " is-dragging" : ""} ${className}`}
         style={style}
         role="dialog"
         aria-modal="true"
         aria-label={title}
       >
-        <header>
+        <header
+          className="graph-editor-drag-handle"
+          data-draggable="true"
+          onPointerDown={beginDrag}
+          onPointerMove={moveDrag}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+        >
           <h2>{title}</h2>
           <button className="icon-button" type="button" aria-label="Close" onClick={requestClose}>
             <X size={17} />
