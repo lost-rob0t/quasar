@@ -1,42 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { saveActorConfiguration } from "./actor-configuration";
+import { describe, expect, it } from "vitest";
 import {
   actorWithTransformEnvelope,
   buildActorTransform,
   normalizeActorTransformResult
 } from "./actor-transforms";
-
-class MemoryStorage {
-  constructor() {
-    this.values = new Map();
-  }
-  getItem(key) {
-    return this.values.has(key) ? this.values.get(key) : null;
-  }
-  setItem(key, value) {
-    this.values.set(key, String(value));
-  }
-  removeItem(key) {
-    this.values.delete(key);
-  }
-}
-
-let previousStorage;
-
-beforeEach(() => {
-  previousStorage = globalThis.localStorage;
-  Object.defineProperty(globalThis, "localStorage", {
-    configurable: true,
-    value: new MemoryStorage()
-  });
-});
-
-afterEach(() => {
-  Object.defineProperty(globalThis, "localStorage", {
-    configurable: true,
-    value: previousStorage
-  });
-});
 
 const stamp = "2026-07-26T01:00:00.000Z";
 const org = {
@@ -87,20 +54,18 @@ describe("actor transform results", () => {
     expect(result.legacyDocumentCount).toBe(1);
   });
 
-  it("accepts operations-only actors and injects local configuration", () => {
+  it("accepts operations-only actors without injecting browser configuration", () => {
     const actor = {
       id: "test.actor",
       label: "Test actor",
-      source:
-        "(context) => ({ operations: [{ op: 'remove_document', id: context.configuration.removeId }] })"
+      source: "(context) => ({ operations: [{ op: 'remove_document', id: context.removeId }] })"
     };
-    saveActorConfiguration(actor, { removeId: "x" });
     const wrapped = actorWithTransformEnvelope(actor);
 
     expect(wrapped.source).toContain("documents: []");
-    expect(wrapped.source).toContain("implementation(configuredContext, api)");
-    expect(wrapped.source).toContain('"removeId":"x"');
-    expect(wrapped.source).not.toContain("implementation(context, api)");
+    expect(wrapped.source).toContain("implementation(context, api)");
+    expect(wrapped.source).not.toContain("configuredContext");
+    expect(wrapped.source).not.toContain("context.configuration");
   });
 
   it("builds one undoable batch for create, update, relation, and remove transforms", () => {

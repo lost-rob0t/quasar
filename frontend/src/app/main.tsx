@@ -5,10 +5,9 @@ import App from "../App.jsx";
 import AutoDigHostBridge, {
   isAutoDigEmbedded
 } from "../integrations/auto-dig/AutoDigHostBridge.jsx";
-import ActorConfigurationBridge from "../components/ActorConfigurationBridge.jsx";
 import GraphContextRadialBridge from "../components/GraphContextRadialBridge.jsx";
 import GraphObjectTypePickerBridge from "../components/GraphObjectTypePickerBridge.jsx";
-import MelissaActorBridge from "../components/MelissaActorBridge.jsx";
+import MelissaActorMigrationBridge from "../components/MelissaActorMigrationBridge.jsx";
 import MobileGraphToolTray from "../components/MobileGraphToolTray.jsx";
 import OperatorUiEnhancer from "../components/OperatorUiEnhancer.jsx";
 import PwaInstallBridge from "../components/PwaInstallBridge.jsx";
@@ -36,8 +35,6 @@ import "../graph-editors.css";
 import "../graph-editors-extra.css";
 import "../graph-workspace-shell.css";
 import "../graph-full-viewport-modern.css";
-import "../melissa-actors.css";
-import "../actor-configuration.css";
 import "../settings-runtime-log.css";
 import "../agent-tab-icons.css";
 import "../kinpaku-shell.css";
@@ -150,9 +147,8 @@ createRoot(rootElement).render(
           <AutoDigHostBridge />
           <OperatorUiEnhancer />
           <PwaInstallBridge />
-          <MelissaActorBridge />
+          <MelissaActorMigrationBridge />
           <ReviewActorBridge />
-          <ActorConfigurationBridge />
           <RunAllTransformationsBridge />
           <MobileGraphToolTray />
           <GraphContextRadialBridge />

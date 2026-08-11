@@ -6,6 +6,3 @@ test-results/
 benchmarks/results/
 package-lock.json
 *.min.js
-
-# Executable actor source is serialized with Function.prototype.toString().
-src/lib/melissa-personator-search.js

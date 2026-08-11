@@ -1,5 +1,4 @@
 import { assertDocument } from "starintel_doc";
-import { actorConfigurationStatus } from "./actor-configuration";
 
 export const ACTOR_TRANSFORM_OPERATIONS = Object.freeze([
   "create_document",
@@ -91,23 +90,11 @@ export function normalizeActorTransformResult(result) {
 }
 
 export function actorWithTransformEnvelope(actor) {
-  const configurationStatus = actorConfigurationStatus(actor);
-  if (!configurationStatus.configured) {
-    throw new Error(
-      `Configure ${configurationStatus.missing.join(", ")} before running ${actor.label || actor.id}`
-    );
-  }
-  const configuration = JSON.stringify(configurationStatus.configuration || {});
-
   return {
     ...actor,
     source: `(context, api) => {
       const implementation = (${actor.source});
-      const configuredContext = Object.freeze({
-        ...context,
-        configuration: Object.freeze(${configuration})
-      });
-      return Promise.resolve(implementation(configuredContext, api)).then((result) => {
+      return Promise.resolve(implementation(context, api)).then((result) => {
         if (result && Array.isArray(result.operations) && !Array.isArray(result.documents)) {
           return { ...result, documents: [] };
         }

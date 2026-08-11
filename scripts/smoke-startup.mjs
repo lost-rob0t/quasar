@@ -82,7 +82,9 @@ function websocketExchange(url) {
         if (
           response.status !== "ok" ||
           !Array.isArray(response.result) ||
-          !response.result.includes("workspace.snapshot")
+          !response.result.includes("workspace.snapshot") ||
+          !response.result.includes("melissa.request") ||
+          !response.result.includes("melissa.status")
         ) {
           reject(new Error("Invalid system.capabilities response"));
           socket.terminate();
@@ -145,8 +147,12 @@ async function runSmokeTest() {
 
   let stdout = "";
   let stderr = "";
-  dev.stdout.on("data", (d) => { stdout += d; });
-  dev.stderr.on("data", (d) => { stderr += d; });
+  dev.stdout.on("data", (d) => {
+    stdout += d;
+  });
+  dev.stderr.on("data", (d) => {
+    stderr += d;
+  });
 
   try {
     console.log("  waiting for Vite (http://127.0.0.1:5173)...");
@@ -179,7 +185,9 @@ async function runSmokeTest() {
       try {
         if (dev.pid) process.kill(-dev.pid, "SIGKILL");
       } catch {}
-      try { unlinkSync(marker); } catch {}
+      try {
+        unlinkSync(marker);
+      } catch {}
       const alive = [];
       for (const url of ["http://127.0.0.1:5173", "http://127.0.0.1:8080"]) {
         try {
