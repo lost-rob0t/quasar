@@ -1,0 +1,35 @@
+.graph-toolbar > select[aria-label="Graph layout"],
+.graph-context-menu [data-maltego-legacy-layout="true"] {
+  display: none !important;
+}
+
+.maltego-layout-control {
+  display: block;
+  min-width: 0;
+}
+
+.maltego-layout-select {
+  width: 100%;
+  min-width: 0;
+}
+
+.maltego-context-layout-host {
+  display: contents;
+}
+
+@media (max-width: 850px) {
+  .maltego-layout-control {
+    width: 100%;
+  }
+
+  .graph-toolbar[data-mobile-collapsed="true"] > .maltego-layout-control {
+    display: none;
+  }
+
+  .graph-toolbar[data-mobile-collapsed="false"] > .maltego-layout-control {
+    display: block;
+    grid-column: auto;
+    grid-row: auto;
+    min-height: 40px;
+  }
+}

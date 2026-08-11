@@ -1,0 +1,294 @@
+(defpackage #:quasar.protocol
+  (:use #:cl)
+   (:export
+    #:+protocol-version+
+    #:quasar-error
+    #:quasar-error-code
+    #:quasar-error-message
+    #:quasar-error-details
+    #:make-quasar-error
+    #:command-envelope
+    #:command-envelope-id
+    #:command-envelope-command
+    #:command-envelope-payload
+    #:command-envelope-client
+    #:command-envelope-workspace
+    #:make-command-envelope
+    #:decode-command
+    #:encode
+    #:encode-event
+    #:encode-result
+    #:encode-error
+    #:quasar-error-to-envelope
+    #:json-object
+    #:json-array
+    #:json-value
+    #:json-get
+    #:object-p
+    #:array-p
+    #:object-keys
+    #:object-set
+    #:empty-object
+    #:empty-array
+    #:ensure-string
+    #:ensure-object
+    #:ensure-array
+    #:ensure-object-id
+    #:clone-json))
+
+(defpackage #:quasar.store
+  (:use #:cl)
+  (:import-from #:quasar.protocol
+                #:json-object
+                #:json-array
+                #:json-value)
+  (:export
+    #:workspace-store
+    #:memory-store
+    #:make-memory-store
+    #:load-workspace
+    #:save-workspace
+    #:append-operation
+    #:commit-workspace
+    #:store-journal-entries))
+
+(defpackage #:quasar.workspace
+  (:use #:cl)
+  (:import-from #:quasar.protocol
+                #:json-object
+                #:json-array
+                #:json-value
+                #:empty-object
+                 #:ensure-string
+                 #:ensure-object
+                 #:ensure-array
+                 #:clone-json
+                 #:object-set
+                 #:quasar-error)
+  (:export
+    #:workspace
+    #:make-workspace
+    #:workspace-id
+    #:workspace-revision
+    #:workspace-documents
+    #:workspace-graphs
+    #:workspace-settings
+    #:workspace-journal
+    #:copy-workspace
+    #:workspace-graph
+    #:workspace-snapshot
+    #:workspace-snapshot-page
+    #:graph-snapshot
+    #:graph-node
+    #:graph-edge
+    #:graph-nodes
+    #:graph-edges
+    #:dispatch-operation
+    #:commit-operations
+    #:apply-document-create
+    #:apply-document-update
+    #:apply-document-delete
+    #:apply-node-create
+    #:apply-node-update
+    #:apply-node-delete
+    #:apply-edge-create
+    #:apply-edge-update
+    #:apply-edge-delete
+    #:apply-graph-put
+    #:apply-graph-delete
+    #:apply-graph-activate
+    #:applied-op
+    #:applied-op-event
+    #:applied-op-result
+    #:applied-op-inverse))
+
+(defpackage #:quasar.control-plane
+  (:use #:cl)
+  (:import-from #:quasar.protocol
+                #:decode-command
+                #:encode-event
+                #:encode-result
+                #:encode-error
+                #:quasar-error-to-envelope
+                #:quasar-error
+                #:json-object
+                #:json-array
+                #:json-value
+                #:empty-object
+                #:object-set
+                #:clone-json
+                #:ensure-array
+                #:ensure-string
+                #:command-envelope
+                #:command-envelope-id
+                #:command-envelope-command
+                #:command-envelope-payload
+                #:command-envelope-workspace
+                #:make-command-envelope)
+  (:import-from #:quasar.workspace
+                #:make-workspace
+                #:workspace-id
+                #:workspace-revision
+                #:workspace-snapshot
+                #:workspace-snapshot-page
+                #:workspace-documents
+                #:workspace-graphs
+                #:workspace-settings
+                #:workspace-graph
+                #:copy-workspace
+                #:graph-snapshot
+                #:dispatch-operation
+                #:commit-operations
+                #:applied-op-event
+                #:applied-op-result
+                #:applied-op-inverse)
+  (:import-from #:quasar.store
+                #:make-memory-store
+                #:load-workspace
+                #:save-workspace
+                #:append-operation
+                #:commit-workspace)
+  (:export
+    #:control-plane
+    #:make-control-plane
+    #:start-control-plane
+    #:stop-control-plane
+    #:register-command
+    #:submit-command
+    #:submit-decoded
+    #:subscribe
+    #:unsubscribe
+    #:broadcast-event
+    #:control-plane-capabilities
+    #:control-plane-workspaces
+    #:control-plane-store))
+
+(defpackage #:quasar.starlang
+  (:use #:cl)
+  (:import-from #:quasar.protocol
+                #:json-object
+                #:json-array
+                #:json-value)
+  (:import-from #:quasar.control-plane
+                #:register-command)
+  (:export
+   #:install-starlang-commands
+   #:starlang-available-p))
+
+(defpackage #:quasar.ws
+  (:use #:cl)
+  (:import-from #:quasar.protocol
+                 #:decode-command
+                 #:encode
+                 #:encode-result
+                 #:encode-error
+                 #:quasar-error-to-envelope)
+  (:import-from #:quasar.control-plane
+                 #:submit-command
+                 #:subscribe
+                 #:unsubscribe)
+  (:export
+    #:websocket-server
+    #:make-websocket-server
+    #:start-websocket-server
+    #:stop-websocket-server
+    #:websocket-server-started-p
+    #:register-websocket-session
+    #:websocket-audit-records
+    #:attach-subscriber
+    #:detach-subscriber))
+
+(defpackage #:quasar.ui
+  (:use #:cl)
+  (:import-from #:quasar.protocol
+                #:encode
+                #:encode-event
+                #:encode-error
+                #:json-object)
+  (:import-from #:quasar.control-plane
+                #:submit-command
+                #:subscribe)
+  (:export
+    #:*frontend-url*
+    #:*last-session*
+    #:frontend-asset-path
+    #:start-ui
+    #:stop-ui))
+
+(defpackage #:quasar.app
+  (:use #:cl)
+  (:import-from #:quasar.control-plane
+                 #:make-control-plane
+                 #:start-control-plane
+                 #:stop-control-plane
+                 #:subscribe
+                 #:broadcast-event)
+  (:import-from #:quasar.starlang
+                 #:install-starlang-commands)
+  (:import-from #:quasar.ui
+                 #:start-ui
+                 #:stop-ui)
+  (:import-from #:quasar.ws
+                 #:make-websocket-server
+                 #:start-websocket-server
+                 #:stop-websocket-server
+                 #:attach-subscriber
+                 #:detach-subscriber)
+  (:export
+   #:*control-plane*
+   #:*websocket-server*
+   #:start
+   #:stop
+   #:main))
+
+(defpackage #:quasar.tests
+  (:use #:cl)
+  (:import-from #:quasar.protocol
+                #:decode-command
+                #:encode-result
+                #:encode
+                #:json-object
+                #:json-array
+                #:json-value
+                #:empty-object
+                #:object-set
+                #:clone-json
+                #:quasar-error
+                #:make-command-envelope)
+  (:import-from #:quasar.workspace
+                #:make-workspace
+                #:workspace-revision
+                #:workspace-documents
+                #:workspace-graphs
+                #:workspace-settings
+                #:workspace-snapshot
+                #:workspace-graph
+                #:graph-node
+                #:graph-edge
+                #:dispatch-operation
+                #:commit-operations
+                #:apply-document-create
+                #:apply-document-update
+                #:apply-document-delete
+                #:apply-node-create
+                #:apply-node-delete
+                #:apply-edge-create
+                #:apply-edge-delete
+                #:applied-op-result
+                #:applied-op-inverse)
+  (:import-from #:quasar.store
+                #:make-memory-store
+                #:load-workspace
+                #:save-workspace
+                #:append-operation
+                #:store-journal-entries)
+  (:import-from #:quasar.control-plane
+                #:make-control-plane
+                #:start-control-plane
+                #:stop-control-plane
+                #:submit-decoded
+                #:submit-command
+                #:subscribe
+                #:unsubscribe
+                #:control-plane-store)
+  (:export #:run-tests))

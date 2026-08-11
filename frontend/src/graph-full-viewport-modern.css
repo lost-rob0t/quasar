@@ -1,0 +1,110 @@
+@media (min-width: 851px) {
+  body.graph-viewport-full:has(.graph-page) .app-shell {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  body.graph-viewport-full:has(.graph-page) .app-shell > .sidebar {
+    display: flex !important;
+    align-items: stretch;
+  }
+
+  body.graph-viewport-full:has(.graph-page) .brand-block > div:last-child,
+  body.graph-viewport-full:has(.graph-page) .nav-link span,
+  body.graph-viewport-full:has(.graph-page) .sidebar-section-label,
+  body.graph-viewport-full:has(.graph-page) .workspace-selector span,
+  body.graph-viewport-full:has(.graph-page) .sidebar-graph-list,
+  body.graph-viewport-full:has(.graph-page) .sidebar-new-graph span,
+  body.graph-viewport-full:has(.graph-page) .sidebar-user > span,
+  body.graph-viewport-full:has(.graph-page) .sidebar-foot > div:not(.sidebar-user),
+  body.graph-viewport-full:has(.graph-page) .sidebar-foot > small {
+    display: none !important;
+  }
+
+  body.graph-viewport-full:has(.graph-page) .nav-link,
+  body.graph-viewport-full:has(.graph-page) .workspace-selector,
+  body.graph-viewport-full:has(.graph-page) .sidebar-user {
+    justify-content: center;
+  }
+
+  body.graph-viewport-full:has(.graph-page) .topbar {
+    display: flex !important;
+    min-height: 54px;
+    padding-block: 0.45rem;
+  }
+
+  body.graph-viewport-full:has(.graph-page) .app-shell > .workbench {
+    grid-column: 2;
+    grid-template-rows: 54px minmax(0, 1fr);
+  }
+
+  body.graph-viewport-full:has(.graph-page) .content {
+    padding: 72px 0 140px;
+  }
+
+  body.graph-viewport-full:has(.graph-page) .graph-workbench {
+    grid-template-columns: minmax(0, 1fr) 260px;
+  }
+
+  body.graph-viewport-full:has(.graph-page) .graph-agent-dock,
+  body.graph-viewport-full:has(.graph-page) .graph-recent-activity,
+  body.graph-viewport-full:has(.graph-page) .graph-inspector {
+    display: block !important;
+  }
+
+  body.graph-viewport-full:has(.graph-page) .graph-agent-dock {
+    right: 260px;
+    height: 140px;
+  }
+
+  body.graph-viewport-full:has(.graph-page) .graph-recent-activity {
+    width: 260px;
+    height: 140px;
+  }
+
+  body.graph-viewport-full:has(.graph-page) .graph-recent-activity > div {
+    height: 65px;
+  }
+
+  body.graph-viewport-full:has(.graph-page) .graph-workspace-metrics {
+    display: grid !important;
+    height: 39px;
+  }
+
+  body.graph-viewport-full:has(.graph-page) .graph-workspace-top {
+    height: 72px;
+    border-bottom: 1px solid color-mix(in srgb, var(--line) 68%, transparent);
+    background: color-mix(in srgb, #07101a 96%, transparent);
+    box-shadow: 0 10px 34px #0005;
+    pointer-events: auto;
+  }
+
+  body.graph-viewport-full:has(.graph-page) .graph-workspace-tabs {
+    height: 33px;
+    padding: 0 0.75rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+    pointer-events: auto;
+  }
+
+  body.graph-viewport-full:has(.graph-page)
+    .graph-workspace-tabs
+    > button:not(.graph-viewport-toggle) {
+    display: inline-flex !important;
+  }
+
+  body.graph-viewport-full:has(.graph-page) .graph-workspace-tabs .graph-viewport-toggle {
+    position: static;
+    top: auto;
+    right: auto;
+    z-index: auto;
+    min-height: 0;
+    padding: 0 0.78rem;
+    border: 0;
+    border-right: 1px solid color-mix(in srgb, var(--line) 48%, transparent);
+    border-left: 1px solid color-mix(in srgb, var(--line) 48%, transparent);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+}

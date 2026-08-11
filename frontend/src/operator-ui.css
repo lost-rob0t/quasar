@@ -1,0 +1,560 @@
+.agent-log-collapsible {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 10px;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.agent-log-collapsible::before {
+  width: 16px;
+  height: 16px;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  content: "";
+  opacity: 0.9;
+}
+
+.agent-log-collapsible.tool::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23c4b5fd' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='16' rx='2'/%3E%3Cpath d='m7 9 3 3-3 3'/%3E%3Cpath d='M13 15h4'/%3E%3C/svg%3E");
+}
+
+.agent-log-collapsible.model::before,
+.agent-log-collapsible.thinking::before,
+.agent-log-collapsible.reasoning::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%237dd3fc' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9.5 4a3 3 0 0 0-2.8 4A3 3 0 0 0 6 13.8 3 3 0 0 0 9 18h1'/%3E%3Cpath d='M14.5 4a3 3 0 0 1 2.8 4 3 3 0 0 1 .7 5.8 3 3 0 0 1-3 4.2h-1'/%3E%3Cpath d='M12 4v16'/%3E%3Cpath d='M8 9h4'/%3E%3Cpath d='M12 14h4'/%3E%3C/svg%3E");
+}
+
+.agent-log-collapsible::after {
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  content: "";
+  transform: rotate(45deg);
+  transition: transform 0.14s ease;
+}
+
+.agent-log-collapsible[data-expanded="true"]::after {
+  transform: rotate(225deg);
+}
+
+.agent-log-collapsible > strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-log-collapsible > strong::after {
+  margin-left: 0.5rem;
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.agent-log-collapsible.tool > strong::after {
+  content: "tool run";
+}
+
+.agent-log-collapsible.model > strong::after,
+.agent-log-collapsible.thinking > strong::after,
+.agent-log-collapsible.reasoning > strong::after {
+  content: "thinking";
+}
+
+.agent-log-collapsible > pre {
+  display: none;
+  grid-column: 1 / -1;
+}
+
+.agent-log-collapsible[data-expanded="true"] > pre {
+  display: block;
+}
+
+.agent-log-collapsible:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.mobile-gesture-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  padding: 0.25rem 0 0.45rem;
+}
+
+.mobile-gesture-actions .button {
+  min-height: 44px;
+}
+
+body:has(.graph-page) {
+  overflow: hidden;
+}
+
+.app-shell:has(.graph-page) {
+  display: block;
+  min-height: 100dvh;
+}
+
+.app-shell:has(.graph-page) .sidebar,
+body:has(.graph-page) .topbar,
+.graph-page > .back-link,
+.graph-page > .graph-heading,
+.graph-page > .graph-toolbar,
+.graph-page > .graph-review-warning,
+.graph-list-panel,
+.graph-inspector {
+  display: none !important;
+}
+
+.workbench:has(.graph-page),
+body:has(.graph-page) .content,
+.graph-page,
+.graph-workbench,
+.graph-stage,
+.graph-canvas {
+  width: 100%;
+  height: 100dvh;
+  min-height: 0;
+}
+
+.workbench:has(.graph-page) {
+  overflow: hidden;
+}
+
+body:has(.graph-page) .content {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.graph-page {
+  display: block;
+  margin: 0;
+  overflow: hidden;
+}
+
+.graph-workbench {
+  display: block;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+}
+
+.graph-stage {
+  position: relative;
+}
+
+.graph-mode-actions,
+.graph-canvas-actions {
+  position: absolute;
+  top: 0.7rem;
+  z-index: 18;
+  display: grid;
+  gap: 0.4rem;
+  pointer-events: auto;
+}
+
+.graph-mode-actions {
+  left: 0.7rem;
+}
+
+.graph-canvas-actions {
+  right: 0.7rem;
+}
+
+.graph-canvas-action {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.35rem;
+  width: 88px;
+  min-height: 42px;
+  padding: 0.35rem 0.48rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--line) 80%, var(--accent));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  color: var(--text);
+  box-shadow: 0 8px 28px #0008;
+  backdrop-filter: blur(12px);
+}
+
+.graph-canvas-action > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: inherit;
+  font-size: 0.62rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.graph-canvas-action:hover,
+.graph-canvas-action:focus-visible,
+.graph-canvas-action[aria-pressed="true"] {
+  outline: none;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--panel-2) 72%, var(--accent));
+  color: var(--white);
+}
+
+.graph-canvas-action.danger:not(:disabled) {
+  color: var(--danger);
+}
+
+.graph-search-overlay {
+  position: absolute;
+  top: 0.7rem;
+  left: 6.75rem;
+  z-index: 19;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.45rem;
+  width: min(430px, calc(100% - 13.5rem));
+  min-height: 42px;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  color: var(--muted);
+  box-shadow: 0 12px 34px #000a;
+  backdrop-filter: blur(14px);
+}
+
+.graph-search-overlay input {
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+}
+
+.graph-search-overlay button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.graph-search-overlay button:hover,
+.graph-search-overlay button:focus-visible {
+  outline: none;
+  background: var(--panel-2);
+  color: var(--white);
+}
+
+.graph-count-overlay {
+  position: absolute;
+  left: 0.7rem;
+  bottom: 0.7rem;
+  z-index: 17;
+  max-width: calc(100% - 1.4rem);
+  padding: 0.34rem 0.52rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+  color: var(--muted);
+  font-size: 0.66rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  backdrop-filter: blur(10px);
+}
+
+.graph-context-menu.canvas-actions.radial-root {
+  width: 228px !important;
+  height: 228px;
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.graph-context-menu.canvas-actions.radial-root > .graph-context-header,
+.graph-context-menu.canvas-actions.radial-root > .graph-context-search {
+  display: none;
+}
+
+.graph-context-menu.canvas-actions.radial-root > .graph-context-palette {
+  position: absolute;
+  top: 66px;
+  left: 66px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  place-items: center;
+  gap: 3px;
+  width: 96px;
+  height: 96px;
+  padding: 11px;
+  border: 1px solid color-mix(in srgb, var(--line) 72%, var(--accent));
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  box-shadow: 0 14px 38px #000b;
+  backdrop-filter: blur(14px);
+}
+
+.graph-context-menu.canvas-actions.radial-root > .graph-context-palette button {
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--panel-2);
+}
+
+.graph-context-menu.canvas-actions.radial-root > button[role="menuitem"] {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  gap: 0.15rem;
+  width: 76px;
+  height: 58px;
+  padding: 0.35rem;
+  border: 1px solid color-mix(in srgb, var(--line) 76%, var(--accent));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  box-shadow: 0 12px 28px #0009;
+  color: var(--text);
+  font-size: 0.62rem;
+  font-weight: 750;
+  line-height: 1.05;
+  text-align: center;
+  backdrop-filter: blur(12px);
+}
+
+.graph-context-menu.canvas-actions.radial-root > button[role="menuitem"] svg:last-child {
+  display: none;
+}
+
+.graph-context-menu.canvas-actions.radial-root > button[role="menuitem"]:nth-of-type(1) {
+  top: 0;
+  left: 76px;
+}
+
+.graph-context-menu.canvas-actions.radial-root > button[role="menuitem"]:nth-of-type(2) {
+  top: 85px;
+  right: 0;
+}
+
+.graph-context-menu.canvas-actions.radial-root > button[role="menuitem"]:nth-of-type(3) {
+  bottom: 0;
+  left: 76px;
+}
+
+.graph-context-menu.canvas-actions.radial-root > button[role="menuitem"]:nth-of-type(4) {
+  top: 85px;
+  left: 0;
+}
+
+.graph-context-menu.canvas-actions.radial-root > button[role="menuitem"]:hover,
+.graph-context-menu.canvas-actions.radial-root > button[role="menuitem"]:focus-visible {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--panel-2) 68%, var(--accent));
+}
+
+@media (max-width: 850px) {
+  .graph-mode-actions,
+  .graph-canvas-actions {
+    top: 0.5rem;
+    gap: 0.3rem;
+  }
+
+  .graph-mode-actions {
+    left: 0.5rem;
+  }
+
+  .graph-canvas-actions {
+    right: 0.5rem;
+  }
+
+  .graph-canvas-action {
+    grid-template-columns: 1fr;
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+  }
+
+  .graph-canvas-action > span {
+    display: none;
+  }
+
+  .graph-search-overlay {
+    top: 0.5rem;
+    left: 3.65rem;
+    width: calc(100% - 7.3rem);
+    min-height: 44px;
+  }
+
+  .graph-count-overlay {
+    left: 0.5rem;
+    bottom: 0.75rem;
+    max-width: calc(100% - 5.5rem);
+  }
+
+  .graph-empty-state {
+    padding: 4.5rem 3.5rem 3rem;
+  }
+
+  .graph-empty-state h2 {
+    font-size: 1.2rem;
+  }
+
+  .graph-empty-state p {
+    max-width: 30ch;
+    font-size: 0.82rem;
+  }
+
+  .graph-context-menu.canvas-actions.radial-root {
+    transform: scale(0.92);
+    transform-origin: top left;
+  }
+
+  body:has(.graph-page) .agent-float:not(.open) {
+    top: auto !important;
+    right: max(14px, env(safe-area-inset-right)) !important;
+    bottom: max(12px, env(safe-area-inset-bottom)) !important;
+    left: auto !important;
+  }
+
+  .agent-log-entry {
+    padding: 0.55rem;
+  }
+
+  .agent-log-collapsible[data-expanded="true"] > pre {
+    max-height: min(48dvh, 440px);
+    margin-top: 0.45rem;
+  }
+}
+
+.graph-select-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 183;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: #0004;
+  backdrop-filter: blur(1px);
+}
+
+.graph-select-picker {
+  position: absolute;
+  top: 0.7rem;
+  left: 6.75rem;
+  z-index: 184;
+  display: grid;
+  width: min(340px, calc(100% - 7.45rem));
+  max-height: min(70dvh, 560px);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--line) 78%, var(--accent));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 97%, transparent);
+  box-shadow: 0 18px 48px #000c;
+  backdrop-filter: blur(16px);
+}
+
+.graph-select-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 46px;
+  padding: 0.55rem 0.65rem 0.55rem 0.8rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.graph-select-picker-header strong {
+  font-size: 0.8rem;
+  letter-spacing: 0.03em;
+}
+
+.graph-select-picker-header button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.graph-select-picker-header button:hover,
+.graph-select-picker-header button:focus-visible {
+  outline: none;
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.graph-select-options {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.55rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.graph-select-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--text);
+  text-align: left;
+}
+
+.graph-select-option > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-select-option:hover,
+.graph-select-option:focus-visible,
+.graph-select-option[aria-selected="true"] {
+  outline: none;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--panel-2) 72%, var(--accent));
+}
+
+.graph-select-option:disabled {
+  opacity: 0.4;
+}
+
+@media (max-width: 850px) {
+  .graph-select-picker {
+    top: 4.15rem;
+    left: 0.55rem;
+    width: calc(100% - 1.1rem);
+    max-height: calc(100dvh - 4.7rem);
+  }
+}

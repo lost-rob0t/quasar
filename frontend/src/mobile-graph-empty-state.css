@@ -1,0 +1,32 @@
+@media (max-width: 850px) {
+  .graph-empty-state {
+    align-content: center;
+    justify-items: center;
+    padding: 5rem 1rem 3.5rem;
+    text-align: center;
+  }
+
+  .graph-empty-state > svg,
+  .graph-empty-state > h2,
+  .graph-empty-state > p {
+    justify-self: center;
+  }
+
+  .graph-empty-state .button-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-content: center;
+    justify-items: stretch;
+    gap: 0.65rem;
+    width: min(100%, 260px);
+    margin: 0.25rem auto 0;
+  }
+
+  .graph-empty-state .button-row > .button {
+    justify-content: center;
+    width: 100%;
+    min-height: 44px;
+    margin: 0;
+    text-align: center;
+  }
+}

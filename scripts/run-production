@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [[ "$(uname -s)" == "Linux" \
+  && -z "${IN_NIX_SHELL:-}" \
+  && -z "${QUASAR_PRODUCTION_NIX_READY:-}" \
+  && -d /nix/store \
+  && -f "$repo_root/flake.nix" \
+  && -x "$(command -v nix 2>/dev/null || true)" ]]; then
+  echo "[production] Entering the repository Nix shell for native runtime libraries..."
+  exec nix develop -c env QUASAR_PRODUCTION_NIX_READY=1 bash scripts/run-production "$@"
+fi
+
+# A single root install is the supported monorepo dependency path.
+cd "$repo_root"
+npm ci
+npm run build
+
+# Build the Lisp systems and save an executable.
+sbcl --non-interactive \
+  --eval '(setf asdf:*central-registry* nil)' \
+  --eval '(asdf:clear-configuration)' \
+  --eval '(ql:quickload (list :jsown :sento :bordeaux-threads :clog :websocket-driver) :silent t)' \
+  --eval '(asdf:load-asd (truename "systems/quasar-control.asd"))' \
+  --eval '(asdf:load-asd (truename "systems/quasar-starlang.asd"))' \
+  --eval '(asdf:load-asd (truename "systems/quasar-web.asd"))' \
+  --eval '(asdf:load-system :quasar-web)' \
+  --eval "(sb-ext:save-lisp-and-die \"quasar-server\" :executable t :toplevel 'quasar.app:main)"
+
+echo "Built quasar-server executable"
+
+if [[ "${1:-}" != "--build-only" ]]; then
+  exec "$repo_root/quasar-server"
+fi

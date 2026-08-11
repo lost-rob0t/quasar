@@ -1,0 +1,40 @@
+{
+  "id": "./",
+  "name": "Quasar Investigation Workspace",
+  "short_name": "Quasar",
+  "description": "Offline-first StarIntel document and graph workspace",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#06101d",
+  "theme_color": "#06101d",
+  "categories": ["productivity", "utilities"],
+  "shortcuts": [
+    {
+      "name": "Open graph",
+      "short_name": "Graph",
+      "url": "./graph"
+    },
+    {
+      "name": "Add document",
+      "short_name": "Add",
+      "url": "./documents/new"
+    }
+  ],
+  "icons": [
+    {
+      "src": "./icons/quasar.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/quasar-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

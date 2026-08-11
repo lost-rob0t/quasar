@@ -1,0 +1,54 @@
+{
+  "format": "quasar-agent-pack",
+  "version": 1,
+  "name": "Investigation operators",
+  "description": "Example bulk-import pack with custom roles and per-agent system prompts.",
+  "roles": [
+    {
+      "id": "pack-osint-researcher",
+      "name": "OSINT researcher",
+      "instructions": "Collect public evidence, preserve source URLs and timestamps, and separate sourced facts from inference and unresolved leads.",
+      "permissions": [
+        "documents.read",
+        "documents.create",
+        "documents.edit",
+        "graph.read",
+        "graph.edit",
+        "targets.read",
+        "sources.external",
+        "actors.run"
+      ],
+      "actions": ["inspect", "research", "create", "relate", "verify"],
+      "accepts": ["*"],
+      "outputs": ["source", "claim", "relation", "person", "org", "event"],
+      "autonomy": "bounded",
+      "review": "mutations"
+    }
+  ],
+  "agents": [
+    {
+      "id": "pack-osint-operator",
+      "name": "OSINT operator",
+      "description": "Evidence-first investigation agent",
+      "role": "pack-osint-researcher",
+      "provider": "openrouter",
+      "model": "openai/gpt-5.2",
+      "system_prompt": "Work in explicit passes: scope, collect, verify, relate, then report exactly what changed. Never present inference as sourced fact.",
+      "permissions": [
+        "documents.read",
+        "documents.create",
+        "documents.edit",
+        "graph.read",
+        "graph.edit",
+        "targets.read",
+        "sources.external",
+        "actors.run"
+      ],
+      "datasetAccess": ["*"],
+      "graphAccess": ["*"],
+      "targetAccess": ["*"],
+      "actorAccess": ["*"],
+      "enabled": true
+    }
+  ]
+}

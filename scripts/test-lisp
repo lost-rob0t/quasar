@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
+
+# Isolate ASDF source registry from user-local CL projects (e.g. Lem's qlot)
+# that may provide incompatible versions of named-readtables or other deps.
+export CL_SOURCE_REGISTRY="(:source-registry (:tree \"$HOME/quicklisp/local-projects/\") (:tree \"$HOME/quicklisp/dists/quicklisp/software/\") (:tree \"$repo_root/systems/\") :ignore-inherited-configuration)"
+
+# Find OpenSSL for CFFI-based systems (NixOS compatibility)
+openssl_lib="$(nix-store -q --requisites /nix/var/nix/profiles/default 2>/dev/null | grep -m1 'openssl' || true)"
+if [[ -n "${openssl_lib}" && -d "${openssl_lib}/lib" ]]; then
+  export LD_LIBRARY_PATH="${openssl_lib}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
+
+cd "$repo_root"
+
+output_file="$(mktemp)"
+trap 'rm -f "$output_file"' EXIT
+
+sbcl --non-interactive \
+  --eval '(setf asdf:*central-registry* nil)' \
+  --eval '(asdf:clear-configuration)' \
+  --eval '(ql:quickload (list :jsown :sento :bordeaux-threads) :silent t)' \
+  --eval '(asdf:load-asd (truename "systems/quasar-control.asd"))' \
+  --eval '(asdf:load-asd (truename "systems/quasar-starlang.asd"))' \
+  --eval '(asdf:load-asd (truename "systems/quasar-tests.asd"))' \
+  --eval '(asdf:test-system :quasar-tests)' 2>&1 | tee "$output_file"
+
+# Fail on undefined-function warnings or unexpected ERRORs from quasar code.
+if grep -iE '(undefined.*function|UNDEFINED-FUNCTION|; caught.*ERROR.*condition)' "$output_file" | grep -ivE '(quicklisp|sento|bordeaux|jsown)'; then
+  echo "FAIL: undefined function warnings detected." >&2
+  exit 1
+fi

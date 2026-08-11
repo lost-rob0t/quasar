@@ -1,91 +1,81 @@
 # Quasar UI binding ledger
 
-The `frontend/` submodule preserves the current UI. Migration changes its data
-and action adapters, not its visible feature set.
+The migration changes data/action ownership without replacing the React and
+Cytoscape presentation layer or removing visible routes. The browser is a
+presentation and interaction layer; a visible control for a runtime or external
+service does not make that service a browser implementation.
 
-The browser is a presentation and interaction layer. A visible control for a
-runtime or external service does **not** make that service a browser
-implementation. Connected Quasar discovers available capabilities from the
-Common Lisp runtime and StarIntel service layer; unavailable services remain
-unavailable rather than being silently replaced with weaker JavaScript
-semantics.
+See [CAPABILITY-BOUNDARY.md](CAPABILITY-BOUNDARY.md) for the complete
+`Quasar UI -> quasar -> starintel-server -> external services` split.
 
-See [`CAPABILITY-BOUNDARY.md`](CAPABILITY-BOUNDARY.md) for the full
-`quasar-ui -> quasar -> starintel-server -> external services` split.
-
-| UI surface | Browser responsibility | Runtime/service command or event |
-| --- | --- | --- |
-| Dashboard/statistics | render cards and charts | `projection.stats.query` |
-| Global search | input, suggestions, result presentation | `search.query`, `search.cancel` |
-| Graph list/workspaces | selector, responsive/mobile menu | `graph.list`, `graph.create`, `graph.rename`, `graph.delete` |
-| Graph canvas | Cytoscape rendering and transient interaction | `graph.snapshot`, `graph.operation.apply` |
-| Drag/layout/viewport | animation and frames stay local | final `graph.view.commit` |
-| Right-click menus | menu rendering and action search | `action.list-applicable`, `action.invoke` |
-| Cross-dataset links | gesture and editor | `relation.create` with provenance |
-| Documents/table | render, sort, filter controls | `document.query`, `document.get` |
-| Document editor | local form buffer | `document.save`, `document.remove` |
-| Import | file selection and progress UI | `import.stage`, `import.commit`, `import.abort` |
-| Undo/redo | buttons and labels | `transaction.undo`, `transaction.redo` |
-| Datasets | routes and forms | `dataset.list`, `dataset.save`, `dataset.remove` |
-| Agents | console, bubble, status controls | `actor.list`, `actor.run`, `actor.pause`, `actor.resume`, `actor.stop` |
-| Research nodes | node UI and progress | `research.run`, `research.pause`, `research.resume`, `research.retry`, `research.kill` |
-| Targets | target form and capability state | `target.submit` |
-| StarIntel Server | backend status/search/ingest presentation | capability-specific server adapter commands/events |
-| BBPD | service availability, target controls, progress/log/result presentation | external `star-bbpd` capability through StarIntel routing/adapters |
-| CouchDB | status and controls | `sync.start`, `sync.stop`, `sync.once` |
-| RabbitMQ | status and counters | `queue.start`, `queue.stop`; delivery events |
-| Brave search | query/results UI | `tool.brave.search` |
-| URL grab | URL input and extraction display | `tool.url.fetch` |
-| MCP/skills | configuration and invocation UI | `mcp.*`, `skill.*` |
-| StarLang | editor/results UI | `starlang.status`, `starlang.load`, later compile/run |
-| Settings | controls and ten auto-dig themes | `settings.get`, `settings.patch` |
-| Settings import/export | file UI; never export credentials | `settings.export-safe`, `settings.import-safe` |
-| Mobile navigation | swipe/tap sheet and three-bar button | no RPC |
-| Mobile graph selector | compact dropdown, no nested scrolling | `graph.list`, `graph.switch` |
-| Full viewport graph | layout and fullscreen presentation | committed view state only |
-| PWA/install | browser install/cache UX | capability/status events only |
+| Surface | Browser responsibility | Durable/runtime authority | Status |
+| --- | --- | --- | --- |
+| Documents/editor | render, filter, edit buffer | `document.*` and authoritative snapshots | migrated |
+| Import and batches | file selection, parsing, progress UI | `workspace.transaction` | migrated commit path |
+| Undo/redo | labels and buttons | inverse control-plane transactions | migrated for documents |
+| Graph list/workspaces | selector and responsive UI | `graph.workspace.*` | migrated |
+| Graph membership/view | Cytoscape projection and animation | `graph.workspace.put` transaction | migrated |
+| Drag/layout | live frames local | debounced final graph commit | migrated |
+| Selection/menus | transient interaction | browser only | intentionally local |
+| PouchDB views | CouchDB sync staging only | populated only for explicit synchronization | transitional adapter |
+| CouchDB sync | browser connection UI and staging | pulled records commit through Lisp / owning backend | transitional adapter |
+| Settings/themes | controls and presentation | browser settings store | transitional; export filtered |
+| Actors/research/targets | UI, progress, capability state | Quasar runtime or owning StarIntel actor service | transitional |
+| StarIntel Server | status/search/ingest presentation | `starintel-server` capability-specific adapters | transitional |
+| BBPD | availability, target controls, logs/results | external `star-bbpd` through StarIntel routing/adapters | transitional |
+| RabbitMQ/Brave/URL/MCP | browser presentation and current adapters | owning runtime/service capability | transitional |
+| StarLang | editor/results UI | capability-gated Common Lisp | Lisp-only |
+| PWA/install | install/cache UX | browser | intentionally local |
 
 ## Service capability rule
 
-Runtime-backed and external-service rows in this ledger describe **UI bindings**.
-They do not grant the browser implementation ownership of the service.
+Runtime-backed and external-service rows describe UI bindings, not browser
+ownership. `starintel-server` may own ingest, persistence, search and queue
+routing. `star-bbpd` owns its external Python/Pykka recon workers and native
+tools. Quasar Common Lisp owns canonical command/revision authority and
+persistent supervision for migrated operations. The browser renders controls,
+progress, logs, documents, graph projections and errors.
 
-Examples:
+The UI must discover capabilities. A missing backend or external service reduces
+only its dependent controls; it must not silently fall back to weaker browser
+semantics while claiming equivalent capability.
 
-- `starintel-server` may own document ingest, persistence, search, CouchDB and
-  RabbitMQ routing.
-- `star-bbpd` runs external Python/Pykka workers and native recon tools such as
-  Subfinder, Nmap, Httpx and Katana.
-- Quasar Common Lisp owns canonical command/revision authority and persistent
-  runtime supervision for migrated operations.
-- Quasar UI renders controls, progress, logs, documents, graph projections and
-  errors for those capabilities.
+## Migration rules
 
-The browser must use capability discovery to decide which controls are enabled.
-A disconnected standalone edition may continue to provide browser-safe local
-features without claiming service parity.
-
-## Migration order
-
-1. Import `frontend-overlay/src/lib/control-plane.js` and add the browser transport adapter without changing presentation.
-2. Replace direct durable database writes with command calls for migrated subjects.
-3. Move persistent actor/research/target execution to the control plane or owning StarIntel service while preserving browser-safe standalone actions.
-4. Move CouchDB, RabbitMQ, StarIntel Server, BBPD, Brave, URL, MCP, skills, and StarLang integrations behind capability-checked commands/adapters.
-5. Add reconnect, replay, optimistic transaction IDs, and deterministic conflict presentation.
-6. Remove browser-held credentials and privileged network paths that belong to runtime/service layers.
-7. Add integration and Playwright parity tests proving every existing route and mobile interaction remains available.
-8. Add capability-matrix tests proving unavailable backend/external services disable only their dependent UI and do not break standalone editing.
+- Migrated document and graph operations fail visibly when the control plane is
+  unavailable; they never fall back to PouchDB.
+- Authoritative snapshots initialize and restore durable UI state.
+- Optimistic graph presentation commits refresh or roll back from the snapshot
+  on failure.
+- CouchDB pull data is staging input and must pass canonical validation and a
+  Lisp transaction before it appears in authoritative state.
+- Credentials remain outside document/graph envelopes, settings export strips
+  them, and audit records never include payloads.
+- Privileged/native service execution remains behind the runtime or owning
+  external-service boundary.
 
 ## Non-regression gates
 
-- no route or visible feature may be deleted during adapter migration;
-- desktop layout remains unchanged by mobile work;
-- mobile navigation keeps both swipe/tap access and the visible three-bar button;
-- graph selector remains a compact dropdown without nested scrolling;
-- right-click menus, graph lists, cross-dataset links, fullscreen graph, fast
-  zoom, agents, themes, and settings import/export remain present;
-- settings exports strip credentials and tokens;
-- Cytoscape remains a projection, never the canonical database;
-- a service control does not execute privileged/native service code in the browser;
-- missing `starintel-server`, BBPD, or other external capabilities fail closed
-  without being mislabeled as browser-provided equivalents.
+- all existing routes and visible desktop/mobile features remain present;
+- mobile navigation, graph selector, right-click menus, fullscreen graph,
+  actors, themes, and settings transfer remain usable;
+- Cytoscape remains a projection;
+- selection and high-frequency viewport interaction remain browser-local;
+- Playwright runs against the real Lisp/Vite stack and proves create, graph
+  membership, reload, and authoritative restore;
+- unavailable `starintel-server`, BBPD, or other service capabilities fail
+  closed without being mislabeled as browser-provided equivalents.
+
+## Remaining migration order
+
+1. Move settings commits and secret-bearing network configuration behind
+   capability-checked commands.
+2. Move actor/research lifecycle and target submission to supervised Lisp actors
+   or the owning StarIntel service while preserving browser-safe standalone
+   actions.
+3. Move CouchDB, RabbitMQ, StarIntel Server, BBPD, Brave, URL, MCP, and skill
+   integrations behind capability-checked control-plane/service adapters.
+4. Replace the development memory store with a process-durable implementation
+   of the existing atomic store interface.
+5. Add capability-matrix tests proving unavailable backend/external services
+   disable only their dependent UI and do not break standalone editing.

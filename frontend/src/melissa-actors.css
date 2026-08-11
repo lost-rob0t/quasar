@@ -1,0 +1,157 @@
+.melissa-config-launcher {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 70;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 14px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.14));
+  border-radius: 999px;
+  background: var(--panel, #111827);
+  color: var(--text, #f8fafc);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.28);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.melissa-config-launcher span {
+  color: var(--accent, #facc15);
+  font-size: 0.78rem;
+}
+
+.melissa-config-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 160;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(2, 6, 23, 0.74);
+  backdrop-filter: blur(8px);
+}
+
+.melissa-config-dialog {
+  width: min(880px, 100%);
+  max-height: min(860px, calc(100vh - 40px));
+  overflow: auto;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.14));
+  border-radius: 18px;
+  padding: 22px;
+  background: var(--panel, #111827);
+  color: var(--text, #f8fafc);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.48);
+}
+
+.melissa-config-heading,
+.melissa-pack-status,
+.melissa-config-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.melissa-config-heading h2 {
+  margin: 3px 0 5px;
+}
+
+.melissa-config-heading p,
+.melissa-pack-status span {
+  margin: 0;
+  color: var(--muted, #94a3b8);
+}
+
+.melissa-pack-status {
+  margin: 18px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.14));
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--panel, #111827) 82%, var(--accent, #facc15) 18%);
+}
+
+.melissa-pack-status div {
+  display: grid;
+  gap: 4px;
+}
+
+.melissa-config-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.melissa-config-grid .full {
+  grid-column: 1 / -1;
+}
+
+.melissa-secret-field {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 11px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.14));
+  border-radius: 9px;
+  background: var(--input, rgba(15, 23, 42, 0.72));
+}
+
+.melissa-secret-field input {
+  width: 100%;
+  border: 0;
+  padding-inline: 0;
+  background: transparent;
+  outline: 0;
+}
+
+.melissa-advanced {
+  margin-top: 18px;
+  border-top: 1px solid var(--border, rgba(255, 255, 255, 0.14));
+  padding-top: 15px;
+}
+
+.melissa-advanced summary {
+  margin-bottom: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.melissa-config-actions {
+  margin-top: 22px;
+  border-top: 1px solid var(--border, rgba(255, 255, 255, 0.14));
+  padding-top: 18px;
+}
+
+@media (max-width: 700px) {
+  .melissa-config-backdrop {
+    align-items: end;
+    padding: 0;
+  }
+
+  .melissa-config-dialog {
+    max-height: 92vh;
+    border-radius: 18px 18px 0 0;
+    padding: 18px;
+  }
+
+  .melissa-config-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .melissa-config-grid .full {
+    grid-column: auto;
+  }
+
+  .melissa-config-heading,
+  .melissa-pack-status,
+  .melissa-config-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .melissa-config-launcher {
+    right: 14px;
+    bottom: 14px;
+  }
+}
