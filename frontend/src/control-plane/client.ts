@@ -432,8 +432,13 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
       throw new ControlPlaneError("protocol.invalid-envelope", "Import session ID is missing.");
     }
     try {
-      for (const operations of chunks) {
-        await send("document.import.chunk", { sessionId, operations }, TRANSACTION_TIMEOUT);
+      for (let chunkSequence = 0; chunkSequence < chunks.length; chunkSequence += 1) {
+        const operations = chunks[chunkSequence] ?? [];
+        await send(
+          "document.import.chunk",
+          { sessionId, sequence: chunkSequence, operations },
+          TRANSACTION_TIMEOUT
+        );
       }
       return await send("document.import.commit", { sessionId }, TRANSACTION_TIMEOUT);
     } catch (error) {
