@@ -28,7 +28,7 @@
                          (progn
                            (push (quasar.protocol:clone-json document) page)
                            (incf page-bytes document-bytes)
-                           (incf next-offset)))))
+                           (incf next-offset))))))
              (unless done
                (setf start (caar (last rows)))
                (when (< (length rows) +phase2-range-batch-size+)
