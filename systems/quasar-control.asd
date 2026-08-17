@@ -23,6 +23,7 @@
                (:file "phase2-store-reads")
                (:file "control-plane")
                (:file "phase2-control-plane")
+               (:file "phase2-hardening")
                (:file "actors/melissa/packages")
                (:file "actors/melissa/async-control-plane")
                (:file "actors/melissa/messages")
