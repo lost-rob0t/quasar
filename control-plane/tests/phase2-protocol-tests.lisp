@@ -13,7 +13,7 @@
 
 (defun test-phase2-malformed-import-protocol ()
   (with-temporary-tek9-store (store path "phase2-protocol")
-    (declare (ignore path))
+    (check (probe-file path))
     (let ((plane
             (quasar.control-plane:start-control-plane
              (quasar.control-plane:make-control-plane :store store))))
@@ -125,7 +125,7 @@
 
 (defun test-phase2-invalid-stage-does-not-become-canonical ()
   (with-temporary-tek9-store (store path "phase2-invalid-stage")
-    (declare (ignore path))
+    (check (probe-file path))
     (let ((plane
             (quasar.control-plane:start-control-plane
              (quasar.control-plane:make-control-plane :store store))))
