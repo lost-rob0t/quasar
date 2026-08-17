@@ -5,7 +5,7 @@
 set -euo pipefail
 
 CLOG_SHA="9ee022a97ab4109f2ff6d2b9c43ba6da286d6302"
-TEK9_SHA="bed82c71d20a7640d6378aaf5934f984c5874e6e"
+TEK9_SHA="ca24ef35ea6877420cbca057dd7fb702fe29a740"
 
 local_projects="${QUASAR_QUICKLISP_LOCAL_PROJECTS:-$HOME/quicklisp/local-projects}"
 mkdir -p "$local_projects"
