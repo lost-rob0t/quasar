@@ -13,10 +13,14 @@ Quasar UI (`frontend/`, sourced from quasar-ui)
 quasar
   canonical Common Lisp control plane and runtime
         |
+        | embedded durable document/graph persistence
+        v
+Tek9 -> LMDB
+        |
         | StarIntel APIs and service adapters
         v
 starintel-server
-  persistent ingest / storage / search / routing / RabbitMQ services
+  persistent ingest / search / routing / RabbitMQ services
         |
         +-----------------------------+
         |                             |
@@ -27,7 +31,7 @@ star-bbpd                       other actor services
 
 `star-bbpd`, for example, is an external Python/Pykka actor service that consumes RabbitMQ targets, runs reconnaissance tools such as Subfinder, Nmap, Httpx, Katana and DNS workflows, and publishes derived StarIntel documents and relations. Those capabilities are not reimplemented inside the browser UI.
 
-See [Architecture](docs/ARCHITECTURE.md), the [UI migration ledger](docs/UI-MIGRATION.md), and the [capability boundary](docs/CAPABILITY-BOUNDARY.md) for the detailed ownership split.
+See [Architecture](docs/ARCHITECTURE.md), the [Tek9 storage ADR](docs/ADR-TEK9-WORKSPACE-STORAGE.md), the [UI migration ledger](docs/UI-MIGRATION.md), and the [capability boundary](docs/CAPABILITY-BOUNDARY.md) for the detailed ownership split.
 
 ## Architecture
 
@@ -35,6 +39,9 @@ See [Architecture](docs/ARCHITECTURE.md), the [UI migration ledger](docs/UI-MIGR
   menus, and animation remain in the browser.
 - Common Lisp owns canonical documents, named graph definitions, committed
   graph presentation state, revisions, transactions, and the operation journal.
+- Tek9 is the canonical local embedded document/graph store and LMDB is the
+  durable engine beneath it. The active Lisp workspace remains a compatibility
+  working cache during Phase 1 of issue #24.
 - Cytoscape is a presentation projection. PouchDB is populated only when an
   explicit CouchDB synchronization needs browser-local staging. Migrated
   document and graph writes never fall back to PouchDB.
@@ -48,19 +55,26 @@ See [Architecture](docs/ARCHITECTURE.md), the [UI migration ledger](docs/UI-MIGR
 
 ## Development
 
-Node.js 22.12 or newer, SBCL, Quicklisp, SQLite, OpenSSL, libffi, and
-RabbitMQ C libraries are required. The supported Nix shell supplies these:
+Node.js 22.12 or newer, SBCL, Quicklisp, LMDB, SQLite, OpenSSL, libffi, and
+RabbitMQ C libraries are required. The supported Nix shell supplies the native
+libraries and runtime tools:
 
 ```sh
 nix develop
+bash scripts/bootstrap-lisp-deps
 npm ci
 npm run dev
 ```
 
+`scripts/bootstrap-lisp-deps` is the canonical source for git-pinned Common Lisp
+source dependencies such as CLOG and Tek9. It installs exact commits into
+Quicklisp `local-projects` and refuses to overwrite a dirty existing checkout.
+CI calls the same script rather than carrying a second set of dependency pins.
+
 On Linux hosts with Nix available, plain `npm run dev` and
 `./scripts/run-production` automatically re-enter this repository's pinned Nix
-shell so CLOG can resolve SQLite and the other native libraries. Other platforms
-use the libraries installed on the host.
+shell so CLOG, Tek9, and the other CFFI systems can resolve their native
+libraries. Other platforms use the libraries installed on the host.
 
 One root `npm ci` installs the complete npm workspace. `npm run dev` supervises
 the Common Lisp control plane, WebSocket endpoint, CLOG host, and Vite without
@@ -78,6 +92,11 @@ logging payloads or credentials. Use `?debug=0` to disable that transport trace.
 `./scripts/run-control-plane` starts only the Lisp/CLOG/WebSocket side. The
 development scripts explicitly enable unauthenticated local mode; production
 does not.
+
+The default durable local workspace path follows XDG:
+`$XDG_DATA_HOME/quasar/tek9/`, or `~/.local/share/quasar/tek9/` when
+`XDG_DATA_HOME` is unset. Tests and deployments can override the path or inject
+an existing store.
 
 ## Validation
 
@@ -103,6 +122,7 @@ Build and start the packaged server from a fresh dependency state:
 
 ```sh
 nix develop
+bash scripts/bootstrap-lisp-deps
 ./scripts/run-production
 ```
 
@@ -115,9 +135,11 @@ manifest, and service-worker scope use that same base path.
 ## Protocol and durable graph contract
 
 Commands and responses use `quasar.control.v1` envelopes with correlated IDs,
-stable error codes, and workspace metadata. Successful mutations persist the
-isolated candidate workspace and journal record atomically before the live
-workspace is replaced, acknowledged, or broadcast.
+stable error codes, and workspace metadata. Successful mutations first apply to
+an isolated candidate. One Tek9/LMDB transaction then commits only the affected
+document/graph records, workspace revision/settings metadata, graph topology and
+adjacency, and one journal entry before the live workspace is replaced,
+acknowledged, or broadcast.
 
 StarIntel documents and relation documents are the intelligence records. A
 named graph stores membership plus committed positions, viewport, layout, and
@@ -139,8 +161,10 @@ Implemented durable commands include:
 Transaction child events have unique operation IDs, a shared transaction ID,
 one committed revision, stable order, event index, and event count.
 File imports are fully prevalidated in the browser, then large corpora are sent
-as ordered, size-bounded chunks below the WebSocket security limit. Lisp stages
-the chunks in an isolated candidate and commits the entire import once.
+as ordered, size-bounded chunks below the WebSocket security limit. Lisp still
+stages those chunks in an isolated heap-resident candidate during this phase;
+the final import commit is atomic and durable in Tek9. Durable streaming staging
+and bounded-memory reads/imports remain follow-on work under issue #24.
 
 ## Transitional boundaries
 
