@@ -19,6 +19,7 @@
                (:file "store")
                (:file "store-maintenance")
                (:file "phase2-store")
+               (:file "phase2-store-page-fix")
                (:file "phase2-store-reads")
                (:file "control-plane")
                (:file "phase2-control-plane")
