@@ -18,7 +18,7 @@
                (:file "persistence-plan")
                (:file "store")
                (:file "store-maintenance")
-               (:file "phase2-store")
+               (:file "phase2-store-core")
                (:file "phase2-store-page-fix")
                (:file "phase2-stage")
                (:file "phase2-store-reads")
