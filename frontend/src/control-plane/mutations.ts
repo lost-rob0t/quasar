@@ -84,9 +84,7 @@ export async function cpTransaction(
   return (await client().transaction(operations, expectedRevision)) as Record<string, unknown>;
 }
 
-export async function cpImportDocuments(
-  chunks: unknown[][]
-): Promise<Record<string, unknown>> {
+export async function cpImportDocuments(chunks: unknown[][]): Promise<Record<string, unknown>> {
   const c = client();
   const started = await c.send<Record<string, unknown>>("document.import.begin", {});
   const sessionId = String(started.sessionId || "");
