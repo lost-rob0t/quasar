@@ -55,17 +55,13 @@ describe("durable document import sequencing", () => {
       .mockResolvedValueOnce({ sessionId: "stage-fail", aborted: true });
 
     await expect(
-      cpImportDocuments([
-        [{ type: "document.create", payload: { _id: "bad", dtype: "person" } }]
-      ])
+      cpImportDocuments([[{ type: "document.create", payload: { _id: "bad", dtype: "person" } }]])
     ).rejects.toBe(failure);
 
     expect(send).toHaveBeenNthCalledWith(2, "document.import.chunk", {
       sessionId: "stage-fail",
       sequence: 0,
-      operations: [
-        { type: "document.create", payload: { _id: "bad", dtype: "person" } }
-      ]
+      operations: [{ type: "document.create", payload: { _id: "bad", dtype: "person" } }]
     });
     expect(send).toHaveBeenNthCalledWith(3, "document.import.abort", {
       sessionId: "stage-fail"
