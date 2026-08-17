@@ -1,5 +1,5 @@
 (asdf:defsystem "quasar-control"
-  :description "Quasar Common Lisp control plane: protocol, workspace, store, commands, actors."
+  :description "Quasar Common Lisp control plane: protocol, workspace, Tek9 store, commands, actors."
   :author "lost-rob0t"
   :license "AGPL-3.0-only"
   :version "0.2.0"
@@ -10,10 +10,12 @@
                "dexador"
                "jsown"
                "quri"
-               "sento")
+               "sento"
+               "tek9")
   :components ((:file "packages")
                (:file "protocol")
                (:file "workspace")
+               (:file "persistence-plan")
                (:file "store")
                (:file "control-plane")
                (:file "actors/melissa/packages")

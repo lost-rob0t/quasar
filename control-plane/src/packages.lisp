@@ -46,11 +46,19 @@
     #:workspace-store
     #:memory-store
     #:make-memory-store
+    #:tek9-store
+    #:make-tek9-store
+    #:default-tek9-path
+    #:tek9-store-path
+    #:tek9-store-failure-hook
+    #:tek9-store-last-commit-stats
+    #:unsupported-storage-schema
     #:load-workspace
     #:save-workspace
     #:append-operation
     #:commit-workspace
-    #:store-journal-entries))
+    #:store-journal-entries
+    #:close-store))
 
 (defpackage #:quasar.workspace
   (:use #:cl)
@@ -67,6 +75,7 @@
                  #:quasar-error)
   (:export
     #:workspace
+    #:persistent-workspace
     #:make-workspace
     #:workspace-id
     #:workspace-revision
@@ -75,6 +84,14 @@
     #:workspace-settings
     #:workspace-journal
     #:copy-workspace
+    #:workspace-persistence-changes
+    #:clear-workspace-persistence-changes
+    #:persistence-change
+    #:make-persistence-change
+    #:persistence-change-kind
+    #:persistence-change-graph-id
+    #:persistence-change-id
+    #:persistence-change-value
     #:workspace-graph
     #:workspace-snapshot
     #:workspace-snapshot-page
@@ -223,6 +240,9 @@
                  #:stop-control-plane
                  #:subscribe
                  #:broadcast-event)
+  (:import-from #:quasar.store
+                 #:make-tek9-store
+                 #:close-store)
   (:import-from #:quasar.starlang
                  #:install-starlang-commands)
   (:import-from #:quasar.ui
@@ -237,6 +257,7 @@
   (:export
    #:*control-plane*
    #:*websocket-server*
+   #:*workspace-store*
    #:start
    #:stop
    #:main))
@@ -290,5 +311,6 @@
                 #:submit-command
                 #:subscribe
                 #:unsubscribe
+                #:control-plane-workspaces
                 #:control-plane-store)
   (:export #:run-tests))
