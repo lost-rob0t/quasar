@@ -12,6 +12,7 @@
                (:file "tek9-store-tests")
                (:file "tek9-store-adversarial-tests")
                (:file "tek9-store-maintenance-tests")
+               (:file "phase2-test-compat")
                (:file "phase2-storage-spec-tests")
                (:file "phase2-adversarial-tests")
                (:file "melissa-tests")
