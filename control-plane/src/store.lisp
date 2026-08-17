@@ -177,9 +177,9 @@ the store lifetime; canonical data uses Tek9's full durability profile."))
         collect value))
 
 (defun %range-keys (database prefix)
-  (loop for (key . value)
-          in (tek9:select-primary-range database prefix :end (%prefix-end prefix))
-        declare (ignore value)
+  (loop for entry in (tek9:select-primary-range
+                      database prefix :end (%prefix-end prefix))
+        for key = (car entry)
         while (and (<= (length prefix) (length key))
                    (string= prefix key :end2 (length prefix)))
         collect key))
@@ -218,18 +218,18 @@ the store lifetime; canonical data uses Tek9's full durability profile."))
    (cons "settings" (%workspace-settings-object workspace))))
 
 (defun %ensure-supported-schema (database)
-  (let ((stored (tek9:fetch* database +tek9-schema-key+)))
+  (let* ((stored (tek9:fetch* database +tek9-schema-key+))
+         (version (and stored (quasar.protocol:json-value stored "version"))))
     (cond
       ((null stored)
        (%put-record database +tek9-schema-key+
                     (quasar.protocol:json-object
                      (cons "version" +tek9-schema-version+))))
-      ((= +tek9-schema-version+
-          (or (quasar.protocol:json-value stored "version") -1))
+      ((eql version +tek9-schema-version+)
        t)
       (t
        (error 'unsupported-storage-schema
-              :found (quasar.protocol:json-value stored "version")
+              :found version
               :supported +tek9-schema-version+)))))
 
 (defun make-tek9-store (&key (path (default-tek9-path)) failure-hook)
@@ -300,7 +300,7 @@ the store lifetime; canonical data uses Tek9's full durability profile."))
     (unless meta
       (return-from load-workspace nil))
     (let ((schema (quasar.protocol:json-value meta "storageSchemaVersion")))
-      (unless (= schema +tek9-schema-version+)
+      (unless (eql schema +tek9-schema-version+)
         (error 'unsupported-storage-schema
                :found schema :supported +tek9-schema-version+)))
     (let ((workspace (quasar.workspace:make-workspace :id workspace-id)))
@@ -309,6 +309,10 @@ the store lifetime; canonical data uses Tek9's full durability profile."))
       (%restore-settings workspace
                          (or (quasar.protocol:json-value meta "settings")
                              (quasar.protocol:empty-object)))
+      (unless (gethash "activeGraphId" (quasar.workspace:workspace-settings workspace))
+        (setf (gethash "activeGraphId" (quasar.workspace:workspace-settings workspace))
+              (or (quasar.protocol:json-value meta "activeGraphId")
+                  "all-documents")))
       (dolist (document (%range-values database (%document-prefix workspace-id)))
         (setf (gethash (quasar.protocol:json-value document "_id")
                        (quasar.workspace:workspace-documents workspace))
@@ -357,10 +361,10 @@ the store lifetime; canonical data uses Tek9's full durability profile."))
     (%delete-prefix database (%edge-prefix workspace-id graph-id))
     (%put-record database (%graph-meta-key workspace-id graph-id)
                  (%graph-metadata graph))
-    (dolist (node (quasar.workspace::array-elements
+    (dolist (node (quasar.workspace:array-elements
                    (quasar.workspace:graph-nodes graph)))
       (%put-node database workspace-id graph-id node))
-    (dolist (edge (quasar.workspace::array-elements
+    (dolist (edge (quasar.workspace:array-elements
                    (quasar.workspace:graph-edges graph)))
       (%put-edge database workspace-id graph-id edge))))
 
