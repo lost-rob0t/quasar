@@ -17,6 +17,7 @@
                (:file "workspace")
                (:file "persistence-plan")
                (:file "store")
+               (:file "store-maintenance")
                (:file "control-plane")
                (:file "actors/melissa/packages")
                (:file "actors/melissa/async-control-plane")
