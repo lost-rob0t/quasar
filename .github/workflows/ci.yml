@@ -30,14 +30,6 @@ jobs:
       - name: Install monorepo dependencies from the root lockfile
         run: npm ci
 
-      - name: Diagnose Phase 2 Prettier drift
-        run: |
-          ./node_modules/.bin/prettier --write \
-            frontend/src/control-plane/mutations.ts \
-            frontend/tests/unit/control-plane-import-sequence.test.ts
-          git diff -- frontend/src/control-plane/mutations.ts frontend/tests/unit/control-plane-import-sequence.test.ts
-          git diff --exit-code -- frontend/src/control-plane/mutations.ts frontend/tests/unit/control-plane-import-sequence.test.ts
-
       - name: Format, lint, type, boundary, and static checks
         run: npm run check
 
