@@ -8,11 +8,13 @@ export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
 # that may provide incompatible versions of named-readtables or other deps.
 export CL_SOURCE_REGISTRY="(:source-registry (:tree \"$HOME/quicklisp/local-projects/\") (:tree \"$HOME/quicklisp/dists/quicklisp/software/\") (:tree \"$repo_root/systems/\") :ignore-inherited-configuration)"
 
-# Find OpenSSL for CFFI-based systems (NixOS compatibility)
-openssl_lib="$(nix-store -q --requisites /nix/var/nix/profiles/default 2>/dev/null | grep -m1 'openssl' || true)"
-if [[ -n "${openssl_lib}" && -d "${openssl_lib}/lib" ]]; then
-  export LD_LIBRARY_PATH="${openssl_lib}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-fi
+# Find native libraries for CFFI-based systems (NixOS compatibility).
+for native_name in openssl lmdb; do
+  native_lib="$(nix-store -q --requisites /nix/var/nix/profiles/default 2>/dev/null | grep -m1 "$native_name" || true)"
+  if [[ -n "${native_lib}" && -d "${native_lib}/lib" ]]; then
+    export LD_LIBRARY_PATH="${native_lib}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  fi
+done
 
 cd "$repo_root"
 
@@ -22,7 +24,7 @@ trap 'rm -f "$output_file"' EXIT
 sbcl --non-interactive \
   --eval '(setf asdf:*central-registry* nil)' \
   --eval '(asdf:clear-configuration)' \
-  --eval '(ql:quickload (list :babel :dexador :jsown :quri :sento :bordeaux-threads) :silent t)' \
+  --eval '(ql:quickload (list :babel :dexador :jsown :quri :sento :tek9 :bordeaux-threads) :silent t)' \
   --eval '(asdf:load-asd (truename "systems/quasar-control.asd"))' \
   --eval '(asdf:load-asd (truename "systems/quasar-starlang.asd"))' \
   --eval '(asdf:load-asd (truename "systems/quasar-tests.asd"))' \
