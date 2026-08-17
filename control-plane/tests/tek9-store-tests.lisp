@@ -203,7 +203,6 @@
 
 (defun test-tek9-workspace-namespaces-isolate-identical-ids ()
   (with-temporary-tek9-store (store path "namespace")
-    (declare (ignore path))
     (let ((plane (quasar.control-plane:make-control-plane :store store)))
       (unwind-protect
            (progn
@@ -316,7 +315,6 @@
 
 (defun test-tek9-single-record-update-does-not-rewrite-corpus ()
   (with-temporary-tek9-store (store path "bounded-write")
-    (declare (ignore path))
     (let ((plane (quasar.control-plane:make-control-plane :store store)))
       (unwind-protect
            (progn
