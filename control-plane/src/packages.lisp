@@ -46,11 +46,19 @@
     #:workspace-store
     #:memory-store
     #:make-memory-store
+    #:tek9-store
+    #:make-tek9-store
+    #:default-tek9-path
+    #:tek9-store-path
+    #:tek9-store-failure-hook
+    #:tek9-store-last-commit-stats
+    #:unsupported-storage-schema
     #:load-workspace
     #:save-workspace
     #:append-operation
     #:commit-workspace
-    #:store-journal-entries))
+    #:store-journal-entries
+    #:close-store))
 
 (defpackage #:quasar.workspace
   (:use #:cl)
@@ -59,14 +67,15 @@
                 #:json-array
                 #:json-value
                 #:empty-object
-                 #:ensure-string
-                 #:ensure-object
-                 #:ensure-array
-                 #:clone-json
-                 #:object-set
-                 #:quasar-error)
+                #:ensure-string
+                #:ensure-object
+                #:ensure-array
+                #:clone-json
+                #:object-set
+                #:quasar-error)
   (:export
     #:workspace
+    #:persistent-workspace
     #:make-workspace
     #:workspace-id
     #:workspace-revision
@@ -75,6 +84,14 @@
     #:workspace-settings
     #:workspace-journal
     #:copy-workspace
+    #:workspace-persistence-changes
+    #:clear-workspace-persistence-changes
+    #:persistence-change
+    #:make-persistence-change
+    #:persistence-change-kind
+    #:persistence-change-graph-id
+    #:persistence-change-id
+    #:persistence-change-value
     #:workspace-graph
     #:workspace-snapshot
     #:workspace-snapshot-page
@@ -83,6 +100,7 @@
     #:graph-edge
     #:graph-nodes
     #:graph-edges
+    #:array-elements
     #:dispatch-operation
     #:commit-operations
     #:apply-document-create
@@ -178,15 +196,15 @@
 (defpackage #:quasar.ws
   (:use #:cl)
   (:import-from #:quasar.protocol
-                 #:decode-command
-                 #:encode
-                 #:encode-result
-                 #:encode-error
-                 #:quasar-error-to-envelope)
+                #:decode-command
+                #:encode
+                #:encode-result
+                #:encode-error
+                #:quasar-error-to-envelope)
   (:import-from #:quasar.control-plane
-                 #:submit-command
-                 #:subscribe
-                 #:unsubscribe)
+                #:submit-command
+                #:subscribe
+                #:unsubscribe)
   (:export
     #:websocket-server
     #:make-websocket-server
@@ -218,25 +236,29 @@
 (defpackage #:quasar.app
   (:use #:cl)
   (:import-from #:quasar.control-plane
-                 #:make-control-plane
-                 #:start-control-plane
-                 #:stop-control-plane
-                 #:subscribe
-                 #:broadcast-event)
+                #:make-control-plane
+                #:start-control-plane
+                #:stop-control-plane
+                #:subscribe
+                #:broadcast-event)
+  (:import-from #:quasar.store
+                #:make-tek9-store
+                #:close-store)
   (:import-from #:quasar.starlang
-                 #:install-starlang-commands)
+                #:install-starlang-commands)
   (:import-from #:quasar.ui
-                 #:start-ui
-                 #:stop-ui)
+                #:start-ui
+                #:stop-ui)
   (:import-from #:quasar.ws
-                 #:make-websocket-server
-                 #:start-websocket-server
-                 #:stop-websocket-server
-                 #:attach-subscriber
-                 #:detach-subscriber)
+                #:make-websocket-server
+                #:start-websocket-server
+                #:stop-websocket-server
+                #:attach-subscriber
+                #:detach-subscriber)
   (:export
    #:*control-plane*
    #:*websocket-server*
+   #:*workspace-store*
    #:start
    #:stop
    #:main))
@@ -290,5 +312,6 @@
                 #:submit-command
                 #:subscribe
                 #:unsubscribe
+                #:control-plane-workspaces
                 #:control-plane-store)
   (:export #:run-tests))

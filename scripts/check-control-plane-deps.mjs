@@ -2,41 +2,36 @@
 // Static guard against Common Lisp dependency/bootstrap drift.
 //
 // The canonical control-plane launcher (scripts/run-control-plane) and
-// the test runner (scripts/test-lisp) each maintain a Quicklisp
-// pre-load list. This script verifies those lists against the :depends-on
-// declarations in the ASDF system definitions under systems/ so the
-// developer startup path cannot silently omit a required dependency or
-// diverge from the canonical launcher.
+// test runner (scripts/test-lisp) each maintain a Quicklisp pre-load list.
+// This script verifies those lists against ASDF :depends-on declarations.
+// Git-pinned source dependencies are owned by scripts/bootstrap-lisp-deps;
+// CI must delegate to that script instead of duplicating clone/pin commands.
 //
 // Exit code is non-zero on any mismatch.
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const repoRoot = new URL("../", import.meta.url).pathname;
-const systemsDir = join(repoRoot, "systems");
 
 function readText(relativePath) {
   return readFileSync(join(repoRoot, relativePath), "utf-8");
 }
 
-// --- Parse :depends-on from an .asd file -----------------------------
 function parseAsdDependsOn(asdPath) {
   const text = readText(asdPath);
   const match = text.match(/:depends-on\s*\(([^)]*)\)/s);
   if (!match) {
     throw new Error(`${asdPath}: could not find :depends-on form`);
   }
-  const body = match[1];
   const deps = [];
   const re = /"([^"]+)"/g;
   let m;
-  while ((m = re.exec(body)) !== null) {
+  while ((m = re.exec(match[1])) !== null) {
     deps.push(m[1]);
   }
   return deps;
 }
 
-// --- Parse the ql:quickload list from a shell script -----------------
 function parseQuickloadList(scriptPath) {
   const text = readText(scriptPath);
   const match = text.match(/ql:quickload\s*\(list\s+([^)]+)\)/);
@@ -50,7 +45,6 @@ function parseQuickloadList(scriptPath) {
     .map((token) => token.replace(/^:/, ""));
 }
 
-// External (non-quasar) dependencies declared across the given ASD files.
 function externalDeps(asdFiles) {
   const all = new Set();
   for (const asd of asdFiles) {
@@ -90,9 +84,6 @@ console.log("Checking Common Lisp dependency lists against ASDF declarations..."
 
 let ok = true;
 
-// scripts/run-control-plane loads :quasar-web, so its dependency set must
-// cover every external dependency declared in quasar-control.asd and
-// quasar-web.asd.
 const webExpected = externalDeps([
   "systems/quasar-control.asd",
   "systems/quasar-web.asd",
@@ -100,8 +91,6 @@ const webExpected = externalDeps([
 const runControlPlaneActual = new Set(parseQuickloadList("scripts/run-control-plane"));
 ok = compare("scripts/run-control-plane", webExpected, runControlPlaneActual, "scripts/run-control-plane") && ok;
 
-// scripts/test-lisp loads :quasar-tests (quasar-control + quasar-starlang
-// only — the web layer is not exercised by the Lisp test suite).
 const testExpected = externalDeps([
   "systems/quasar-control.asd",
   "systems/quasar-starlang.asd",
@@ -109,8 +98,6 @@ const testExpected = externalDeps([
 const testLispActual = new Set(parseQuickloadList("scripts/test-lisp"));
 ok = compare("scripts/test-lisp", testExpected, testLispActual, "scripts/test-lisp") && ok;
 
-// scripts/dev.mjs must delegate to scripts/run-control-plane rather than
-// maintaining its own inline SBCL command, so there is nothing to drift.
 const devMjs = readText("scripts/dev.mjs");
 if (/ql:quickload/.test(devMjs)) {
   console.error("  FAIL scripts/dev.mjs must not inline ql:quickload; delegate to scripts/run-control-plane");
@@ -119,17 +106,35 @@ if (/ql:quickload/.test(devMjs)) {
   console.log("  OK   scripts/dev.mjs delegates to scripts/run-control-plane");
 }
 
-// The CI workflow must not inline its own ql:quickload list either.
+const bootstrap = readText("scripts/bootstrap-lisp-deps");
+const clogPin = bootstrap.match(/CLOG_SHA="([0-9a-f]{40})"/);
+const tek9Pin = bootstrap.match(/TEK9_SHA="([0-9a-f]{40})"/);
+if (!clogPin || !tek9Pin) {
+  console.error("  FAIL scripts/bootstrap-lisp-deps must pin CLOG_SHA and TEK9_SHA to full commit SHAs");
+  ok = false;
+} else {
+  console.log(`  OK   scripts/bootstrap-lisp-deps pins CLOG ${clogPin[1]} and Tek9 ${tek9Pin[1]}`);
+}
+
 const ciYml = readText(".github/workflows/ci.yml");
 if (/ql:quickload/.test(ciYml)) {
   console.error("  FAIL .github/workflows/ci.yml must not inline ql:quickload; use scripts/run-control-plane");
   ok = false;
 } else {
-  console.log("  OK   .github/workflows/ci.yml delegates to scripts/run-control-plane");
+  console.log("  OK   .github/workflows/ci.yml does not inline ql:quickload");
+}
+if (!ciYml.includes("bash scripts/bootstrap-lisp-deps")) {
+  console.error("  FAIL .github/workflows/ci.yml must delegate git-pinned Lisp sources to scripts/bootstrap-lisp-deps");
+  ok = false;
+} else if (/git clone[^\n]*(?:clog|tek9)/i.test(ciYml)) {
+  console.error("  FAIL .github/workflows/ci.yml duplicates a pinned Lisp dependency clone; keep it in scripts/bootstrap-lisp-deps");
+  ok = false;
+} else {
+  console.log("  OK   .github/workflows/ci.yml delegates pinned Lisp sources to scripts/bootstrap-lisp-deps");
 }
 
 if (!ok) {
-  console.error("\nDependency drift detected. Update the Quicklisp list in the canonical launcher or the ASDF :depends-on declarations.");
+  console.error("\nDependency drift detected. Update ASDF, canonical Quicklisp lists, or scripts/bootstrap-lisp-deps as appropriate.");
   process.exit(1);
 }
-console.log("\nAll Common Lisp dependency lists are consistent.");
+console.log("\nAll Common Lisp dependency and bootstrap declarations are consistent.");

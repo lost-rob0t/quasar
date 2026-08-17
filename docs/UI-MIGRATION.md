@@ -10,12 +10,12 @@ See [CAPABILITY-BOUNDARY.md](CAPABILITY-BOUNDARY.md) for the complete
 
 | Surface | Browser responsibility | Durable/runtime authority | Status |
 | --- | --- | --- | --- |
-| Documents/editor | render, filter, edit buffer | `document.*` and authoritative snapshots | migrated |
-| Import and batches | file selection, parsing, progress UI | `workspace.transaction` | migrated commit path |
+| Documents/editor | render, filter, edit buffer | Common Lisp commands + Tek9 durable records | migrated + process durable |
+| Import and batches | file selection, parsing, progress UI | Common Lisp transaction + Tek9 final commit | migrated commit path; staging still heap-bound |
 | Undo/redo | labels and buttons | inverse control-plane transactions | migrated for documents |
-| Graph list/workspaces | selector and responsive UI | `graph.workspace.*` | migrated |
-| Graph membership/view | Cytoscape projection and animation | `graph.workspace.put` transaction | migrated |
-| Drag/layout | live frames local | debounced final graph commit | migrated |
+| Graph list/workspaces | selector and responsive UI | Common Lisp + Tek9 graph metadata/topology | migrated + process durable |
+| Graph membership/view | Cytoscape projection and animation | `graph.workspace.put` + Tek9 | migrated + process durable |
+| Drag/layout | live frames local | debounced final graph commit to Tek9 | migrated + process durable |
 | Selection/menus | transient interaction | browser only | intentionally local |
 | PouchDB views | CouchDB sync staging only | populated only for explicit synchronization | transitional adapter |
 | CouchDB sync | browser connection UI and staging | pulled records commit through Lisp / owning backend | transitional adapter |
@@ -33,8 +33,10 @@ Runtime-backed and external-service rows describe UI bindings, not browser
 ownership. `starintel-server` may own ingest, persistence, search and queue
 routing. `star-bbpd` owns its external Python/Pykka recon workers and native
 tools. Quasar Common Lisp owns canonical command/revision authority and
-persistent supervision for migrated operations. The browser renders controls,
-progress, logs, documents, graph projections and errors.
+persistent supervision for migrated operations. Tek9 is Quasar's canonical
+local embedded document/graph persistence engine; LMDB sits below Tek9. The
+browser renders controls, progress, logs, documents, graph projections and
+errors.
 
 The UI must discover capabilities. A missing backend or external service reduces
 only its dependent controls; it must not silently fall back to weaker browser
@@ -53,6 +55,10 @@ semantics while claiming equivalent capability.
   them, and audit records never include payloads.
 - Privileged/native service execution remains behind the runtime or owning
   external-service boundary.
+- Normal committed document/graph/meta/journal mutations are process durable in
+  Tek9. The active workspace and import candidate are still materialized in
+  memory during this phase; that is a runtime compatibility layer, not a second
+  durable authority.
 
 ## Non-regression gates
 
@@ -64,7 +70,9 @@ semantics while claiming equivalent capability.
 - Playwright runs against the real Lisp/Vite stack and proves create, graph
   membership, reload, and authoritative restore;
 - unavailable `starintel-server`, BBPD, or other service capabilities fail
-  closed without being mislabeled as browser-provided equivalents.
+  closed without being mislabeled as browser-provided equivalents;
+- closing and reopening the Tek9 environment restores committed Quasar state
+  without reusing the old Lisp workspace.
 
 ## Remaining migration order
 
@@ -75,7 +83,9 @@ semantics while claiming equivalent capability.
    actions.
 3. Move CouchDB, RabbitMQ, StarIntel Server, BBPD, Brave, URL, MCP, and skill
    integrations behind capability-checked control-plane/service adapters.
-4. Replace the development memory store with a process-durable implementation
-   of the existing atomic store interface.
+4. Move document reads, paginated snapshots, and import staging directly onto
+   Tek9 so large corpora no longer require a fully heap-resident workspace or
+   copied import candidate. Add durable chunk staging, backpressure, restart
+   recovery, abandoned-stage cleanup, and memory/throughput telemetry under #24.
 5. Add capability-matrix tests proving unavailable backend/external services
    disable only their dependent UI and do not break standalone editing.

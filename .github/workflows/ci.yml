@@ -45,17 +45,14 @@ jobs:
         run: |
           sudo apt-get update --quiet
           sudo apt-get install --yes --quiet \
-            sbcl curl git libffi-dev libssl-dev libsqlite3-dev librabbitmq-dev
+            sbcl curl git libffi-dev libssl-dev libsqlite3-dev librabbitmq-dev liblmdb-dev
           curl --fail --silent --show-error --output /tmp/quicklisp.lisp \
             https://beta.quicklisp.org/quicklisp.lisp
           sbcl --non-interactive \
             --load /tmp/quicklisp.lisp \
             --eval '(quicklisp-quickstart:install :path #p"/home/runner/quicklisp/")'
           printf '%s\n' '(load #p"/home/runner/quicklisp/setup.lisp")' > /home/runner/.sbclrc
-          git clone --quiet https://github.com/rabbibotton/clog.git \
-            /home/runner/quicklisp/local-projects/clog
-          git -C /home/runner/quicklisp/local-projects/clog checkout --quiet \
-            9ee022a97ab4109f2ff6d2b9c43ba6da286d6302
+          bash scripts/bootstrap-lisp-deps
 
       - name: Common Lisp transaction, persistence, and control-plane tests
         run: npm run test:lisp
