@@ -21,6 +21,7 @@
                (:file "phase2-store-core")
                (:file "phase2-store-page-fix")
                (:file "phase2-stage")
+               (:file "phase2-promotion")
                (:file "phase2-store-reads")
                (:file "control-plane")
                (:file "phase2-control-plane")
