@@ -67,10 +67,9 @@ whose next candidate starts with an empty commit plan."))
 This function runs only after the ordinary workspace functions have validated
 and mutated the candidate. It does not implement application validation and the
 store never needs to reinterpret command semantics."
-  (let* ((type (quasar.protocol:json-value operation "type"))
-         (payload (or (quasar.protocol:json-value operation "payload")
-                      (quasar.protocol:empty-object)))
-         (result (applied-op-result applied)))
+  (let ((type (quasar.protocol:json-value operation "type"))
+        (payload (or (quasar.protocol:json-value operation "payload")
+                     (quasar.protocol:empty-object))))
     (cond
       ((string= type "document.create")
        (list (make-persistence-change
