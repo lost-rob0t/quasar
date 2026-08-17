@@ -19,6 +19,7 @@
             rabbitmq-c
             libffi
             sqlite
+            lmdb
           ];
         in
         {
