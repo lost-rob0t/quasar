@@ -9,6 +9,7 @@
   :pathname "../control-plane/tests/"
   :components ((:file "control-plane-tests")
                (:file "workspace-integrity-tests")
+               (:file "tek9-store-tests")
                (:file "melissa-tests")
                (:file "melissa-restart-tests")
                (:file "debug-logging-tests"))
@@ -16,6 +17,7 @@
              (declare (ignore operation component))
              (uiop:symbol-call :quasar.tests :run-tests)
              (funcall (find-symbol "RUN-WORKSPACE-INTEGRITY-TESTS" "QUASAR.TESTS"))
+             (funcall (find-symbol "RUN-TEK9-STORE-TESTS" "QUASAR.TESTS"))
              (funcall (find-symbol "RUN-MELISSA-TESTS" "QUASAR.TESTS"))
              (funcall (find-symbol "RUN-MELISSA-RESTART-TESTS" "QUASAR.TESTS"))
              (funcall (find-symbol "RUN-DEBUG-LOGGING-TESTS" "QUASAR.TESTS"))))
