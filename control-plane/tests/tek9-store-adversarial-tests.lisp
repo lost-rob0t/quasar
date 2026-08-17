@@ -39,7 +39,6 @@
 
 (defun test-tek9-deletions-restore-exactly ()
   (with-temporary-tek9-store (store path "deletions")
-    (declare (ignore path))
     (let ((plane (quasar.control-plane:make-control-plane :store store)))
       (unwind-protect
            (progn
@@ -145,7 +144,6 @@
 
 (defun test-tek9-durable-base-revision-rejects-stale-candidate ()
   (with-temporary-tek9-store (store path "stale-durable-revision")
-    (declare (ignore path))
     (let ((plane (quasar.control-plane:make-control-plane :store store)))
       (unwind-protect
            (progn
