@@ -35,17 +35,15 @@
 (defun handle-import-begin (plane payload envelope)
   (if (not (phase2-streaming-p plane))
       (funcall *phase2-legacy-import-begin* plane payload envelope)
-      (progn
-        (declare (ignore payload))
-        (let* ((store (control-plane-store plane))
-               (workspace-id (phase2-workspace-id envelope))
-               (base-revision
-                 (quasar.store:direct-workspace-revision store workspace-id))
-               (stage-id (next-transaction-id))
-               (now (get-universal-time)))
-          (quasar.store:cleanup-expired-import-stages store now)
-          (quasar.store:begin-import-stage
-           store workspace-id stage-id base-revision now)))))
+      (let* ((store (control-plane-store plane))
+             (workspace-id (phase2-workspace-id envelope))
+             (base-revision
+               (quasar.store:direct-workspace-revision store workspace-id))
+             (stage-id (next-transaction-id))
+             (now (get-universal-time)))
+        (quasar.store:cleanup-expired-import-stages store now)
+        (quasar.store:begin-import-stage
+         store workspace-id stage-id base-revision now))))
 
 (defun handle-import-chunk (plane payload envelope)
   (if (not (phase2-streaming-p plane))
@@ -117,12 +115,10 @@
 (defun handle-document-list (plane payload envelope)
   (if (not (phase2-streaming-p plane))
       (funcall *phase2-legacy-document-list* plane payload envelope)
-      (progn
-        (declare (ignore payload))
-        (apply #'quasar.protocol:json-array
-               (quasar.store:direct-document-list
-                (control-plane-store plane)
-                (phase2-workspace-id envelope))))))
+      (apply #'quasar.protocol:json-array
+             (quasar.store:direct-document-list
+              (control-plane-store plane)
+              (phase2-workspace-id envelope)))))
 
 (defun phase2-validate-page-request (payload)
   (let ((offset (quasar.protocol:json-value payload "documentOffset"))
