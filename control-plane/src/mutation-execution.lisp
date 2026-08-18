@@ -40,6 +40,7 @@
     (quasar.protocol:object-set result "operationId" operation-id)
     (quasar.protocol:object-set result "revision" revision)
     (quasar.protocol:object-set result "event" (applied-op-event applied))
+    (observe-mutation-working-set context)
     (quasar.store:commit-change-set
      store
      workspace-id
@@ -142,6 +143,7 @@
             applied-operations transaction-id revision))
          (event-count (length applied-operations)))
     (setf (quasar.workspace:workspace-revision workspace) revision)
+    (observe-mutation-working-set context)
     (quasar.store:commit-change-set
      store
      workspace-id
