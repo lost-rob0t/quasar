@@ -126,6 +126,8 @@
        (let ((id (quasar.protocol:json-value payload "id")))
          (when id
            (mutation-context-document context id)
+           (mutation-context-load-document-edge-references context id)
+           (mutation-context-require-no-live-edge-reference context id)
            (mutation-context-load-document-node-references context id)
            (mutation-context-load-document-memberships context id))))
       ((string= type "document.restore")
