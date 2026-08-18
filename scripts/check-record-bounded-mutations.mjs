@@ -56,6 +56,7 @@ const boundedFiles = [
   "control-plane/src/mutation-store-alternates.lisp",
   "control-plane/src/mutation-context-core.lisp",
   "control-plane/src/mutation-context-hydration.lisp",
+  "control-plane/src/mutation-context-integrity.lisp",
   "control-plane/src/mutation-context-operations.lisp",
   "control-plane/src/mutation-execution.lisp",
 ];
