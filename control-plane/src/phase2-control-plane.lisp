@@ -32,6 +32,17 @@
              :message "Import chunk sequence must be a non-negative integer."))
     sequence))
 
+(defun phase2-operations (payload)
+  (let* ((missing (gensym "MISSING-OPERATIONS-"))
+         (operations
+           (quasar.protocol:json-value payload "operations" missing)))
+    (when (eq operations missing)
+      (error 'quasar.protocol:quasar-error
+             :code "protocol.invalid-envelope"
+             :message "operations is required and must be a JSON array."))
+    (quasar.protocol:ensure-array
+     operations "operations" "protocol.invalid-envelope")))
+
 (defun handle-import-begin (plane payload envelope)
   (if (not (phase2-streaming-p plane))
       (funcall *phase2-legacy-import-begin* plane payload envelope)
@@ -52,11 +63,7 @@
             (workspace-id (phase2-workspace-id envelope))
             (stage-id (phase2-stage-id payload))
             (sequence (phase2-sequence payload))
-            (operations
-              (quasar.protocol:ensure-array
-               (quasar.protocol:json-value payload "operations")
-               "operations"
-               "protocol.invalid-envelope")))
+            (operations (phase2-operations payload)))
         (quasar.store:accept-import-chunk
          store workspace-id stage-id sequence operations (get-universal-time)))))
 
