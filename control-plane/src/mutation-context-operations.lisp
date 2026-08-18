@@ -328,7 +328,9 @@
          (when graph-id
            (setf
             (gethash graph-id (mutation-context-graph-state context))
-            (if (eq previous-state :absent) :new :replaced)))))
+            (if (member previous-state '(:absent :new) :test #'eq)
+                :new
+                :replaced)))))
       ((string= type "graph.delete")
        (let* ((graph-id (quasar.protocol:json-value result "graphId"))
               (previous-state

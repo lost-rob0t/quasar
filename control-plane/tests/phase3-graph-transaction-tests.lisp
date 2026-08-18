@@ -15,6 +15,14 @@
    "graph.delete"
    (quasar.protocol:json-object (cons "id" graph-id))))
 
+(defun phase3-put-graph-operation (graph-id name)
+  (phase3-transaction-operation
+   "graph.put"
+   (quasar.protocol:json-object
+    (cons "id" graph-id)
+    (cons "name" name)
+    (cons "documentIds" (quasar.protocol:json-array)))))
+
 (defun phase3-seed-three-graph-workspace (plane)
   (check (phase3-put-empty-graph plane "a" "phase3-graph-a"))
   (check (phase3-put-empty-graph plane "b" "phase3-graph-b"))
@@ -114,10 +122,54 @@
                    (quasar.protocol:json-value metadata "activeGraphId"))))))
         (quasar.control-plane:stop-control-plane plane)))))
 
+(defun test-phase3-repeated-put-preserves-new-graph-count ()
+  (with-temporary-tek9-store (store path "phase3-repeated-new-graph-put")
+    (let ((plane (quasar.control-plane:make-control-plane :store store)))
+      (unwind-protect
+           (progn
+             (quasar.control-plane:start-control-plane plane)
+             (check
+              (tek9-command-ok-p
+               plane
+               "document.create"
+               (quasar.protocol:json-object
+                (cons "_id" "seed")
+                (cons "dtype" "person"))
+               :id "phase3-implicit-default-seed"))
+             (let* ((base
+                      (quasar.store:direct-workspace-revision store "default"))
+                    (response
+                      (call-command
+                       plane
+                       (make-envelope
+                        "workspace.transaction"
+                        (quasar.protocol:json-object
+                         (cons "expectedRevision" base)
+                         (cons
+                          "operations"
+                          (quasar.protocol:json-array
+                           (phase3-put-graph-operation "new-graph" "first")
+                           (phase3-put-graph-operation "new-graph" "second")
+                           (phase3-delete-graph-operation "new-graph"))))
+                        :id "phase3-put-put-delete-new"))))
+               (check (string= "ok" (status response)))
+               (check
+                (= (1+ base)
+                   (quasar.store:direct-workspace-revision store "default")))
+               (check
+                (null
+                 (quasar.store:direct-graph-metadata
+                  store "default" "new-graph")))
+               (check
+                (quasar.store:direct-graph-metadata
+                 store "default" "all-documents"))))
+        (quasar.control-plane:stop-control-plane plane)))))
+
 (defun run-phase3-graph-transaction-tests ()
   (let ((*failures* 0))
     (test-phase3-multi-graph-delete-skips-overlay-tombstones)
     (test-phase3-deleting-final-overlay-graph-rolls-back)
+    (test-phase3-repeated-put-preserves-new-graph-count)
     (when (plusp *failures*)
       (error "~D Phase 3 graph transaction tests failed." *failures*))
     t))
