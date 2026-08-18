@@ -53,6 +53,19 @@
         "all-documents"))))
   workspace)
 
+(defun mutation-default-graph ()
+  (quasar.protocol:json-object
+   (cons "id" "all-documents")
+   (cons "name" "all-documents")
+   (cons "nodes" (quasar.protocol:json-array))
+   (cons "edges" (quasar.protocol:json-array))
+   (cons "documentIds" :null)
+   (cons "positions" (quasar.protocol:empty-object))
+   (cons "viewport" :null)
+   (cons "layout" "cose")
+   (cons "selectedIds" (quasar.protocol:json-array))
+   (cons "groups" (quasar.protocol:empty-object))))
+
 (defun make-record-mutation-context (store workspace-id)
   (let* ((metadata
            (quasar.store:direct-workspace-metadata store workspace-id))
@@ -64,11 +77,23 @@
             :id workspace-id)))
     (setf (quasar.workspace:workspace-revision workspace) revision)
     (mutation-context-restore-settings workspace metadata)
-    (%make-mutation-context
-     :store store
-     :workspace workspace
-     :workspace-id workspace-id
-     :base-revision revision)))
+    (let ((context
+            (%make-mutation-context
+             :store store
+             :workspace workspace
+             :workspace-id workspace-id
+             :base-revision revision)))
+      ;; A revision-zero workspace has the same conceptual default graph as
+      ;; MAKE-WORKSPACE even though no graph metadata has been durably written
+      ;; yet. Retain that one bounded record so first graph operations preserve
+      ;; legacy semantics; COMMIT-CHANGE-SET persists the default atomically.
+      (when (zerop revision)
+        (setf
+         (quasar.workspace:workspace-graph workspace "all-documents")
+         (mutation-default-graph)
+         (gethash "all-documents" (mutation-context-graph-state context))
+         :new))
+      context)))
 
 (defun mutation-graph-object-from-metadata (metadata)
   (when metadata
