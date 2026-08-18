@@ -58,7 +58,18 @@
     #:append-operation
     #:commit-workspace
     #:store-journal-entries
-    #:close-store))
+    #:close-store
+    #:streaming-store-p
+    #:direct-document
+    #:direct-document-list
+    #:direct-workspace-snapshot-page
+    #:direct-workspace-revision
+    #:direct-graph-snapshot
+    #:begin-import-stage
+    #:accept-import-chunk
+    #:promote-import-stage
+    #:abort-import-stage
+    #:cleanup-expired-import-stages))
 
 (defpackage #:quasar.workspace
   (:use #:cl)

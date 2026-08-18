@@ -85,7 +85,27 @@ export async function cpTransaction(
 }
 
 export async function cpImportDocuments(chunks: unknown[][]): Promise<Record<string, unknown>> {
-  return (await client().importDocuments(chunks)) as Record<string, unknown>;
+  const c = client();
+  const started = await c.send<Record<string, unknown>>("document.import.begin", {});
+  const sessionId = String(started.sessionId || "");
+  if (!sessionId) {
+    throw new ControlPlaneError("protocol.invalid-envelope", "Import session ID is missing.");
+  }
+
+  try {
+    for (let sequence = 0; sequence < chunks.length; sequence += 1) {
+      const operations = chunks[sequence] ?? [];
+      await c.send("document.import.chunk", { sessionId, sequence, operations });
+    }
+    return (await c.send("document.import.commit", { sessionId })) as Record<string, unknown>;
+  } catch (error) {
+    try {
+      await c.send("document.import.abort", { sessionId });
+    } catch {
+      // A terminal conflict/commit may already have removed the durable stage.
+    }
+    throw error;
+  }
 }
 
 export function isControlPlaneConnected(): boolean {

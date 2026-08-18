@@ -1,24 +1,31 @@
 # ADR: Tek9 as Quasar's local workspace store
 
-Status: accepted for Phase 1 of issue #24
+Status: accepted for Phase 1 and Phase 2 of issue #24
 
 ## Context
 
-Quasar's Common Lisp control plane already owns canonical command validation,
+Quasar's Common Lisp control plane owns canonical command validation,
 single-writer mutation ordering, workspace revisioning, transactions, journal
 construction, graph/document referential integrity, reconnect recovery, and
-event ordering. Its original `memory-store` preserved those application
-semantics but could not survive process death.
+event ordering. Phase 1 moved committed documents, graph state, workspace
+metadata/revision, and journal records into structured Tek9 records, but it left
+three corpus-sized heap requirements in place:
 
-Issue #24 requires durable workspace storage and ultimately bounded-memory
-streaming imports. The backend choice for this effort is Tek9, an embedded
-Common Lisp document and graph database backed by LMDB.
+- `workspace-for` restores the complete document corpus into SBCL;
+- import begin copies that complete workspace and import sessions retain every
+  encoded chunk;
+- paged snapshots enumerate the complete in-memory document hash before
+  returning a page.
+
+Issue #35 is the Phase 2 slice of #24. It removes those read/import heap
+requirements without changing the Phase 1 canonical schema.
 
 ## Decision
 
-Tek9 is Quasar's canonical local embedded persistence engine. LMDB is used only
-through Tek9. Quasar does not introduce a parallel database abstraction and does
-not make CouchDB, PouchDB, or Cytoscape a local mutation authority.
+Tek9 remains Quasar's canonical local embedded persistence engine. LMDB is used
+only through exported Tek9 APIs. Quasar does not introduce a parallel database
+abstraction and does not make CouchDB, PouchDB, or Cytoscape a local mutation
+authority.
 
 The dependency direction is:
 
@@ -31,41 +38,23 @@ Quasar Common Lisp control plane
         |
 Sento single-writer actor
         |
-workspace-store + typed persistence plan
+workspace-store + typed persistence plan + durable import stages
         |
-Tek9
+Tek9 public APIs
         |
 LMDB
 ```
 
-Quasar consumes only exported Tek9 APIs. Tek9 remains generic and contains no
-Quasar-specific commands, schemas, or business validation.
+Tek9 already provides ordered primary-key range scans with a bounded `limit`
+and composable read/write transactions. Phase 2 uses those primitives rather
+than adding a Quasar-specific Tek9 API. Repeated bounded scans may execute
+inside one Tek9 transaction so promotion and cleanup do not require a
+corpus-sized intermediate Lisp list.
 
-## Atomic commit boundary
+## Canonical schema version 1
 
-Quasar applies and validates a command or complete workspace transaction to an
-isolated candidate first. A typed persistence plan is then derived from the
-canonical applied result. It contains only the changed document, graph metadata,
-node, edge, and deletion records.
-
-One `commit-workspace` call opens one composable Tek9 write transaction. The
-following effects commit or abort together:
-
-- document upserts/deletes;
-- named-graph metadata changes;
-- graph/v2 node/edge/topology/adjacency changes;
-- canonical node/edge sidecars;
-- workspace revision/settings metadata;
-- one append-only journal entry.
-
-The durable base revision is checked inside that transaction. The in-memory
-candidate is installed and events are broadcast only after durable commit
-succeeds.
-
-## Schema version 1
-
-The schema has a global version marker plus a per-workspace version marker.
-Unknown versions fail closed.
+Phase 2 does not rewrite Phase 1 canonical keys. The schema has a global version
+marker plus a per-workspace version marker. Unknown versions fail closed.
 
 Stable length-prefixed workspace namespaces own:
 
@@ -76,55 +65,225 @@ Stable length-prefixed workspace namespaces own:
 - one canonical edge sidecar per edge;
 - one ordered journal record per commit.
 
-Graph topology itself is stored through Tek9 graph/v2 in a logical namespace
-derived from workspace ID + graph ID. Internal Tek9 row IDs, DBI names, and
-adjacency encoding remain private.
+Graph topology itself remains in Tek9 graph/v2 under the Phase 1 logical graph
+namespace. Internal Tek9 row IDs, DBI names, cursor objects, and adjacency
+encoding remain private.
 
-Node and edge sidecars are needed because Quasar's canonical view records can
-contain application fields beyond Tek9's generic graph topology shape. The
-sidecars do not duplicate adjacency or define another topology authority.
+## Direct read boundary
 
-## Performance constraints
+Document lookup and document paging read canonical records directly from Tek9.
+They do not call `load-workspace` and do not populate the control plane's
+full-workspace cache merely to satisfy a read.
 
-Normal single-record mutations do not serialize or diff the entire workspace
-and do not scan/rewrite the full document corpus. Record-level changes are
-captured while the already-authoritative candidate is being applied.
+Canonical document ordering is encoded Tek9 primary-key ordering. Pagination
+uses bounded primary-range scans. Compatibility fields `documentOffset` and
+`documentByteLimit` remain accepted, but Phase 2 also permits a revision-bound
+opaque continuation token. A continuation is valid only for the workspace and
+revision that produced it. A revision change makes the continuation stale and
+returns a stable protocol error rather than silently mixing two revisions.
 
-Graph replacement may rewrite that one graph namespace. Workspace recovery may
-scan the workspace's own ordered record prefixes. Those are explicit bulk/read
-operations rather than hidden cost on ordinary mutations.
+Legacy ordinal-offset requests remain supported as bounded scans for existing
+clients. They may cost O(offset) cursor movement but must never allocate
+O(total-corpus) Lisp objects.
 
-Canonical state uses Tek9 `:full` durability. Performance gates must not be won
+Snapshot metadata comes from the durable workspace metadata record. Graph
+metadata may still be restored independently where the existing protocol needs
+it; document paging must not depend on restoring all documents.
+
+## Durable staging keyspace
+
+Import staging is stored in a separate Quasar-owned Tek9 primary-key namespace:
+
+```text
+quasar/v1/stage/<workspace-part>/<stage-part>/meta
+quasar/v1/stage/<workspace-part>/<stage-part>/doc/<document-part>
+quasar/v1/stage/<workspace-part>/<stage-part>/chunk/<sequence>
+```
+
+The length-prefixed workspace and stage components use the same collision-safe
+encoding discipline as canonical workspace keys. Prefix scans must not cross a
+workspace or stage boundary.
+
+A stage metadata record contains at least:
+
+- storage schema version;
+- stage/session ID;
+- workspace ID;
+- base revision;
+- creation time;
+- last activity time;
+- lifecycle state;
+- accepted-through sequence;
+- document operation count;
+- byte count;
+- validation state.
+
+Lifecycle states are explicit strings: `OPEN`, `COMMITTING`, `COMMITTED`,
+`ABORTED`, `FAILED`, and `EXPIRED`. Runtime storage state deliberately does not
+reuse Org TODO keywords.
+
+## Chunk sequencing and idempotency
+
+Clients send a stable `sessionId`, a non-negative integer `sequence`, and an
+operations array. Import operations remain limited to document create/update.
+Validation occurs before a chunk becomes accepted.
+
+The chunk record stores the sequence plus a deterministic digest of the encoded
+operations. The contract is:
+
+- sequence `accepted-through + 1` is the only new sequence accepted;
+- replay of an already accepted sequence with the same digest is an idempotent
+  success and does not change counters or staged documents;
+- replay of an accepted sequence with different content fails with
+  `import.chunk-conflict`;
+- a sequence beyond the next expected value fails with `import.sequence-gap`;
+- negative, non-integer, or otherwise malformed sequences fail with
+  `import.invalid-sequence`.
+
+A chunk write, its staged document overlay, counters, digest record, and stage
+metadata update occur in one Tek9 transaction. A failed chunk leaves the stage
+`OPEN` and changes none of those durable values. This permits a corrected retry
+without reconstructing the stage.
+
+## Incremental validation
+
+Each staged document is the stage's current canonical overlay for that document
+ID. Create/update validation checks the staged overlay first, then the canonical
+Tek9 record. The entire workspace is never copied to validate a chunk.
+
+Document shape and dtype rules remain the same as ordinary Quasar document
+operations. Updates that would invalidate relation-document references must
+still fail; direct storage reads may inspect graph sidecars/topology as needed,
+but may not bypass referential-integrity rules.
+
+## Backpressure and budgets
+
+Phase 2 imposes explicit deterministic limits at the control-plane/store
+boundary. Defaults are configurable constants rather than corpus-sized queues:
+
+- maximum encoded chunk bytes;
+- maximum operations per chunk;
+- maximum active stages per workspace;
+- maximum stage age;
+- bounded primary-range batch size used by reads, promotion, and cleanup.
+
+Budget violations return stable `import.*` errors before durable acceptance.
+No accepted import payload is retained in a process-local growing vector.
+
+## Atomic promotion
+
+A stage begun at revision N may commit only while durable canonical workspace
+revision is still N.
+
+Promotion is one Tek9 write transaction. Inside it Quasar:
+
+1. re-reads and verifies the stage metadata and base revision;
+2. transitions the durable stage from `OPEN` to `COMMITTING`;
+3. copies staged document overlays to canonical document keys using repeated
+   bounded primary-range scans;
+4. writes workspace metadata at revision N+1;
+5. writes exactly one compact authoritative `document.import` journal record;
+6. marks the stage `COMMITTED` and removes staged document/chunk rows with
+   bounded deletion batches before the transaction commits.
+
+Any condition or injected failure aborts the whole Tek9 transaction. After
+reopen, durable canonical state is therefore exactly the old revision or the
+fully promoted new revision, never an intermediate corpus.
+
+The journal contains stage identity, base/committed revisions, document count,
+byte count, timestamp, and client metadata. It never embeds every encoded chunk
+or imported document.
+
+Only after the durable transaction returns successfully may Quasar emit exactly
+one `documents.imported` event.
+
+## Revision conflicts
+
+Commit compares the stage's durable base revision with the durable current
+workspace revision inside the promotion transaction. A mismatch returns
+`workspace.revision-conflict`. No staged document becomes canonical and no
+import journal/event is produced.
+
+Conflicted stages transition to a terminal state or are removed according to
+the store policy, but they are never resurrected as an open stage after restart.
+
+## Abort, expiry, and recovery
+
+Abort is idempotent. It validates workspace/stage identity, marks the stage
+terminal, and deletes only that stage's namespace using bounded scans. Aborting
+one workspace can never remove another workspace's staged rows.
+
+Stage expiry uses an injectable clock at the Quasar boundary. Cleanup compares
+`lastActivity` with the configured TTL; tests advance the clock and never sleep
+for wall-clock minutes. Cleanup after restart uses only durable Tek9 metadata.
+
+A process restart creates a new Tek9 store object and a new control-plane object.
+No process-local import-session object is required to inspect, resume, commit,
+abort, or expire an existing stage.
+
+## Reader consistency
+
+Direct document pages read the durable workspace revision before the page. A
+revision-bound continuation carries that revision. If the revision changes
+before the next page, Quasar rejects the continuation as stale. The client must
+restart paging from the first page. This gives deterministic no-duplicate/no-gap
+semantics for a logical snapshot without retaining an SBCL corpus snapshot.
+
+Legacy offset paging remains a compatibility path and is documented as
+best-effort across concurrent revisions; it is still bounded-memory.
+
+## Atomic normal mutation boundary
+
+Phase 1 normal mutations still apply to an isolated in-memory candidate and
+persist only typed record-level changes in one Tek9 transaction. Phase 2 does
+not weaken that atomicity or event ordering.
+
+Issue #24 is broader than #35. Before #24 can close, normal mutation paths must
+be measured on a large workspace. If `copy-workspace` still duplicates the
+complete document corpus for ordinary mutations, #24 remains open and a final
+bounded-mutation phase is required.
+
+## Performance and memory constraints
+
+The required asymptotic properties are:
+
+- fetching one document performs a direct key lookup rather than loading the
+  workspace;
+- a page of K documents allocates O(K + byte-limit) values plus seek/cursor
+  overhead, not O(total-corpus);
+- accepting a chunk writes only that chunk's validated overlay and metadata;
+- retrying an accepted chunk does not rewrite earlier chunks;
+- promotion is O(staged documents) with bounded retained batches, not O(N²);
+- stage cleanup scans only that stage prefix;
+- ordinary Phase 1 record persistence remains proportional to changed records.
+
+Canonical state keeps Tek9 `:full` durability. Performance gates must not be won
 by selecting `:nosync`.
 
-## Lifetime and location
+## Failure injection
 
-One Tek9 environment remains open for the Quasar application lifetime and is
-closed during shutdown.
+The store exposes test-only failure hooks at durable boundaries including chunk
+acceptance and promotion. Tests reopen Tek9 after each injected failure and
+assert exact durable state. Failure injection must cover at least pre-chunk,
+post-staged-write/pre-metadata, pre-promotion, pre-revision, pre-journal, and
+pre-finalization boundaries where the implementation can distinguish them.
 
-The default location is:
+## Migration and compatibility
 
-- `$XDG_DATA_HOME/quasar/tek9/`, or
-- `~/.local/share/quasar/tek9/` when `XDG_DATA_HOME` is unset.
+Existing Phase 1 canonical data is schema version 1 and opens unchanged. Staging
+adds namespaced records without changing canonical document, graph, metadata,
+or journal encodings. Missing/corrupt stage metadata fails closed; a partial
+staging namespace is never interpreted as canonical state.
 
-Tests and deployments may override the path or inject an already-created store.
-
-## Migration
-
-Before this decision Quasar's production `memory-store` had no process-durable
-local data. There is therefore no durable memory-store data set to migrate.
-Existing ephemeral state disappears on process exit by definition.
-
-Future schema changes must introduce an explicit migration/version path. A newer
-unknown schema must not be silently interpreted as schema 1.
+Future newer schema versions must continue to fail safely until an explicit
+migration path exists. Quasar must never silently wipe unknown data.
 
 ## Phase boundary
 
-This ADR deliberately does not claim all of issue #24 is complete. During this
-phase the active workspace is still fully materialized in SBCL, and import
-sessions still retain a copied workspace plus encoded chunks in memory.
+Issue #35 is complete only when direct document reads/paging and durable import
+staging are proven by restart, replay, failure-injection, large-corpus, and
+bounded-memory tests.
 
-The next coherent phase is to move document reads, paginated snapshots, and
-import staging directly onto Tek9, adding durable chunk staging, backpressure,
-restart recovery, abandoned-stage cleanup, and memory/throughput telemetry
-without replacing schema 1's canonical document/graph representation.
+Closing #35 does not automatically close #24. If ordinary non-import mutation
+still performs a corpus-sized `copy-workspace`, a follow-up bounded-mutation
+phase remains mandatory.
