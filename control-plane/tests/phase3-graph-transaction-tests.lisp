@@ -165,11 +165,48 @@
                  store "default" "all-documents"))))
         (quasar.control-plane:stop-control-plane plane)))))
 
+(defun test-phase3-virgin-workspace-retains-conceptual-default-graph ()
+  (with-temporary-tek9-store (store path "phase3-virgin-default-graph")
+    (let ((plane (quasar.control-plane:make-control-plane :store store)))
+      (unwind-protect
+           (progn
+             (quasar.control-plane:start-control-plane plane)
+             (let ((response
+                     (call-command
+                      plane
+                      (make-envelope
+                       "workspace.transaction"
+                       (quasar.protocol:json-object
+                        (cons "expectedRevision" 0)
+                        (cons
+                         "operations"
+                         (quasar.protocol:json-array
+                          (phase3-put-graph-operation "ephemeral" "ephemeral")
+                          (phase3-delete-graph-operation "ephemeral"))))
+                       :id "phase3-virgin-put-delete"))))
+               (check (string= "ok" (status response)))
+               (check (= 1 (quasar.store:direct-workspace-revision store "default")))
+               (check
+                (quasar.store:direct-graph-metadata
+                 store "default" "all-documents"))
+               (check
+                (null
+                 (quasar.store:direct-graph-metadata
+                  store "default" "ephemeral")))
+               (let ((metadata
+                       (quasar.store:direct-workspace-metadata store "default")))
+                 (check
+                  (string=
+                   "all-documents"
+                   (quasar.protocol:json-value metadata "activeGraphId"))))))
+        (quasar.control-plane:stop-control-plane plane)))))
+
 (defun run-phase3-graph-transaction-tests ()
   (let ((*failures* 0))
     (test-phase3-multi-graph-delete-skips-overlay-tombstones)
     (test-phase3-deleting-final-overlay-graph-rolls-back)
     (test-phase3-repeated-put-preserves-new-graph-count)
+    (test-phase3-virgin-workspace-retains-conceptual-default-graph)
     (when (plusp *failures*)
       (error "~D Phase 3 graph transaction tests failed." *failures*))
     t))
