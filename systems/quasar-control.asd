@@ -29,6 +29,7 @@
                (:file "mutation-store-alternates")
                (:file "mutation-context-core")
                (:file "mutation-context-hydration")
+               (:file "mutation-context-integrity")
                (:file "mutation-context-operations")
                (:file "mutation-observability")
                (:file "control-plane-core")
