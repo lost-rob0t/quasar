@@ -29,6 +29,7 @@
                (:file "mutation-context-core")
                (:file "mutation-context-hydration")
                (:file "mutation-context-operations")
+               (:file "mutation-observability")
                (:file "mutation-execution")
                (:file "control-plane")
                (:file "phase3-control-plane")
