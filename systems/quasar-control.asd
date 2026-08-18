@@ -31,6 +31,7 @@
                (:file "mutation-context-operations")
                (:file "mutation-execution")
                (:file "control-plane")
+               (:file "phase3-control-plane")
                (:file "phase2-control-plane")
                (:file "phase2-hardening")
                (:file "phase2-read-hardening")
