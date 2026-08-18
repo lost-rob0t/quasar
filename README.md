@@ -21,31 +21,43 @@ Tek9 -> LMDB
         v
 starintel-server
   persistent ingest / search / routing / RabbitMQ services
+        |
+        +-----------------------------+
+        |                             |
+        v                             v
+star-bbpd                       other actor services
+  external recon actors          collectors / analyzers / tools
 ```
 
-See [Architecture](docs/ARCHITECTURE.md), the [Tek9 storage ADR](docs/ADR-TEK9-WORKSPACE-STORAGE.md), and the [record-bounded mutation ADR](docs/ADR-RECORD-BOUNDED-MUTATIONS.md) for the storage/runtime contract.
+`star-bbpd`, for example, is an external Python/Pykka actor service that consumes RabbitMQ targets, runs reconnaissance tools such as Subfinder, Nmap, Httpx, Katana and DNS workflows, and publishes derived StarIntel documents and relations. Those capabilities are not reimplemented inside the browser UI.
+
+See [Architecture](docs/ARCHITECTURE.md), the [Tek9 storage ADR](docs/ADR-TEK9-WORKSPACE-STORAGE.md), the [record-bounded mutation ADR](docs/ADR-RECORD-BOUNDED-MUTATIONS.md), the [UI migration ledger](docs/UI-MIGRATION.md), and the [capability boundary](docs/CAPABILITY-BOUNDARY.md) for the detailed ownership split.
 
 ## Architecture
 
-- React and Cytoscape own browser presentation, editing buffers, hover, menus,
-  selection, animation, and other non-canonical UI state.
-- Common Lisp owns canonical command validation, documents, named graphs,
-  committed graph presentation state, revisions, transactions, journal/event
-  ordering, and capability checks.
-- Tek9 is canonical local document/graph authority. LMDB is accessed only through
-  exported Tek9 APIs.
-- Direct reads, paged snapshots, durable import staging/promotion, and ordinary
-  Tek9 mutations are bounded-memory paths. Ordinary mutations retain a
-  record-level overlay proportional to touched records and validation
-  dependencies rather than the unrelated workspace corpus.
-- The legacy full-workspace cache is a compatibility structure, not durable
+- React, Cytoscape, routing, responsive presentation, editing buffers, hover,
+  menus, and animation remain in the browser.
+- Common Lisp owns canonical documents, named graph definitions, committed
+  graph presentation state, revisions, transactions, and the operation journal.
+- Tek9 is the canonical local embedded document/graph store and LMDB is the
+  durable engine beneath it. Ordinary Tek9 mutations use a record-level overlay
+  rather than a fully materialized canonical workspace candidate.
+- Direct document reads, paged snapshots, durable import staging/promotion, and
+  ordinary Tek9 mutations are bounded-memory paths. Mutation memory is
+  proportional to the explicitly touched records plus validation dependencies,
+  not the unrelated workspace corpus.
+- The legacy full-workspace cache remains a compatibility structure, not durable
   authority, and ordinary Tek9 mutations do not populate it.
-- Explicit whole-graph replacement may materialize the one graph explicitly
-  replaced; it does not hydrate unrelated graphs or the document corpus.
+- Cytoscape is a presentation projection. PouchDB is populated only when an
+  explicit CouchDB synchronization needs browser-local staging. Migrated
+  document and graph writes never fall back to PouchDB.
 - WebSocket callbacks authenticate and validate requests, then enqueue commands
-  on the Sento control-plane actor. They never mutate canonical state directly.
-- Cytoscape and PouchDB are projections/staging adapters, never fallback mutation
-  authorities.
+  on the Sento control-plane actor. They never mutate workspace state directly.
+- CLOG serves the production bundle and issues the browser session token.
+- StarLang remains a Common Lisp subsystem and `starlang.load` is excluded from
+  the normal browser capability set.
+- Runtime and external-service controls discover capabilities rather than
+  assuming `starintel-server`, BBPD, or other actor services are always present.
 
 ## Development
 
@@ -60,48 +72,100 @@ npm ci
 npm run dev
 ```
 
-`scripts/bootstrap-lisp-deps` installs the exact git-pinned Lisp dependencies,
-including Tek9, into Quicklisp `local-projects` and refuses to overwrite dirty
-checkouts. CI uses the same bootstrap path.
+`scripts/bootstrap-lisp-deps` is the canonical source for git-pinned Common Lisp
+source dependencies such as CLOG and Tek9. It installs exact commits into
+Quicklisp `local-projects` and refuses to overwrite a dirty existing checkout.
+CI calls the same script rather than carrying a second set of dependency pins.
 
-The default durable local workspace path is `$XDG_DATA_HOME/quasar/tek9/`, or
-`~/.local/share/quasar/tek9/` when `XDG_DATA_HOME` is unset.
+On Linux hosts with Nix available, plain `npm run dev` and
+`./scripts/run-production` automatically re-enter this repository's pinned Nix
+shell so CLOG, Tek9, and the other CFFI systems can resolve their native
+libraries. Other platforms use the libraries installed on the host.
+
+One root `npm ci` installs the complete npm workspace. `npm run dev` supervises
+the Common Lisp control plane, WebSocket endpoint, CLOG host, and Vite without
+using `npx` or downloading undeclared packages. The local endpoints are:
+
+- React/Vite: `http://127.0.0.1:5173`
+- CLOG production host: `http://127.0.0.1:8080`
+- control-plane WebSocket: `ws://127.0.0.1:8081`
+
+Development builds log uncaught browser errors, rejected promises, and React
+component stacks. Open `http://127.0.0.1:5173/?debug=1` to additionally trace
+WebSocket lifecycle, command IDs, revisions, and pending-request counts without
+logging payloads or credentials. Use `?debug=0` to disable that transport trace.
+
+`./scripts/run-control-plane` starts only the Lisp/CLOG/WebSocket side. The
+development scripts explicitly enable unauthenticated local mode; production
+does not.
+
+The default durable local workspace path follows XDG:
+`$XDG_DATA_HOME/quasar/tek9/`, or `~/.local/share/quasar/tek9/` when
+`XDG_DATA_HOME` is unset. Tests and deployments can override the path or inject
+an existing store.
 
 ## Validation
 
 Run commands from the repository root:
 
 ```sh
-npm run check              # frontend checks + boundaries + mutation architecture guard
-npm run test               # Common Lisp + frontend unit/integration tests
+npm run check              # format, lint, types, boundaries, mutation architecture guard
+npm run test               # Common Lisp + all frontend unit/integration tests
 npm run smoke              # real Vite/CLOG/WebSocket command exchange
 npm run test:e2e           # Playwright against the complete real stack
-npm run smoke:production   # package, serve, route/PWA/security smoke
+npm run smoke:production   # fresh install, package, serve, route/PWA/security smoke
 ```
 
-The Lisp suite includes durable restart/failure tests, Phase 2 read/import tests,
-Phase 3 record-bounded mutation tests, 1k-vs-10k retained-working-set checks, and
-a real 10,000-document Tek9 corpus. The CI workflow additionally loads the real
-`quasar-web` system and runs development-stack, browser, packaged production,
-routing, PWA, and security smokes.
+The Common Lisp suite includes restart/failure tests, Phase 2 bounded-read and
+durable-import tests, Phase 3 record-bounded mutation tests, 1k-vs-10k retained
+working-set comparisons, and a real 10,000-document Tek9 corpus. The structural
+mutation guard rejects production paths that regress to full-workspace loading,
+private Tek9 APIs, or raw LMDB access.
 
-## Protocol and durable mutation contract
+Playwright uses an isolated authorized workspace per test and covers desktop,
+mobile, real UI mutation, graph membership, reload, and authoritative snapshot
+restore. The production smoke verifies hashed assets, nested SPA routes,
+manifest/service worker paths, session and Origin rejection, workspace
+isolation, capability denial, malformed requests, and message-size limits.
+
+## Production
+
+Build and start the packaged server from a fresh dependency state:
+
+```sh
+nix develop
+bash scripts/bootstrap-lisp-deps
+./scripts/run-production
+```
+
+The script runs the root `npm ci`, builds `frontend/dist`, creates the
+`quasar-server` executable, and starts it at `http://127.0.0.1:8080`. Use
+`./scripts/run-production --build-only` when packaging without starting it.
+Production serves the application at `/`; Vite, React Router, CLOG, the PWA
+manifest, and service-worker scope use that same base path.
+
+## Protocol and durable graph contract
 
 Commands and responses use `quasar.control.v1` envelopes with correlated IDs,
-stable error codes, and workspace metadata. For a production Tek9 mutation the
-control plane reads durable metadata plus only records needed by the operation,
-applies validation to a small mutation overlay, compiles the existing typed
-persistence changes, and commits canonical records, graph topology, workspace
-metadata/revision, and one journal entry in one Tek9 write transaction.
+stable error codes, and workspace metadata. Production Tek9 mutations read
+workspace metadata plus only records required by the operation, apply and
+validate against a bounded record-level overlay, and compile the existing typed
+persistence changes. One Tek9/LMDB transaction then commits the affected
+canonical records/topology, workspace metadata and revision, and one journal
+entry. Success events are emitted only after that durable transaction commits.
 
-Only after the durable transaction commits may Quasar broadcast success events.
-A failed persistence attempt leaves canonical records, graph state, revision,
-journal, and events unchanged.
+Transactions use the same overlay in deterministic operation order and provide
+read-your-own-writes. Memory may grow with the transaction's explicit touched
+records and validation dependencies, but not with unrelated workspace size. The
+bounded transaction budget is 1000 child operations.
 
-Transactions use the same overlay, execute child operations in deterministic
-order, and provide read-your-own-writes. Memory may grow with the explicit
-transaction mutation/dependency set, but not with unrelated workspace size. A
-transaction is limited to 1000 child operations.
+StarIntel documents and relation documents are the intelligence records. A
+named graph stores membership plus committed positions, viewport, layout, and
+groups. Optional graph node/edge records are view records whose document and
+endpoint references are validated; they are not a second intelligence corpus.
+The `all-documents` graph projects the full corpus with `documentIds: null`.
+Selection, pan/zoom frames, and editing state remain browser-local. Relation
+documents cannot be deleted while a live graph edge still references them.
 
 Implemented durable commands include:
 
@@ -114,22 +178,24 @@ Implemented durable commands include:
 - `graph.node.*`, `graph.edge.*`
 - capability-gated `starlang.status` and `starlang.load`
 
-StarIntel documents and relation documents remain the intelligence records. A
-named graph stores membership plus committed positions, viewport, layout, and
-groups. Optional node/edge records are view records whose document and endpoint
-references are validated; they are not a second intelligence corpus.
+Transaction child events have unique operation IDs, a shared transaction ID,
+one committed revision, stable order, event index, and event count.
+File imports are fully prevalidated in the browser, then large corpora are sent
+as ordered, size-bounded chunks below the WebSocket security limit. Import
+sessions are durably staged in Tek9 with ordered chunk identity, budgets,
+restart-safe promotion/abort, and bounded cleanup. Promotion remains one atomic
+durable commit before success is emitted.
 
-## Production
+## Transitional boundaries
 
-Build and start the packaged server from a fresh dependency state:
+Actor/research execution and optional browser network integrations have not all
+moved behind Common Lisp or their owning StarIntel service commands yet. PouchDB
+remains a CouchDB ingress/egress staging layer used only during explicit
+synchronization; pulled documents are validated and committed through the
+control plane before becoming authoritative. Browser settings still support
+existing local integrations, and settings transfer filters credential fields.
+These adapters must not be used as fallback authority for document or graph
+mutations.
 
-```sh
-nix develop
-bash scripts/bootstrap-lisp-deps
-./scripts/run-production
-```
-
-The production script installs dependencies, builds `frontend/dist`, creates the
-`quasar-server` executable, and serves the app at `http://127.0.0.1:8080`.
-Production WebSockets require the CLOG-issued session and allowed Origin; local
-insecure mode is restricted to development/test workflows.
+Missing backend or external capabilities reduce the advertised capability set;
+they do not silently become browser implementations with weaker semantics.
