@@ -77,6 +77,7 @@
     #:direct-document-memberships
     #:direct-graph-count
     #:direct-other-graph-metadata
+    #:direct-alternate-graph-metadata
     #:commit-change-set
     #:begin-import-stage
     #:accept-import-chunk

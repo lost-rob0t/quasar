@@ -43,6 +43,65 @@
           (mutation-context-document context document-id)))))
   context)
 
+(defun mutation-context-effective-graph-count (context)
+  (let ((count
+          (quasar.store:direct-graph-count
+           (mutation-context-store context)
+           (mutation-context-workspace-id context))))
+    (maphash
+     (lambda (graph-id state)
+       (declare (ignore graph-id))
+       (case state
+         (:new (incf count))
+         (:deleted (decf count))))
+     (mutation-context-graph-state context))
+    count))
+
+(defun mutation-context-graph-delete-exclusions (context graph-id)
+  (let ((excluded (list graph-id)))
+    (maphash
+     (lambda (id state)
+       (when (member state '(:deleted :absent) :test #'eq)
+         (pushnew id excluded :test #'string=)))
+     (mutation-context-graph-state context))
+    excluded))
+
+(defun mutation-context-has-live-alternate-graph-p (context graph-id)
+  (loop
+    for id being the hash-keys
+      of (quasar.workspace:workspace-graphs
+          (mutation-context-workspace context))
+    unless
+        (or
+         (string= id graph-id)
+         (member
+          (gethash id (mutation-context-graph-state context))
+          '(:deleted :absent)
+          :test #'eq))
+      do (return t)
+    finally (return nil)))
+
+(defun mutation-context-load-delete-alternate (context graph-id)
+  (when
+      (and
+       (> (mutation-context-effective-graph-count context) 1)
+       (not (mutation-context-has-live-alternate-graph-p context graph-id)))
+    (let ((other
+            (quasar.store:direct-alternate-graph-metadata
+             (mutation-context-store context)
+             (mutation-context-workspace-id context)
+             (mutation-context-graph-delete-exclusions context graph-id))))
+      (when other
+        (let ((other-id (quasar.protocol:json-value other "id")))
+          (setf
+           (quasar.workspace:workspace-graph
+            (mutation-context-workspace context)
+            other-id)
+           (mutation-graph-object-from-metadata other)
+           (gethash other-id (mutation-context-graph-state context))
+           :partial)))))
+  context)
+
 (defun mutation-context-prepare-operation (context operation)
   (let* ((type (quasar.protocol:json-value operation "type"))
          (payload
@@ -170,32 +229,7 @@
        (let ((graph-id (quasar.protocol:json-value payload "id")))
          (when graph-id
            (mutation-context-promote-graph-to-full context graph-id)
-           (when
-               (> (quasar.store:direct-graph-count
-                   (mutation-context-store context)
-                   (mutation-context-workspace-id context))
-                  1)
-             (let ((other
-                     (quasar.store:direct-other-graph-metadata
-                      (mutation-context-store context)
-                      (mutation-context-workspace-id context)
-                      graph-id)))
-               (when other
-                 (let ((other-id
-                         (quasar.protocol:json-value other "id")))
-                   (unless
-                       (quasar.workspace:workspace-graph
-                        (mutation-context-workspace context)
-                        other-id)
-                     (setf
-                      (quasar.workspace:workspace-graph
-                       (mutation-context-workspace context)
-                       other-id)
-                      (mutation-graph-object-from-metadata other)
-                      (gethash
-                       other-id
-                       (mutation-context-graph-state context))
-                      :partial)))))))))
+           (mutation-context-load-delete-alternate context graph-id))))
       ((string= type "graph.activate")
        (let ((graph-id (quasar.protocol:json-value payload "id")))
          (when graph-id
@@ -232,7 +266,7 @@
            (unless
                (member
                 (gethash graph-id (mutation-context-graph-state context))
-                '(:replaced :full)
+                '(:new :replaced :full)
                 :test #'eq)
              (setf
               (gethash graph-id (mutation-context-graph-state context))
@@ -287,17 +321,23 @@
              (mutation-context-edge-state context))
             :deleted))))
       ((string= type "graph.put")
-       (let ((graph-id (quasar.protocol:json-value result "graphId")))
+       (let* ((graph-id (quasar.protocol:json-value result "graphId"))
+              (previous-state
+                (and graph-id
+                     (gethash graph-id (mutation-context-graph-state context)))))
          (when graph-id
            (setf
             (gethash graph-id (mutation-context-graph-state context))
-            :replaced))))
+            (if (eq previous-state :absent) :new :replaced)))))
       ((string= type "graph.delete")
-       (let ((graph-id (quasar.protocol:json-value result "graphId")))
+       (let* ((graph-id (quasar.protocol:json-value result "graphId"))
+              (previous-state
+                (and graph-id
+                     (gethash graph-id (mutation-context-graph-state context)))))
          (when graph-id
            (setf
             (gethash graph-id (mutation-context-graph-state context))
-            :deleted))))
+            (if (eq previous-state :new) :absent :deleted)))))
       ((string= type "graph.activate")
        nil)))
   applied)

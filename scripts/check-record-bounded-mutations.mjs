@@ -23,6 +23,15 @@ function defunBody(source, name) {
   return source.slice(start, next < 0 ? source.length : next);
 }
 
+function lispFiles(directory) {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const absolute = path.join(directory, entry.name);
+    if (entry.isDirectory()) return lispFiles(absolute);
+    if (entry.isFile() && entry.name.endsWith(".lisp")) return [absolute];
+    return [];
+  });
+}
+
 const routingPath = "control-plane/src/control-plane-mutations.lisp";
 const routing = read(routingPath);
 const runOperation = defunBody(routing, "run-operation");
@@ -44,6 +53,7 @@ for (const [name, body] of [
 
 const boundedFiles = [
   "control-plane/src/mutation-store.lisp",
+  "control-plane/src/mutation-store-alternates.lisp",
   "control-plane/src/mutation-context-core.lisp",
   "control-plane/src/mutation-context-hydration.lisp",
   "control-plane/src/mutation-context-operations.lisp",
@@ -59,13 +69,9 @@ for (const relativePath of boundedFiles) {
   }
 }
 
-const sourceFiles = fs
-  .readdirSync(path.join(root, "control-plane/src"), { withFileTypes: true })
-  .filter((entry) => entry.isFile() && entry.name.endsWith(".lisp"))
-  .map((entry) => path.join("control-plane/src", entry.name));
-
-for (const relativePath of sourceFiles) {
-  const source = read(relativePath);
+for (const absolutePath of lispFiles(path.join(root, "control-plane/src"))) {
+  const source = fs.readFileSync(absolutePath, "utf8");
+  const relativePath = path.relative(root, absolutePath);
   if (source.includes("tek9::")) {
     fail(`${relativePath} bypasses the public Tek9 package boundary`);
   }

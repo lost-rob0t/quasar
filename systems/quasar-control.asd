@@ -26,6 +26,7 @@
                (:file "phase2-stage-cleanup")
                (:file "phase2-store-reads")
                (:file "mutation-store")
+               (:file "mutation-store-alternates")
                (:file "mutation-context-core")
                (:file "mutation-context-hydration")
                (:file "mutation-context-operations")
