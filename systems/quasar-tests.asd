@@ -15,6 +15,7 @@
                (:file "phase2-test-compat")
                (:file "phase2-storage-spec-tests")
                (:file "phase2-adversarial-v2")
+               (:file "phase2-adversarial-v2-regression-fix")
                (:file "phase2-protocol-tests")
                (:file "phase2-large-corpus-tests")
                (:file "melissa-tests")
