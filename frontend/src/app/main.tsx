@@ -5,6 +5,7 @@ import App from "../App.jsx";
 import AutoDigHostBridge, {
   isAutoDigEmbedded
 } from "../integrations/auto-dig/AutoDigHostBridge.jsx";
+import AgentDisclosureBridge from "../components/AgentDisclosureBridge.jsx";
 import GraphContextRadialBridge from "../components/GraphContextRadialBridge.jsx";
 import GraphObjectTypePickerBridge from "../components/GraphObjectTypePickerBridge.jsx";
 import MelissaActorMigrationBridge from "../components/MelissaActorMigrationBridge.jsx";
@@ -155,6 +156,7 @@ createRoot(rootElement).render(
         <UiRuntimeProvider adapter={runtimeAdapter}>
           <QuasarProvider>
             <App />
+            <AgentDisclosureBridge />
             <AutoDigHostBridge />
             <PwaInstallBridge />
             <MelissaActorMigrationBridge />
