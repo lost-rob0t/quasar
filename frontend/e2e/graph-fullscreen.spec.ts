@@ -1,6 +1,6 @@
 import { expect, test } from "./fixtures";
 
-test("uses a compact modern shell in full viewport", async ({ page }) => {
+test("expands only the graph workspace while preserving the global shell", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/graph");
 
@@ -13,17 +13,19 @@ test("uses a compact modern shell in full viewport", async ({ page }) => {
 
   await expect(stage).toBeVisible();
   await expect(sidebar).toBeVisible();
+  await expect(topbar).toBeVisible();
+  await expect(inspector).toBeVisible();
+  await expect(dock).toBeVisible();
   const defaultBounds = await stage.boundingBox();
   expect(defaultBounds).not.toBeNull();
-  expect(defaultBounds!.height).toBeGreaterThan(540);
 
   await page.getByRole("button", { name: "Enter full viewport" }).click();
   await expect(page.locator("body")).toHaveClass(/graph-viewport-full/);
   await expect(sidebar).toBeVisible();
   await expect(topbar).toBeVisible();
   await expect(metrics).toBeVisible();
-  await expect(inspector).toBeVisible();
-  await expect(dock).toBeVisible();
+  await expect(inspector).toBeHidden();
+  await expect(dock).toBeHidden();
 
   const fullBounds = await stage.boundingBox();
   expect(fullBounds).not.toBeNull();
@@ -41,7 +43,6 @@ test("uses a compact modern shell in full viewport", async ({ page }) => {
       height: window.innerHeight
     };
   });
-
   expect(viewport.left).toBeGreaterThanOrEqual(0);
   expect(viewport.top).toBeGreaterThanOrEqual(0);
   expect(viewport.right).toBeLessThanOrEqual(viewport.width);
@@ -50,15 +51,10 @@ test("uses a compact modern shell in full viewport", async ({ page }) => {
   await page.keyboard.press("Escape");
   await expect(page.locator("body")).not.toHaveClass(/graph-viewport-full/);
   await expect(sidebar).toBeVisible();
-
-  const graphMenu = stage.getByRole("button", { name: "Open menu" });
-  await expect(graphMenu).toBeVisible();
-
-  await graphMenu.click();
-  const navigationDialog = page.getByRole("dialog", { name: "Navigation" });
-  await expect(navigationDialog).toBeVisible();
-  await expect(navigationDialog.getByRole("link", { name: "Graphs", exact: true })).toBeVisible();
-  await expect(
-    navigationDialog.getByRole("link", { name: "Documents", exact: true })
-  ).toBeVisible();
+  await expect(inspector).toBeVisible();
+  await expect(dock).toBeVisible();
+  await expect(sidebar.getByRole("link", { name: "Graphs", exact: true })).toHaveAttribute(
+    "aria-current",
+    "page"
+  );
 });
