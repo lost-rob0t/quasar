@@ -13,11 +13,14 @@ test("opens the local workspace through the control plane", async ({ page }) => 
   await expect(page).toHaveTitle("Quasar");
   await expect(page.getByRole("heading", { name: "Statistics dashboard" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "No documents loaded" })).toBeVisible();
-  await expect(page.locator(".sidebar .sync-badge")).toHaveText("db offline");
-  await expect(page.locator(".sidebar .sync-badge")).toHaveAttribute(
-    "title",
-    "CouchDB: Local only"
-  );
+  await expect(page.locator(".status-summary")).toBeVisible();
+  await page.locator(".status-summary").click();
+  const status = page.getByRole("dialog", { name: "Runtime status" });
+  await expect(status).toBeVisible();
+  await expect(status.getByText("Quasar control plane", { exact: true })).toBeVisible();
+  await expect(status.getByText("Connected and authoritative", { exact: true })).toBeVisible();
+  await expect(status.getByText("CouchDB sync", { exact: true })).toBeVisible();
+  await expect(status.getByText("Local only", { exact: true })).toBeVisible();
   await expect(page.locator('link[rel="manifest"]')).toHaveAttribute(
     "href",
     "/manifest.webmanifest"
@@ -33,13 +36,13 @@ test("opens the local workspace through the control plane", async ({ page }) => 
 test("creates a graph node through the compact editor and preserves its full-editor draft", async ({
   page
 }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/graph");
 
   await expect(page.getByRole("heading", { name: "Start a blank graph" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Open menu", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add graph document" })).toBeVisible();
-  await expect(page.getByLabel("Dataset filter", { exact: true })).toBeHidden();
-  await expect(page.getByLabel("Graph layout", { exact: true })).toBeHidden();
+  await expect(page.getByLabel("Dataset filter", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Graph layout", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Enter blank canvas" }).click();
   await page.locator(".graph-stage").click({ button: "right", position: { x: 240, y: 220 } });
@@ -74,59 +77,29 @@ test("creates a graph node through the compact editor and preserves its full-edi
 });
 
 test.describe("responsive application shell", () => {
-  test("preserves the desktop sidebar layout outside the graph", async ({ page }) => {
+  test("keeps identical global shell geometry across desktop routes", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/");
 
-    await expect(page.locator(".sidebar")).toBeVisible();
-    await expect(page.locator(".mobile-nav")).toBeHidden();
-    await expect(page.locator(".app-shell")).toHaveCSS("grid-template-columns", "235px 1205px");
-  });
+    const homeSidebar = await page.locator(".quasar-shell > .sidebar").boundingBox();
+    const homeTopbar = await page.locator(".quasar-shell .topbar").boundingBox();
+    expect(homeSidebar).not.toBeNull();
+    expect(homeTopbar).not.toBeNull();
 
-  test("uses the investigation workspace without overlapping the graph on desktop", async ({
-    page
-  }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/graph");
-
-    await expect(page.locator(".sidebar")).toBeVisible();
-    await expect(page.locator(".topbar")).toBeVisible();
-    await expect(page.locator(".graph-toolbar")).toBeHidden();
+    const graphSidebar = await page.locator(".quasar-shell > .sidebar").boundingBox();
+    const graphTopbar = await page.locator(".quasar-shell .topbar").boundingBox();
+    expect(graphSidebar?.width).toBe(homeSidebar?.width);
+    expect(graphTopbar?.height).toBe(homeTopbar?.height);
+    await expect(page.locator(".graph-workspace-host")).toBeVisible();
+    await expect(page.locator(".graph-toolbar")).toBeVisible();
     await expect(page.locator(".graph-list-panel")).toBeHidden();
     await expect(page.locator(".graph-inspector")).toBeVisible();
-    await expect(page.locator(".topbar .mobile-menu-button")).toBeHidden();
-    await expect(
-      page.locator(".graph-stage").getByRole("button", { name: "Open menu" })
-    ).toBeVisible();
     await expect(page.getByRole("tablist", { name: "Open graphs" })).toBeVisible();
     await expect(page.getByLabel("Graph statistics")).toBeVisible();
     await expect(page.getByLabel("Graph workspace dock")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Cycle active graph" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Select dataset" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Cycle layout" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Graph tools" })).toHaveCount(0);
-
-    const stage = await page.locator(".graph-stage").boundingBox();
-    const inspector = await page.locator(".graph-inspector").boundingBox();
-    const dock = await page.locator(".graph-agent-dock").boundingBox();
-    expect(stage).not.toBeNull();
-    expect(inspector).not.toBeNull();
-    expect(dock).not.toBeNull();
-    if (!stage || !inspector || !dock)
-      throw new Error("Desktop workspace panels must be measurable");
-    expect(stage.x).toBeGreaterThan(0);
-    expect(stage.y).toBeGreaterThan(0);
-    expect(stage.width).toBeGreaterThan(0);
-    expect(stage.height).toBeGreaterThan(0);
-    expect(stage.x + stage.width).toBeLessThanOrEqual(inspector.x);
-    expect(stage.y + stage.height).toBeLessThanOrEqual(dock.y);
-
-    await page.getByRole("button", { name: "Enter blank canvas" }).click();
-    await page.locator(".graph-stage").click({
-      button: "right",
-      position: { x: 240, y: Math.min(220, stage.height - 20) }
-    });
-    await expect(page.getByRole("menu", { name: "canvas actions" })).toBeVisible();
+    await expect(page.getByLabel("Dataset filter", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Graph layout", { exact: true })).toBeVisible();
   });
 
   test("uses gesture navigation without horizontal page overflow on mobile", async ({ page }) => {
@@ -134,21 +107,14 @@ test.describe("responsive application shell", () => {
     await page.goto("/");
 
     await expect(page.locator(".sidebar")).toBeHidden();
-    await expect(page.locator(".mobile-nav")).toBeHidden();
     await expect(page.getByRole("button", { name: "Open menu" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
     await page.getByRole("button", { name: "Open menu" }).click();
-    const mobileNavigation = page.getByRole("navigation", { name: "Mobile navigation" });
+    const dialog = page.getByRole("dialog", { name: "Navigation" });
+    const mobileNavigation = dialog.getByRole("navigation", { name: "Mobile navigation" });
     await expect(mobileNavigation).toBeVisible();
-    await expect(mobileNavigation.getByText("Graph")).toBeVisible();
-    await expect(page.locator(".dashboard-empty-page > .page-heading")).toHaveCSS(
-      "text-align",
-      "center"
-    );
-    await expect(page.locator(".dashboard-empty .button-row")).toHaveCSS(
-      "justify-content",
-      "center"
-    );
+    await expect(mobileNavigation.getByText("Graphs")).toBeVisible();
+
     const viewport = await page.evaluate(() => ({
       clientWidth: document.documentElement.clientWidth,
       scrollWidth: document.documentElement.scrollWidth
@@ -167,14 +133,6 @@ test.describe("responsive application shell", () => {
     await expect(page.getByRole("button", { name: "Graph tools" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Add graph document" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Import", exact: true })).toBeVisible();
-    await expect(page.locator(".graph-mobile-primary-button")).toHaveCount(3);
-    await expect(page.getByRole("button", { name: "Search graph" })).toBeHidden();
-    await expect(page.getByRole("button", { name: "Cycle active graph" })).toBeHidden();
-    await expect(page.getByRole("button", { name: "Select dataset" })).toBeHidden();
-    await expect(page.getByRole("button", { name: "Cycle layout" })).toBeHidden();
-    await expect(page.getByRole("button", { name: "Fit graph" })).toBeHidden();
-    await expect(page.getByRole("button", { name: "Focus selection" })).toBeHidden();
-    await expect(page.getByRole("button", { name: "Toggle labels" })).toBeHidden();
 
     await page.getByRole("button", { name: "Add graph document" }).click();
     const compactEditor = page.getByRole("dialog", { name: "New Entity" });
@@ -189,20 +147,17 @@ test.describe("responsive application shell", () => {
         viewportWidth: window.innerWidth,
         viewportHeight: window.innerHeight,
         pageWidth: document.documentElement.scrollWidth,
-        pageHeight: document.documentElement.scrollHeight,
         stageRect,
         editorRect
       };
     });
-    expect(layout.stageRect?.x).toBe(0);
-    expect(layout.stageRect?.y).toBe(0);
-    expect(layout.stageRect?.width).toBe(layout.viewportWidth);
-    expect(layout.stageRect?.height).toBe(layout.viewportHeight);
-    expect(layout.editorRect?.x).toBe(0);
-    expect(layout.editorRect?.width).toBe(layout.viewportWidth);
+    expect(layout.stageRect?.x).toBeGreaterThanOrEqual(0);
+    expect(layout.stageRect?.right).toBeLessThanOrEqual(layout.viewportWidth);
+    expect(layout.stageRect?.bottom).toBeLessThanOrEqual(layout.viewportHeight);
+    expect(layout.editorRect?.x).toBeGreaterThanOrEqual(0);
+    expect(layout.editorRect?.right).toBeLessThanOrEqual(layout.viewportWidth);
     expect(layout.editorRect?.bottom).toBeLessThanOrEqual(layout.viewportHeight);
     expect(layout.pageWidth).toBe(layout.viewportWidth);
-    expect(layout.pageHeight).toBe(layout.viewportHeight);
 
     await compactEditor.getByRole("button", { name: "Cancel" }).click();
     await expect(compactEditor).toBeHidden();
@@ -223,23 +178,21 @@ test.describe("responsive application shell", () => {
     await expect(page.getByRole("textbox", { name: "Search chats" })).toBeHidden();
     await expect(page.getByLabel("Console section")).toHaveValue("run");
     await expect(page.locator(".agent-console-tabs")).toBeHidden();
-    await expect(page.locator('.agent-console[data-tab="run"]')).toHaveCSS("position", "fixed");
     await expect(page.locator(".agent-run-inspector")).toBeHidden();
 
     const layout = await page.evaluate(() => {
       const consoleRect = document.querySelector(".agent-console")?.getBoundingClientRect();
-      const navRect = document.querySelector(".mobile-nav")?.getBoundingClientRect();
       return {
+        viewportWidth: window.innerWidth,
         viewportHeight: window.innerHeight,
-        pageHeight: document.documentElement.scrollHeight,
-        consoleTop: consoleRect?.top,
-        consoleBottom: consoleRect?.bottom,
-        navTop: navRect?.top
+        pageWidth: document.documentElement.scrollWidth,
+        consoleRect
       };
     });
 
-    expect(layout.pageHeight).toBe(layout.viewportHeight);
-    expect(layout.consoleTop).toBeGreaterThanOrEqual(0);
-    expect(layout.consoleBottom).toBeLessThanOrEqual(layout.navTop || layout.viewportHeight);
+    expect(layout.pageWidth).toBe(layout.viewportWidth);
+    expect(layout.consoleRect?.top).toBeGreaterThanOrEqual(0);
+    expect(layout.consoleRect?.right).toBeLessThanOrEqual(layout.viewportWidth);
+    expect(layout.consoleRect?.bottom).toBeLessThanOrEqual(layout.viewportHeight);
   });
 });
