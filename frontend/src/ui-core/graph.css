@@ -187,9 +187,12 @@
   background:
     radial-gradient(circle at 50% 48%, #1a30402b, transparent 32rem),
     linear-gradient(#23384b22 1px, transparent 1px),
-    linear-gradient(90deg, #23384b22 1px, transparent 1px),
-    #050a11;
-  background-size: auto, 36px 36px, 36px 36px, auto;
+    linear-gradient(90deg, #23384b22 1px, transparent 1px), #050a11;
+  background-size:
+    auto,
+    36px 36px,
+    36px 36px,
+    auto;
 }
 
 .content-graph .graph-inspector {

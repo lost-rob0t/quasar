@@ -62,12 +62,7 @@ function SidebarGraphs({ graphs, activeGraph, switchGraph, createGraph }) {
       </div>
       <div className="sidebar-section-row">
         <span className="sidebar-section-label">Graphs</span>
-        <button
-          className="sidebar-add"
-          type="button"
-          aria-label="Create graph"
-          onClick={addGraph}
-        >
+        <button className="sidebar-add" type="button" aria-label="Create graph" onClick={addGraph}>
           <Plus size={14} />
         </button>
       </div>
@@ -126,8 +121,7 @@ export default function QuasarShell({ children }) {
   const [query, setQuery] = useState("");
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(loadSidebarCollapsed);
-  const graphRoute =
-    location.pathname === "/graph" || location.pathname.startsWith("/graph/");
+  const graphRoute = location.pathname === "/graph" || location.pathname.startsWith("/graph/");
 
   function submitSearch(event) {
     event.preventDefault();

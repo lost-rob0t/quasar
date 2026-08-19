@@ -36,7 +36,9 @@ function NotFound() {
       <CircleAlert size={30} />
       <h1>Route not found</h1>
       <p>The workspace route does not exist.</p>
-      <Link className="button primary" to="/">Open dashboard</Link>
+      <Link className="button primary" to="/">
+        Open dashboard
+      </Link>
     </section>
   );
 }

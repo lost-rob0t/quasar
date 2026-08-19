@@ -18,7 +18,8 @@ function overall(items) {
   if (items.some((entry) => entry.critical && BAD.has(entry.status))) return "danger";
   if (items.some((entry) => BAD.has(entry.status))) return "danger";
   if (items.some((entry) => BUSY.has(entry.status))) return "warning";
-  if (items.every((entry) => GOOD.has(entry.status) || entry.status === "offline")) return "success";
+  if (items.every((entry) => GOOD.has(entry.status) || entry.status === "offline"))
+    return "success";
   return "neutral";
 }
 
@@ -45,7 +46,13 @@ export default function StatusCenter() {
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        {state === "danger" ? <ServerOff size={15} /> : state === "success" ? <CheckCircle2 size={15} /> : <PlugZap size={15} />}
+        {state === "danger" ? (
+          <ServerOff size={15} />
+        ) : state === "success" ? (
+          <CheckCircle2 size={15} />
+        ) : (
+          <PlugZap size={15} />
+        )}
         <span>{overallLabel(state, runtime.label)}</span>
         <ChevronDown size={14} aria-hidden="true" />
       </button>
@@ -57,19 +64,29 @@ export default function StatusCenter() {
               <strong>Runtime status</strong>
               <span>{runtime.workspaceLabel}</span>
             </div>
-            <button className="icon-button" type="button" aria-label="Close runtime status" onClick={() => setOpen(false)}>
+            <button
+              className="icon-button"
+              type="button"
+              aria-label="Close runtime status"
+              onClick={() => setOpen(false)}
+            >
               <X size={15} />
             </button>
           </header>
           <div className="status-list">
             {items.map((entry) => (
               <div className="status-row" key={entry.id}>
-                <span className={`status-dot status-dot-${tone(entry.status)}`} aria-hidden="true" />
+                <span
+                  className={`status-dot status-dot-${tone(entry.status)}`}
+                  aria-hidden="true"
+                />
                 <div>
                   <strong>{entry.label}</strong>
                   <small>{entry.detail || entry.status}</small>
                 </div>
-                <span className={`status-state status-state-${tone(entry.status)}`}>{entry.status}</span>
+                <span className={`status-state status-state-${tone(entry.status)}`}>
+                  {entry.status}
+                </span>
               </div>
             ))}
           </div>

@@ -1,6 +1,15 @@
 import { expect, test } from "@playwright/test";
 
-const routes = ["/", "/graph", "/datasets", "/documents", "/agents", "/actors", "/import", "/settings"];
+const routes = [
+  "/",
+  "/graph",
+  "/datasets",
+  "/documents",
+  "/agents",
+  "/actors",
+  "/import",
+  "/settings"
+];
 
 async function shellGeometry(page) {
   const sidebar = await page.locator(".quasar-shell > .sidebar").boundingBox();

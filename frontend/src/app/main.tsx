@@ -2,7 +2,9 @@ import { Component, StrictMode, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "../App.jsx";
-import AutoDigHostBridge, { isAutoDigEmbedded } from "../integrations/auto-dig/AutoDigHostBridge.jsx";
+import AutoDigHostBridge, {
+  isAutoDigEmbedded
+} from "../integrations/auto-dig/AutoDigHostBridge.jsx";
 import GraphContextRadialBridge from "../components/GraphContextRadialBridge.jsx";
 import GraphObjectTypePickerBridge from "../components/GraphObjectTypePickerBridge.jsx";
 import MelissaActorMigrationBridge from "../components/MelissaActorMigrationBridge.jsx";

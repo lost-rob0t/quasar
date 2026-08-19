@@ -74,9 +74,7 @@ export default function MobileGestureMenu({ open, onOpenChange }) {
       {open && (
         <div
           className="mobile-gesture-backdrop"
-          onPointerDown={(event) =>
-            event.target === event.currentTarget && onOpenChange(false)
-          }
+          onPointerDown={(event) => event.target === event.currentTarget && onOpenChange(false)}
         >
           <section
             className="mobile-gesture-sheet"

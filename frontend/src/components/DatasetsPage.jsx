@@ -16,10 +16,7 @@ function datasetRows(documents) {
     };
     current.documents += 1;
     if (document.dtype) current.types.add(document.dtype);
-    current.updatedAt = Math.max(
-      current.updatedAt,
-      Date.parse(document.date_updated) || 0
-    );
+    current.updatedAt = Math.max(current.updatedAt, Date.parse(document.date_updated) || 0);
     rows.set(name, current);
   }
   return [...rows.values()]
