@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 const routes = [
   "/",
@@ -11,7 +11,7 @@ const routes = [
   "/settings"
 ];
 
-async function shellGeometry(page) {
+async function shellGeometry(page: Page) {
   const sidebar = await page.locator(".quasar-shell > .sidebar").boundingBox();
   const topbar = await page.locator(".quasar-shell .topbar").boundingBox();
   if (!sidebar || !topbar) throw new Error("Quasar shell geometry is unavailable");
