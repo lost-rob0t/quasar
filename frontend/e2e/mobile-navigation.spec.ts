@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 const expectedLinks = [
   ["Home", "/"],
   ["Graphs", "/graph"],
-  ["Datasets", "/documents?group=dataset"],
+  ["Datasets", "/datasets"],
   ["Documents", "/documents"],
   ["Add document", "/documents/new"],
   ["Agents", "/agents"],
@@ -21,7 +21,6 @@ test("mobile menu mirrors the desktop workspace navigation", async ({ page }) =>
   const dialog = page.getByRole("dialog", { name: "Navigation" });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText("Quasar", { exact: true })).toBeVisible();
-  await expect(dialog.getByText("StarIntel workspace", { exact: true })).toBeVisible();
 
   const navigation = dialog.getByRole("navigation", { name: "Mobile navigation" });
   await expect(navigation.getByRole("link")).toHaveCount(expectedLinks.length);

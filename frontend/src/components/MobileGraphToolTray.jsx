@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CircleMinus,
   Database,
@@ -13,11 +13,12 @@ import {
   Plus,
   Search,
   Tags,
-  Trash2
+  Trash2,
+  X
 } from "lucide-react";
 import { createPortal } from "react-dom";
-import GraphSelectMenu from "./GraphSelectMenu.jsx";
 import { useLocation, useNavigate } from "react-router-dom";
+import GraphSelectMenu from "./GraphSelectMenu.jsx";
 
 const MOBILE_QUERY = "(max-width: 850px)";
 
@@ -35,12 +36,34 @@ function cycleControl(select) {
   select.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
-function hiddenGraphAction(label) {
-  return document.querySelector(`.graph-canvas-actions [aria-label="${label}"]`);
+function toolbarButton(label) {
+  return [...document.querySelectorAll(".graph-toolbar .button.small")].find(
+    (candidate) => candidate.textContent.trim() === label
+  );
 }
 
-function hiddenGraphModeAction(label) {
-  return document.querySelector(`.graph-mode-actions [aria-label="${label}"]`);
+function headingButton(label) {
+  return [...document.querySelectorAll(".graph-heading-actions button")].find(
+    (candidate) => candidate.textContent.trim() === label
+  );
+}
+
+function labelsInput() {
+  return [...document.querySelectorAll(".graph-toolbar .checkbox input")].find((input) =>
+    input.closest("label")?.textContent.includes("Labels")
+  );
+}
+
+function searchControl() {
+  return document.querySelector(".graph-search input");
+}
+
+function setNativeInputValue(input, value) {
+  if (!input) return;
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+  setter?.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
 function removeStrayEmptyStateCount() {
@@ -72,10 +95,13 @@ export default function MobileGraphToolTray() {
   const location = useLocation();
   const navigate = useNavigate();
   const graphRoute = location.pathname === "/graph";
+  const searchRef = useRef(null);
   const [mobile, setMobile] = useState(() => window.matchMedia?.(MOBILE_QUERY).matches ?? false);
   const [stage, setStage] = useState(null);
   const [open, setOpen] = useState(false);
   const [datasetOpen, setDatasetOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const [focusDisabled, setFocusDisabled] = useState(true);
   const [removeDisabled, setRemoveDisabled] = useState(true);
   const [deleteDisabled, setDeleteDisabled] = useState(true);
@@ -83,18 +109,23 @@ export default function MobileGraphToolTray() {
 
   useEffect(() => {
     if (!window.matchMedia) return undefined;
-    const query = window.matchMedia(MOBILE_QUERY);
-    const sync = () => setMobile(query.matches);
+    const queryList = window.matchMedia(MOBILE_QUERY);
+    const sync = () => setMobile(queryList.matches);
     sync();
-    query.addEventListener?.("change", sync);
-    return () => query.removeEventListener?.("change", sync);
+    queryList.addEventListener?.("change", sync);
+    return () => queryList.removeEventListener?.("change", sync);
   }, []);
+
+  useEffect(() => {
+    if (searchOpen) requestAnimationFrame(() => searchRef.current?.focus());
+  }, [searchOpen]);
 
   useEffect(() => {
     if (!graphRoute || !mobile) {
       setStage(null);
       setOpen(false);
       setDatasetOpen(false);
+      setSearchOpen(false);
       return undefined;
     }
 
@@ -106,10 +137,13 @@ export default function MobileGraphToolTray() {
         removeStrayEmptyStateCount();
         const nextStage = document.querySelector(".graph-stage");
         setStage((current) => (current === nextStage ? current : nextStage));
-        setFocusDisabled(Boolean(hiddenGraphAction("Focus selection")?.disabled));
-        setRemoveDisabled(Boolean(hiddenGraphAction("Remove from graph")?.disabled));
-        setDeleteDisabled(Boolean(hiddenGraphAction("Delete selected documents")?.disabled));
-        setLabelsOn(hiddenGraphAction("Toggle labels")?.getAttribute("aria-pressed") === "true");
+        setFocusDisabled(Boolean(toolbarButton("Focus")?.disabled));
+        setRemoveDisabled(Boolean(headingButton("Remove from graph")?.disabled));
+        setDeleteDisabled(Boolean(headingButton("Delete selected documents")?.disabled));
+        const labels = labelsInput();
+        if (labels) setLabelsOn(labels.checked);
+        const search = searchControl();
+        if (search) setQuery(search.value || "");
       });
     };
 
@@ -118,25 +152,30 @@ export default function MobileGraphToolTray() {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ["disabled", "aria-pressed"]
+      attributeFilter: ["disabled", "checked", "value"]
     });
+    document.addEventListener("input", sync);
+    document.addEventListener("change", sync);
     sync();
     return () => {
       observer.disconnect();
+      document.removeEventListener("input", sync);
+      document.removeEventListener("change", sync);
       if (frame) cancelAnimationFrame(frame);
     };
   }, [graphRoute, mobile]);
 
   useEffect(() => {
-    if (!open && !datasetOpen) return undefined;
+    if (!open && !datasetOpen && !searchOpen) return undefined;
     const close = (event) => {
       if (event.key !== "Escape") return;
       setOpen(false);
       setDatasetOpen(false);
+      setSearchOpen(false);
     };
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
-  }, [datasetOpen, open]);
+  }, [datasetOpen, open, searchOpen]);
 
   if (!graphRoute || !mobile || !stage) return null;
 
@@ -161,7 +200,7 @@ export default function MobileGraphToolTray() {
           type="button"
           className="graph-mobile-primary-button"
           aria-label="Add graph document"
-          onClick={() => hiddenGraphAction("Add graph document")?.click()}
+          onClick={() => headingButton("Add graph document")?.click()}
         >
           <Plus size={23} aria-hidden="true" />
         </button>
@@ -194,7 +233,10 @@ export default function MobileGraphToolTray() {
             <ToolButton
               label="Search"
               Icon={Search}
-              onClick={() => run(() => hiddenGraphModeAction("Search graph")?.click())}
+              onClick={() => {
+                setOpen(false);
+                setSearchOpen(true);
+              }}
             />
             <ToolButton
               label="Graph"
@@ -217,40 +259,64 @@ export default function MobileGraphToolTray() {
             <ToolButton
               label="Fit"
               Icon={Maximize2}
-              onClick={() => run(() => hiddenGraphAction("Fit graph")?.click())}
+              onClick={() => run(() => toolbarButton("Fit")?.click())}
             />
             <ToolButton
               label="Focus"
               Icon={Focus}
               disabled={focusDisabled}
-              onClick={() => run(() => hiddenGraphAction("Focus selection")?.click())}
+              onClick={() => run(() => toolbarButton("Focus")?.click())}
             />
             <ToolButton
               label="Labels"
               Icon={Tags}
               pressed={labelsOn}
-              onClick={() => run(() => hiddenGraphAction("Toggle labels")?.click())}
+              onClick={() => run(() => labelsInput()?.click())}
             />
             <ToolButton
               label="Clear"
               Icon={Eraser}
-              onClick={() => run(() => hiddenGraphAction("Clear graph")?.click())}
+              onClick={() => run(() => headingButton("Clear graph")?.click())}
             />
             <ToolButton
               label="Remove"
               Icon={CircleMinus}
               disabled={removeDisabled}
-              onClick={() => run(() => hiddenGraphAction("Remove from graph")?.click())}
+              onClick={() => run(() => headingButton("Remove from graph")?.click())}
             />
             <ToolButton
               label="Delete"
               Icon={Trash2}
               disabled={deleteDisabled}
-              onClick={() => run(() => hiddenGraphAction("Delete selected documents")?.click())}
+              onClick={() => run(() => headingButton("Delete selected documents")?.click())}
             />
           </div>
         </>
       )}
+
+      {searchOpen && (
+        <label className="graph-search-overlay">
+          <Search size={18} aria-hidden="true" />
+          <input
+            ref={searchRef}
+            value={query}
+            placeholder="Search graph"
+            aria-label="Graph search overlay"
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setNativeInputValue(searchControl(), event.target.value);
+            }}
+          />
+          <button
+            type="button"
+            aria-label="Close graph search"
+            onClick={() => setSearchOpen(false)}
+          >
+            <X size={17} aria-hidden="true" />
+          </button>
+        </label>
+      )}
+
       <GraphSelectMenu
         open={datasetOpen}
         selectLabel="Dataset filter"

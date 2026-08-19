@@ -5,11 +5,11 @@ import App from "../App.jsx";
 import AutoDigHostBridge, {
   isAutoDigEmbedded
 } from "../integrations/auto-dig/AutoDigHostBridge.jsx";
+import AgentDisclosureBridge from "../components/AgentDisclosureBridge.jsx";
 import GraphContextRadialBridge from "../components/GraphContextRadialBridge.jsx";
 import GraphObjectTypePickerBridge from "../components/GraphObjectTypePickerBridge.jsx";
 import MelissaActorMigrationBridge from "../components/MelissaActorMigrationBridge.jsx";
 import MobileGraphToolTray from "../components/MobileGraphToolTray.jsx";
-import OperatorUiEnhancer from "../components/OperatorUiEnhancer.jsx";
 import PwaInstallBridge from "../components/PwaInstallBridge.jsx";
 import ReviewActorBridge from "../components/ReviewActorBridge.jsx";
 import RunAllTransformationsBridge from "../components/RunAllTransformationsBridge.jsx";
@@ -19,6 +19,8 @@ import { initializeTheme } from "../lib/themes.js";
 import { routerBasename } from "./base-path";
 import { recordRuntimeDiagnostic, redactDiagnostic } from "./runtime-diagnostics";
 import { initializeControlPlane } from "../control-plane";
+import { autoDigAdapter, controlPlaneAdapter } from "../ui-core/adapters";
+import { UiRuntimeProvider } from "../ui-core/runtime";
 import "../styles.css";
 import "../document-search.css";
 import "../dashboard.css";
@@ -26,18 +28,18 @@ import "../dashboard-theme.css";
 import "../mobile.css";
 import "../mobile-editor.css";
 import "../gesture-menu.css";
-import "../operator-ui.css";
 import "../dataset-menu.css";
-import "../graph-fullscreen.css";
 import "../mobile-graph-tools.css";
 import "../mobile-graph-empty-state.css";
 import "../graph-editors.css";
 import "../graph-editors-extra.css";
-import "../graph-workspace-shell.css";
-import "../graph-full-viewport-modern.css";
 import "../settings-runtime-log.css";
 import "../agent-tab-icons.css";
 import "../kinpaku-shell.css";
+import "../ui-core/shell.css";
+import "../ui-core/surfaces.css";
+import "../ui-core/graph.css";
+import "../ui-core/responsive.css";
 
 function runtimeContext(): string {
   return `route=${window.location.pathname} online=${navigator.onLine}`;
@@ -103,9 +105,6 @@ window.addEventListener("quasar:control-plane-error", (event) => {
   console.error(`[quasar-control:error] ${message}`, fields);
 });
 
-// Control-plane transport tracing is deliberately on by default during local
-// Vite development. Add ?debug=0 for a quiet browser session. Production
-// builds remain unaffected because diagnosticsEnabled() is DEV-only.
 if (import.meta.env.DEV) {
   try {
     const requested = new URLSearchParams(window.location.search).get("debug");
@@ -146,27 +145,28 @@ controlPlane.onConnectionStateChange((state) => {
 });
 
 const rootElement = document.getElementById("root");
+if (!rootElement) throw new Error("Quasar root element was not found");
 
-if (!rootElement) {
-  throw new Error("Quasar root element was not found");
-}
+const runtimeAdapter = isAutoDigEmbedded() ? autoDigAdapter : controlPlaneAdapter;
 
 createRoot(rootElement).render(
   <StrictMode>
     <RuntimeErrorBoundary>
       <BrowserRouter basename={routerBasename(import.meta.env.BASE_URL)}>
-        <QuasarProvider>
-          <App />
-          <AutoDigHostBridge />
-          <OperatorUiEnhancer />
-          <PwaInstallBridge />
-          <MelissaActorMigrationBridge />
-          <ReviewActorBridge />
-          <RunAllTransformationsBridge />
-          <MobileGraphToolTray />
-          <GraphContextRadialBridge />
-          <GraphObjectTypePickerBridge />
-        </QuasarProvider>
+        <UiRuntimeProvider adapter={runtimeAdapter}>
+          <QuasarProvider>
+            <App />
+            <AgentDisclosureBridge />
+            <AutoDigHostBridge />
+            <PwaInstallBridge />
+            <MelissaActorMigrationBridge />
+            <ReviewActorBridge />
+            <RunAllTransformationsBridge />
+            <MobileGraphToolTray />
+            <GraphContextRadialBridge />
+            <GraphObjectTypePickerBridge />
+          </QuasarProvider>
+        </UiRuntimeProvider>
       </BrowserRouter>
     </RuntimeErrorBoundary>
   </StrictMode>

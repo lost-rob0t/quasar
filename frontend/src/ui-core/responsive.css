@@ -1,0 +1,105 @@
+@media (max-width: 1100px) {
+  :root {
+    --quasar-sidebar-width: 210px;
+  }
+
+  .graph-workspace-metrics {
+    grid-template-columns: repeat(4, minmax(70px, 1fr)) auto;
+  }
+
+  .graph-workspace-metric:nth-child(5),
+  .graph-workspace-metric:nth-child(6) {
+    display: none;
+  }
+}
+
+@media (max-width: 850px) {
+  .quasar-shell,
+  .quasar-shell.sidebar-collapsed {
+    display: block;
+  }
+
+  .quasar-shell > .sidebar {
+    display: none;
+  }
+
+  .quasar-shell .topbar {
+    height: 52px;
+    min-height: 52px;
+    padding: 0 0.55rem;
+  }
+
+  .quasar-shell .global-search {
+    max-width: none;
+  }
+
+  .quasar-shell .top-agent-action span,
+  .status-summary > span {
+    display: none;
+  }
+
+  .quasar-shell .content {
+    width: 100%;
+    padding: 1rem 0.75rem 5rem;
+  }
+
+  .quasar-shell .content.content-graph {
+    height: calc(100dvh - 52px - 58px);
+    padding: 0;
+  }
+
+  .graph-workspace-top,
+  .graph-agent-dock,
+  .graph-recent-activity {
+    display: none;
+  }
+
+  .content-graph .graph-page {
+    padding: 0;
+  }
+
+  .content-graph .graph-page > .graph-heading,
+  .content-graph .graph-page > .graph-toolbar,
+  .content-graph .graph-review-warning {
+    display: none !important;
+  }
+
+  .content-graph .graph-workbench {
+    grid-template-columns: 1fr;
+    grid-template-areas: "canvas";
+  }
+
+  .content-graph .graph-inspector {
+    display: none !important;
+  }
+
+  .dataset-command-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (min-width: 851px) {
+  body.graph-viewport-full .content-graph .graph-page {
+    padding-bottom: 0;
+  }
+
+  body.graph-viewport-full .content-graph .graph-workbench {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "canvas";
+  }
+
+  body.graph-viewport-full .content-graph .graph-inspector,
+  body.graph-viewport-full .graph-agent-dock,
+  body.graph-viewport-full .graph-recent-activity {
+    display: none !important;
+  }
+
+  body.graph-viewport-full .content-graph .graph-page > .graph-toolbar {
+    right: 0;
+  }
+
+  body.graph-viewport-full .content-graph .graph-page > .graph-heading {
+    right: 12px;
+  }
+}

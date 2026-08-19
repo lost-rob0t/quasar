@@ -1,0 +1,238 @@
+.status-center {
+  position: relative;
+}
+
+.status-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  height: 32px;
+  padding: 0 0.62rem;
+  border: 1px solid #2b4056;
+  background: #0d1825;
+  color: #bdcad7;
+  font-size: 0.7rem;
+  font-weight: 720;
+}
+
+.status-summary.status-danger {
+  border-color: #8c2740;
+  color: #ff9eb0;
+}
+
+.status-summary.status-warning {
+  border-color: #74521b;
+  color: #f7c76b;
+}
+
+.status-summary.status-success {
+  border-color: #28583e;
+  color: #7dd9a1;
+}
+
+.status-popover {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 120;
+  width: min(380px, calc(100vw - 2rem));
+  overflow: hidden;
+  border: 1px solid #2a4057;
+  border-radius: 8px;
+  background: #07111d;
+  box-shadow: 0 24px 60px #000a;
+}
+
+.status-popover > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem;
+  border-bottom: 1px solid #1f3449;
+}
+
+.status-popover > header > div {
+  display: grid;
+}
+
+.status-popover > header strong {
+  color: #edf3f8;
+  font-size: 0.78rem;
+}
+
+.status-popover > header span {
+  color: #71879d;
+  font-size: 0.66rem;
+}
+
+.status-list {
+  display: grid;
+}
+
+.status-row {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.62rem 0.75rem;
+  border-bottom: 1px solid #17293a;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #6c7f91;
+}
+
+.status-dot-danger {
+  background: var(--quasar-danger);
+  box-shadow: 0 0 8px #fb718566;
+}
+
+.status-dot-warning {
+  background: var(--quasar-warning);
+}
+
+.status-dot-success {
+  background: var(--quasar-success);
+}
+
+.status-row > div {
+  display: grid;
+  min-width: 0;
+}
+
+.status-row strong {
+  color: #dce7f2;
+  font-size: 0.72rem;
+}
+
+.status-row small {
+  overflow: hidden;
+  color: #74899e;
+  font-size: 0.64rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-state {
+  font-size: 0.61rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.status-state-danger {
+  color: #fb8ca0;
+}
+
+.status-state-warning {
+  color: #f7c76b;
+}
+
+.status-state-success {
+  color: #75d69b;
+}
+
+.status-state-neutral {
+  color: #8599ab;
+}
+
+.status-popover > footer {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  padding: 0.62rem 0.75rem;
+  color: #9baabc;
+  font-size: 0.65rem;
+}
+
+.datasets-workspace {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.dataset-command-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.dataset-search {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.5rem;
+  height: 35px;
+  padding: 0 0.65rem;
+  border: 1px solid #2a4058;
+  border-radius: 7px;
+  background: #07111c;
+  color: #7f94aa;
+}
+
+.dataset-search input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #dfe8f1;
+  font-size: 0.78rem;
+}
+
+.dataset-name {
+  color: #e3ebf3;
+  font-weight: 720;
+}
+
+.dataset-name:hover {
+  color: var(--quasar-brand-strong);
+}
+
+.dataset-types {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.dataset-types span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 0.38rem;
+  border: 1px solid #2a4055;
+  border-radius: 999px;
+  background: #0e1c2b;
+  color: #9fb2c4;
+  font-size: 0.63rem;
+}
+
+.agent-log-entry.agent-log-collapsible {
+  position: relative;
+  cursor: pointer;
+}
+
+.agent-log-entry.agent-log-collapsible::after {
+  content: "›";
+  position: absolute;
+  top: 0.45rem;
+  right: 0.58rem;
+  color: #71879d;
+  transform: rotate(90deg);
+  transition: transform 120ms ease;
+}
+
+.agent-log-entry.agent-log-collapsible[data-expanded="false"] > :not(strong) {
+  display: none !important;
+}
+
+.agent-log-entry.agent-log-collapsible[data-expanded="true"]::after {
+  transform: rotate(-90deg);
+}
+
+.agent-log-entry.agent-log-collapsible:focus-visible {
+  outline: 2px solid var(--quasar-brand);
+  outline-offset: 2px;
+}
