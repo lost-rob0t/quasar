@@ -1,39 +1,17 @@
+import { ChevronRight, Redo2, Undo2, X } from "lucide-react";
 import { useEffect, useRef } from "react";
-import {
-  Bot,
-  ChevronRight,
-  Code2,
-  FilePlus2,
-  FolderInput,
-  House,
-  Layers3,
-  Network,
-  Redo2,
-  Settings,
-  TableProperties,
-  Undo2,
-  X
-} from "lucide-react";
-import { NavLink } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useQuasar } from "../store";
-
-const navigation = [
-  { to: "/", label: "Home", Icon: House, end: true },
-  { to: "/graph", label: "Graphs", Icon: Network },
-  { to: "/documents?group=dataset", label: "Datasets", Icon: Layers3 },
-  { to: "/documents", label: "Documents", Icon: TableProperties, end: true },
-  { to: "/documents/new", label: "Add document", Icon: FilePlus2 },
-  { to: "/agents", label: "Agents", Icon: Bot },
-  { to: "/actors", label: "Actors", Icon: Code2 },
-  { to: "/import", label: "Import", Icon: FolderInput },
-  { to: "/settings", label: "Settings", Icon: Settings }
-];
+import { navigation } from "../ui-core/navigation";
+import { useUiRuntime } from "../ui-core/runtime";
 
 const OPEN_DISTANCE = 28;
 const CLOSE_DISTANCE = 44;
 
 export default function MobileGestureMenu({ open, onOpenChange }) {
   const pointer = useRef(null);
+  const location = useLocation();
+  const runtime = useUiRuntime();
   const { canUndo, canRedo, undo, redo, setNotice } = useQuasar();
 
   useEffect(() => {
@@ -96,7 +74,9 @@ export default function MobileGestureMenu({ open, onOpenChange }) {
       {open && (
         <div
           className="mobile-gesture-backdrop"
-          onPointerDown={(event) => event.target === event.currentTarget && onOpenChange(false)}
+          onPointerDown={(event) =>
+            event.target === event.currentTarget && onOpenChange(false)
+          }
         >
           <section
             className="mobile-gesture-sheet"
@@ -116,7 +96,7 @@ export default function MobileGestureMenu({ open, onOpenChange }) {
                 </span>
                 <span>
                   <strong>Quasar</strong>
-                  <small>StarIntel workspace</small>
+                  <small>{runtime.workspaceLabel}</small>
                 </span>
               </div>
               <button
@@ -131,27 +111,28 @@ export default function MobileGestureMenu({ open, onOpenChange }) {
 
             <div className="mobile-gesture-section-label">Navigation</div>
             <nav className="mobile-gesture-grid" aria-label="Mobile navigation">
-              {navigation.map(({ to, label, Icon, end }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  end={end}
-                  className={({ isActive }) =>
-                    isActive ? "mobile-gesture-link active" : "mobile-gesture-link"
-                  }
-                  onClick={() => onOpenChange(false)}
-                >
-                  <span className="mobile-gesture-link-icon">
-                    <Icon size={19} aria-hidden="true" />
-                  </span>
-                  <strong>{label}</strong>
-                  <ChevronRight
-                    className="mobile-gesture-link-chevron"
-                    size={16}
-                    aria-hidden="true"
-                  />
-                </NavLink>
-              ))}
+              {navigation.map(({ to, label, Icon, match }) => {
+                const active = match(location.pathname);
+                return (
+                  <Link
+                    key={to}
+                    to={to}
+                    className={active ? "mobile-gesture-link active" : "mobile-gesture-link"}
+                    aria-current={active ? "page" : undefined}
+                    onClick={() => onOpenChange(false)}
+                  >
+                    <span className="mobile-gesture-link-icon">
+                      <Icon size={19} aria-hidden="true" />
+                    </span>
+                    <strong>{label}</strong>
+                    <ChevronRight
+                      className="mobile-gesture-link-chevron"
+                      size={16}
+                      aria-hidden="true"
+                    />
+                  </Link>
+                );
+              })}
             </nav>
 
             <div className="mobile-gesture-section-label">History</div>
