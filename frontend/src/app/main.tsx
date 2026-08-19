@@ -2,9 +2,7 @@ import { Component, StrictMode, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "../App.jsx";
-import AutoDigHostBridge, {
-  isAutoDigEmbedded
-} from "../integrations/auto-dig/AutoDigHostBridge.jsx";
+import AutoDigHostBridge, { isAutoDigEmbedded } from "../integrations/auto-dig/AutoDigHostBridge.jsx";
 import GraphContextRadialBridge from "../components/GraphContextRadialBridge.jsx";
 import GraphObjectTypePickerBridge from "../components/GraphObjectTypePickerBridge.jsx";
 import MelissaActorMigrationBridge from "../components/MelissaActorMigrationBridge.jsx";
@@ -36,7 +34,10 @@ import "../graph-editors-extra.css";
 import "../settings-runtime-log.css";
 import "../agent-tab-icons.css";
 import "../kinpaku-shell.css";
-import "../ui-core/ui-core.css";
+import "../ui-core/shell.css";
+import "../ui-core/surfaces.css";
+import "../ui-core/graph.css";
+import "../ui-core/responsive.css";
 
 function runtimeContext(): string {
   return `route=${window.location.pathname} online=${navigator.onLine}`;
