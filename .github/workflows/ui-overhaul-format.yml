@@ -1,0 +1,36 @@
+name: UI overhaul formatter
+
+on:
+  push:
+    branches:
+      - ui-core-shell-overhaul
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ui-core-shell-overhaul
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Format frontend
+        run: npm --prefix frontend run format
+      - name: Commit formatting
+        shell: bash
+        run: |
+          if git diff --quiet -- frontend; then
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add frontend
+          git commit -m "Format UI overhaul"
+          git push origin HEAD:ui-core-shell-overhaul
