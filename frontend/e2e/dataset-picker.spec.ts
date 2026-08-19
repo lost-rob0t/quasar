@@ -25,44 +25,20 @@ async function expectNoHorizontalOverflow(page: Page) {
   expect(width.scroll).toBe(width.client);
 }
 
-test("searches and selects a dataset from the desktop graph button", async ({ page }) => {
+test("selects a dataset from the native desktop graph toolbar", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/graph");
   await installDatasetOptions(page);
 
-  const button = page.getByRole("button", { name: "Select dataset" });
-  await button.click();
+  const select = page.getByLabel("Dataset filter", { exact: true });
+  await expect(select).toBeVisible();
+  await select.selectOption("alpha");
+  await expect(select).toHaveValue("alpha");
+  await expect(select).toHaveAttribute("data-last-change", "alpha");
 
-  const dialog = page.getByRole("dialog", { name: "Select dataset" });
-  const search = dialog.getByRole("searchbox", { name: "Search datasets" });
-  const listbox = page.getByRole("listbox", { name: "Datasets" });
-  const allDatasets = listbox.getByRole("option", { name: "All datasets" });
-  const alpha = listbox.getByRole("option", { name: "Alpha research" });
-  const bravo = listbox.getByRole("option", { name: "Bravo archive" });
-  await expect(dialog).toBeVisible();
-  await expect(search).toBeFocused();
-  await expect(allDatasets).toHaveAttribute("aria-selected", "true");
-
-  await search.fill("alpha");
-  await expect(alpha).toBeVisible();
-  await expect(bravo).toBeHidden();
-  await search.press("ArrowDown");
-  await expect(alpha).toBeFocused();
-  await alpha.press("Enter");
-  await expect(dialog).toBeHidden();
-  await expect(page.getByLabel("Dataset filter", { exact: true })).toHaveValue("alpha");
-  await expect(page.getByLabel("Dataset filter", { exact: true })).toHaveAttribute(
-    "data-last-change",
-    "alpha"
-  );
-  await expect(button).toHaveAttribute("title", /Alpha research/);
-
-  await button.click();
-  await expect(search).toHaveValue("");
-  await search.fill("bravo");
-  await bravo.click();
-  await expect(page.getByLabel("Dataset filter", { exact: true })).toHaveValue("bravo");
-  await expect(dialog).toBeHidden();
+  await select.selectOption("bravo");
+  await expect(select).toHaveValue("bravo");
+  await expect(select).toHaveAttribute("data-last-change", "bravo");
   await expectNoHorizontalOverflow(page);
 });
 
