@@ -1,0 +1,514 @@
+:root {
+  --quasar-brand: #f6c945;
+  --quasar-brand-strong: #ffd95a;
+  --quasar-cyan: #38bdf8;
+  --quasar-danger: #fb7185;
+  --quasar-warning: #f59e0b;
+  --quasar-success: #22c55e;
+  --quasar-shell: #050a11;
+  --quasar-shell-raised: #08111d;
+  --quasar-panel: #0b1624;
+  --quasar-panel-2: #101d2d;
+  --quasar-line: #24364c;
+  --quasar-text: #dce7f2;
+  --quasar-muted: #8da2b8;
+  --quasar-sidebar-width: 232px;
+  --quasar-sidebar-collapsed: 68px;
+  --quasar-topbar-height: 56px;
+  --quasar-radius: 7px;
+}
+
+body {
+  background: var(--quasar-shell);
+}
+
+.quasar-shell {
+  display: grid;
+  grid-template-columns: var(--quasar-sidebar-width) minmax(0, 1fr);
+  min-height: 100dvh;
+  background: var(--quasar-shell);
+  color: var(--quasar-text);
+}
+
+.quasar-shell.sidebar-collapsed {
+  grid-template-columns: var(--quasar-sidebar-collapsed) minmax(0, 1fr);
+}
+
+.quasar-shell > .sidebar {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100dvh;
+  min-height: 0;
+  padding: 0.7rem 0.62rem;
+  overflow: hidden;
+  border-right: 1px solid color-mix(in srgb, var(--quasar-line) 84%, transparent);
+  background: linear-gradient(180deg, #07101a 0%, #050a11 100%);
+  box-shadow: 14px 0 34px #0004;
+}
+
+.quasar-shell .brand-block {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 0.62rem;
+  min-height: 46px;
+  padding: 0.2rem 0.25rem 0.8rem;
+}
+
+.quasar-shell .brand-mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid color-mix(in srgb, var(--quasar-brand) 72%, #3d2d05);
+  border-radius: 8px;
+  background: radial-gradient(
+    circle at 42% 35%,
+    #ffe980 0 5%,
+    #6a4c08 10%,
+    #151106 52%,
+    #0b0d11 100%
+  );
+  color: var(--quasar-brand);
+  box-shadow: 0 0 22px #f6c9451c;
+  font-weight: 900;
+}
+
+.quasar-shell .brand-copy {
+  min-width: 0;
+}
+
+.quasar-shell .brand-copy strong {
+  display: block;
+  color: var(--quasar-brand);
+  font-size: 0.94rem;
+  font-weight: 820;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.quasar-shell .brand-copy span {
+  display: block;
+  margin-top: 0.08rem;
+  overflow: hidden;
+  color: #758aa0;
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quasar-shell .sidebar-collapse {
+  width: 29px;
+  height: 29px;
+}
+
+.quasar-shell .sidebar-section-label {
+  margin: 0.68rem 0.5rem 0.35rem;
+  color: #63778d;
+  font-size: 0.61rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.quasar-shell .sidebar nav {
+  display: grid;
+  gap: 0.14rem;
+}
+
+.quasar-shell .nav-link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.68rem;
+  min-height: 36px;
+  padding: 0.5rem 0.62rem;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: #9eb0c1;
+  font-size: 0.83rem;
+  font-weight: 540;
+  text-decoration: none;
+}
+
+.quasar-shell .nav-link:hover {
+  border-color: color-mix(in srgb, var(--quasar-line) 72%, transparent);
+  background: #0c1724;
+  color: #f3f7fb;
+}
+
+.quasar-shell .nav-link.active {
+  border-color: color-mix(in srgb, var(--quasar-brand) 28%, var(--quasar-line));
+  background: linear-gradient(90deg, #2d240b88 0%, #101a26 58%, #0c1520 100%);
+  color: #fff4c5;
+  box-shadow: inset 3px 0 0 var(--quasar-brand);
+}
+
+.quasar-shell .nav-link.active svg {
+  color: var(--quasar-brand);
+}
+
+.quasar-shell .sidebar-context {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  margin-top: 0.25rem;
+}
+
+.quasar-shell .workspace-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 34px;
+  margin: 0 0.2rem;
+  padding: 0.4rem 0.52rem;
+  border: 1px solid var(--quasar-line);
+  border-radius: 7px;
+  background: #0a1420;
+  color: #c5d2df;
+  font-size: 0.76rem;
+}
+
+.quasar-shell .sidebar-section-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.quasar-shell .sidebar-add {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  margin-right: 0.3rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #8195aa;
+}
+
+.quasar-shell .sidebar-add:hover {
+  border-color: var(--quasar-line);
+  background: #101b29;
+  color: var(--quasar-brand);
+}
+
+.quasar-shell .sidebar-graph-list {
+  display: grid;
+  gap: 0.12rem;
+  min-height: 0;
+  padding: 0 0.12rem;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.quasar-shell .sidebar-graph-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 7px;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  min-height: 31px;
+  padding: 0.35rem 0.5rem;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #879bad;
+  text-align: left;
+}
+
+.quasar-shell .sidebar-graph-row > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quasar-shell .sidebar-graph-row:hover {
+  background: #0b1622;
+  color: #dbe5ee;
+}
+
+.quasar-shell .sidebar-graph-row.active {
+  border-color: #554718;
+  background: #201c0d;
+  color: #fff4c5;
+}
+
+.quasar-shell .sidebar-current-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--quasar-brand);
+  box-shadow: 0 0 8px #f6c94599;
+}
+
+.quasar-shell .sidebar-foot {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: auto;
+  padding: 0.7rem 0.24rem 0.1rem;
+  border-top: 1px solid #18283a;
+}
+
+.quasar-shell .sidebar-corpus-count {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  color: #879bad;
+  font-size: 0.72rem;
+}
+
+.quasar-shell .sidebar-runtime-label {
+  overflow: hidden;
+  color: #596e83;
+  font-size: 0.65rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quasar-shell .sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: 0.52rem;
+  min-height: 38px;
+  padding: 0.38rem 0.45rem;
+  border: 1px solid #1f3247;
+  border-radius: 7px;
+  background: #0a1420;
+}
+
+.quasar-shell .sidebar-user > span {
+  display: grid;
+  min-width: 0;
+}
+
+.quasar-shell .sidebar-user strong {
+  overflow: hidden;
+  color: #dce7f2;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+}
+
+.quasar-shell .sidebar-user small {
+  color: var(--quasar-brand);
+  font-size: 0.62rem;
+}
+
+.quasar-shell.sidebar-collapsed .brand-copy,
+.quasar-shell.sidebar-collapsed .sidebar-section-label,
+.quasar-shell.sidebar-collapsed .nav-link span,
+.quasar-shell.sidebar-collapsed .sidebar-context,
+.quasar-shell.sidebar-collapsed .sidebar-corpus-count span,
+.quasar-shell.sidebar-collapsed .sidebar-runtime-label,
+.quasar-shell.sidebar-collapsed .sidebar-user > span {
+  display: none;
+}
+
+.quasar-shell.sidebar-collapsed .brand-block {
+  grid-template-columns: 34px;
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.quasar-shell.sidebar-collapsed .sidebar-collapse {
+  position: absolute;
+  top: 0.9rem;
+  right: -14px;
+  z-index: 80;
+  background: #0d1926;
+}
+
+.quasar-shell.sidebar-collapsed .nav-link,
+.quasar-shell.sidebar-collapsed .sidebar-user,
+.quasar-shell.sidebar-collapsed .sidebar-corpus-count {
+  justify-content: center;
+}
+
+.quasar-shell .workbench {
+  min-width: 0;
+  min-height: 100dvh;
+  background: #07101a;
+}
+
+.quasar-shell .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  height: var(--quasar-topbar-height);
+  min-height: var(--quasar-topbar-height);
+  padding: 0 0.8rem;
+  border-bottom: 1px solid #1f3247;
+  background: #07101af2;
+  box-shadow: 0 8px 28px #0003;
+  backdrop-filter: blur(16px);
+}
+
+.quasar-shell .global-search {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.48rem;
+  max-width: 620px;
+  height: 34px;
+  padding: 0 0.62rem;
+  border: 1px solid #294059;
+  border-radius: 7px;
+  background: #050c14;
+  color: #7f94aa;
+}
+
+.quasar-shell .global-search:focus-within {
+  border-color: color-mix(in srgb, var(--quasar-brand) 54%, #294059);
+  box-shadow: 0 0 0 2px #f6c94512;
+}
+
+.quasar-shell .global-search input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #e3ebf3;
+  font-size: 0.82rem;
+}
+
+.quasar-shell .top-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: auto;
+}
+
+.quasar-shell .button,
+.quasar-shell .icon-button,
+.status-summary {
+  border-radius: 6px;
+}
+
+.quasar-shell .button {
+  min-height: 32px;
+  padding: 0.42rem 0.65rem;
+  border-color: #2b4056;
+  background: #101c2a;
+  color: #d7e2ec;
+  font-size: 0.76rem;
+}
+
+.quasar-shell .button:hover,
+.quasar-shell .icon-button:hover {
+  border-color: #536b83;
+  background: #162639;
+}
+
+.quasar-shell .button.primary {
+  border-color: #9b7b16;
+  background: #7a5d0c;
+  color: #fff6d2;
+}
+
+.quasar-shell .button.primary:hover {
+  border-color: var(--quasar-brand);
+  background: #9b7410;
+}
+
+.quasar-shell .icon-button {
+  width: 32px;
+  height: 32px;
+  border-color: #2a3e53;
+  background: #0f1a28;
+}
+
+.quasar-shell .top-agent-action {
+  border-color: #3c4d60;
+}
+
+.quasar-shell .top-agent-action svg {
+  color: var(--quasar-brand);
+}
+
+.quasar-shell .content {
+  width: min(1560px, 100%);
+  margin: 0 auto;
+  padding: 1.55rem clamp(1rem, 2.1vw, 2rem) 4rem;
+}
+
+.quasar-shell .content.content-graph {
+  position: relative;
+  width: 100%;
+  max-width: none;
+  height: calc(100dvh - var(--quasar-topbar-height));
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.quasar-shell .page-heading {
+  margin-bottom: 1.25rem;
+}
+
+.quasar-shell .page-heading h1 {
+  margin-bottom: 0.35rem;
+  font-size: clamp(1.7rem, 3vw, 2.55rem);
+  letter-spacing: -0.035em;
+}
+
+.quasar-shell .page-heading p {
+  margin-bottom: 0;
+  color: #94a7ba;
+}
+
+.quasar-shell .eyebrow {
+  color: var(--quasar-brand);
+}
+
+.quasar-shell .panel,
+.quasar-shell .table-panel,
+.quasar-shell .page-card {
+  border-color: #243a52;
+  border-radius: var(--quasar-radius);
+  background: #0a1522;
+  box-shadow: 0 14px 34px #0002;
+}
+
+.quasar-shell table {
+  min-width: 820px;
+}
+
+.quasar-shell th {
+  background: #101e2e;
+  color: #aebfd0;
+  font-size: 0.66rem;
+  letter-spacing: 0.09em;
+}
+
+.quasar-shell td {
+  border-bottom-color: #1f344a;
+  color: #b9c8d6;
+  font-size: 0.78rem;
+}
+
+.quasar-shell .notice {
+  position: fixed;
+  top: calc(var(--quasar-topbar-height) + 10px);
+  right: 0.9rem;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  max-width: min(460px, calc(100vw - 1.8rem));
+  padding: 0.65rem 0.78rem;
+  border-radius: 7px;
+  background: #101c2af2;
+}
+
+.quasar-shell .notice button {
+  margin-left: auto;
+}
