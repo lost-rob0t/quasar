@@ -72,7 +72,8 @@ test("mobile navigation uses the same route model", async ({ page }) => {
   await page.goto("/datasets");
   await page.getByRole("button", { name: "Open navigation" }).click();
 
-  const navigation = page.getByRole("navigation", { name: "Mobile navigation" });
+  const dialog = page.getByRole("dialog", { name: "Navigation" });
+  const navigation = dialog.getByRole("navigation", { name: "Mobile navigation" });
   const datasets = navigation.getByRole("link", { name: "Datasets", exact: true });
   const documents = navigation.getByRole("link", { name: "Documents", exact: true });
   await expect(datasets).toHaveAttribute("href", "/datasets");
