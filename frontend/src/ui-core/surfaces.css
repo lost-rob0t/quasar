@@ -208,3 +208,31 @@
   color: #9fb2c4;
   font-size: 0.63rem;
 }
+
+.agent-log-entry.agent-log-collapsible {
+  position: relative;
+  cursor: pointer;
+}
+
+.agent-log-entry.agent-log-collapsible::after {
+  content: "›";
+  position: absolute;
+  top: 0.45rem;
+  right: 0.58rem;
+  color: #71879d;
+  transform: rotate(90deg);
+  transition: transform 120ms ease;
+}
+
+.agent-log-entry.agent-log-collapsible[data-expanded="false"] > :not(strong) {
+  display: none !important;
+}
+
+.agent-log-entry.agent-log-collapsible[data-expanded="true"]::after {
+  transform: rotate(-90deg);
+}
+
+.agent-log-entry.agent-log-collapsible:focus-visible {
+  outline: 2px solid var(--quasar-brand);
+  outline-offset: 2px;
+}
