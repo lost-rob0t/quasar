@@ -176,11 +176,12 @@
                  plane-1 (quasar.control-plane:make-control-plane :store store-1))
            (quasar.control-plane:start-control-plane plane-1)
            (seed-restart-workspace plane-1)
-           (let* ((workspace
-                    (gethash "default"
-                             (quasar.control-plane:control-plane-workspaces plane-1)))
-                  (revision (workspace-revision workspace)))
+           (let ((revision
+                   (quasar.store:direct-workspace-revision store-1 "default")))
              (check (= 5 revision))
+             (check (= 0
+                       (hash-table-count
+                        (quasar.control-plane:control-plane-workspaces plane-1))))
              (quasar.control-plane:stop-control-plane plane-1)
              (setf plane-1 nil)
              (quasar.store:close-store store-1)
@@ -267,11 +268,12 @@
                 (cons "name" "G")
                 (cons "documentIds" (quasar.protocol:json-array "base")))
                :id "base-graph"))
-             (let* ((workspace
-                      (gethash "default"
-                               (quasar.control-plane:control-plane-workspaces plane)))
-                    (base-revision (workspace-revision workspace))
+             (let* ((base-revision
+                      (quasar.store:direct-workspace-revision store "default"))
                     (event-count (length (car *events-box*))))
+               (check (= 0
+                         (hash-table-count
+                          (quasar.control-plane:control-plane-workspaces plane))))
                (setf (quasar.store:tek9-store-failure-hook store)
                      (lambda (stage)
                        (when (eq stage :before-commit)
@@ -284,8 +286,14 @@
                          (failing-mixed-transaction-payload base-revision)
                          :id "failing-transaction"))))
                  (check (string= "error" (status response))))
-               (check (= base-revision (workspace-revision workspace)))
-               (check (null (gethash "candidate" (workspace-documents workspace))))
+               (check (= base-revision
+                         (quasar.store:direct-workspace-revision store "default")))
+               (check (null
+                       (quasar.store:direct-document
+                        store "default" "candidate")))
+               (check (= 0
+                         (hash-table-count
+                          (quasar.control-plane:control-plane-workspaces plane))))
                (check (= event-count (length (car *events-box*))))
                (setf (quasar.store:tek9-store-failure-hook store) nil)
                (quasar.store:close-store store)
