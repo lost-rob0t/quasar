@@ -223,6 +223,7 @@
     #:stop-websocket-server
     #:websocket-server-started-p
     #:register-websocket-session
+    #:register-autodig-worker-session
     #:websocket-audit-records
     #:attach-subscriber
     #:detach-subscriber))
@@ -238,91 +239,3 @@
                 #:submit-command
                 #:subscribe)
   (:export
-    #:*frontend-url*
-    #:*last-session*
-    #:frontend-asset-path
-    #:start-ui
-    #:stop-ui))
-
-(defpackage #:quasar.app
-  (:use #:cl)
-  (:import-from #:quasar.control-plane
-                #:make-control-plane
-                #:start-control-plane
-                #:stop-control-plane
-                #:subscribe
-                #:broadcast-event)
-  (:import-from #:quasar.store
-                #:make-tek9-store
-                #:close-store)
-  (:import-from #:quasar.starlang
-                #:install-starlang-commands)
-  (:import-from #:quasar.ui
-                #:start-ui
-                #:stop-ui)
-  (:import-from #:quasar.ws
-                #:make-websocket-server
-                #:start-websocket-server
-                #:stop-websocket-server
-                #:attach-subscriber
-                #:detach-subscriber)
-  (:export
-   #:*control-plane*
-   #:*websocket-server*
-   #:*workspace-store*
-   #:start
-   #:stop
-   #:main))
-
-(defpackage #:quasar.tests
-  (:use #:cl)
-  (:import-from #:quasar.protocol
-                #:decode-command
-                #:encode-result
-                #:encode
-                #:json-object
-                #:json-array
-                #:json-value
-                #:empty-object
-                #:object-set
-                #:clone-json
-                #:quasar-error
-                #:make-command-envelope)
-  (:import-from #:quasar.workspace
-                #:make-workspace
-                #:workspace-revision
-                #:workspace-documents
-                #:workspace-graphs
-                #:workspace-settings
-                #:workspace-snapshot
-                #:workspace-graph
-                #:graph-node
-                #:graph-edge
-                #:dispatch-operation
-                #:commit-operations
-                #:apply-document-create
-                #:apply-document-update
-                #:apply-document-delete
-                #:apply-node-create
-                #:apply-node-delete
-                #:apply-edge-create
-                #:apply-edge-delete
-                #:applied-op-result
-                #:applied-op-inverse)
-  (:import-from #:quasar.store
-                #:make-memory-store
-                #:load-workspace
-                #:save-workspace
-                #:append-operation
-                #:store-journal-entries)
-  (:import-from #:quasar.control-plane
-                #:make-control-plane
-                #:start-control-plane
-                #:stop-control-plane
-                #:submit-decoded
-                #:submit-command
-                #:subscribe
-                #:unsubscribe
-                #:control-plane-workspaces
-                #:control-plane-store)
-  (:export #:run-tests))
