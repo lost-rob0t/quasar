@@ -29,41 +29,48 @@
            (autodig-reclaim-check
             (and first-lease (plusp (length first-lease))))
 
-           ;; A live lease remains exclusive, but once its owning heartbeat is
-           ;; expired a replacement scheduled worker must be able to reclaim
-           ;; the durable run without user intervention or a second run ID.
-           (let* ((quasar.control-plane::+autodig-worker-lease-timeout-seconds+ 0)
-                  (replacement-claim
-                    (and run-id
-                         (worker-autodig-command
-                          plane "autodig.worker.claim" run-id
-                          "worker-restart-workspace" "worker-b")))
-                  (replacement-result (autodig-ok-result replacement-claim))
-                  (replacement-lease
-                    (and replacement-result
-                         (jsown:val replacement-result "leaseId")))
-                  (stale-heartbeat
-                    (and first-lease
-                         (worker-autodig-command
-                          plane "autodig.worker.heartbeat" run-id
-                          "worker-restart-workspace" "worker-a"
-                          :lease-id first-lease))))
-             (autodig-reclaim-check replacement-result)
-             (when replacement-result
-               (autodig-reclaim-check
-                (string= (jsown:val replacement-result "runId") run-id))
-               (autodig-reclaim-check
-                (string= (jsown:val replacement-result "workerId")
-                         "worker-b")))
-             (autodig-reclaim-check
-              (and replacement-lease
-                   (not (string= replacement-lease first-lease))))
-             (autodig-reclaim-check
-              (string= (status stale-heartbeat) "error"))
-             (autodig-reclaim-check
-              (and (string= (status stale-heartbeat) "error")
-                   (string= (error-code stale-heartbeat)
-                            "autodig.stale-worker")))))
+           ;; Sento executes the command on an actor thread, so a dynamic LET
+           ;; binding in this test thread would not affect the handler. Change
+           ;; the global timeout only for this guarded section, then restore it.
+           (let ((original-timeout
+                   quasar.control-plane::+autodig-worker-lease-timeout-seconds+))
+             (unwind-protect
+                  (progn
+                    (setf quasar.control-plane::+autodig-worker-lease-timeout-seconds+ 0)
+                    (let* ((replacement-claim
+                             (and run-id
+                                  (worker-autodig-command
+                                   plane "autodig.worker.claim" run-id
+                                   "worker-restart-workspace" "worker-b")))
+                           (replacement-result
+                             (autodig-ok-result replacement-claim))
+                           (replacement-lease
+                             (and replacement-result
+                                  (jsown:val replacement-result "leaseId")))
+                           (stale-heartbeat
+                             (and first-lease
+                                  (worker-autodig-command
+                                   plane "autodig.worker.heartbeat" run-id
+                                   "worker-restart-workspace" "worker-a"
+                                   :lease-id first-lease))))
+                      (autodig-reclaim-check replacement-result)
+                      (when replacement-result
+                        (autodig-reclaim-check
+                         (string= (jsown:val replacement-result "runId") run-id))
+                        (autodig-reclaim-check
+                         (string= (jsown:val replacement-result "workerId")
+                                  "worker-b")))
+                      (autodig-reclaim-check
+                       (and replacement-lease
+                            (not (string= replacement-lease first-lease))))
+                      (autodig-reclaim-check
+                       (string= (status stale-heartbeat) "error"))
+                      (autodig-reclaim-check
+                       (and (string= (status stale-heartbeat) "error")
+                            (string= (error-code stale-heartbeat)
+                                     "autodig.stale-worker")))))
+               (setf quasar.control-plane::+autodig-worker-lease-timeout-seconds+
+                     original-timeout))))
       (quasar.control-plane:stop-control-plane plane))))
 
 (defun run-autodig-worker-reclaim-tests ()
