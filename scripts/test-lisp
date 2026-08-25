@@ -24,7 +24,7 @@ trap 'rm -f "$output_file"' EXIT
 sbcl --non-interactive \
   --eval '(setf asdf:*central-registry* nil)' \
   --eval '(asdf:clear-configuration)' \
-  --eval '(ql:quickload (list :babel :dexador :jsown :quri :sento :tek9 :bordeaux-threads) :silent t)' \
+  --eval '(ql:quickload (list :babel :bordeaux-threads :clack :clog :dexador :jsown :quri :sento :tek9 :websocket-driver) :silent t)' \
   --eval '(asdf:load-asd (truename "systems/quasar-control.asd"))' \
   --eval '(asdf:load-asd (truename "systems/quasar-starlang.asd"))' \
   --eval '(asdf:load-asd (truename "systems/quasar-tests.asd"))' \
