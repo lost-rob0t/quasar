@@ -9,21 +9,16 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
-  reporter: process.env.CI
-    ? [
-        ["github"],
-        ["html", { outputFolder: "playwright-report", open: "never" }],
-      ]
-    : "list",
+  reporter: process.env.CI ? "github" : "list",
   use: {
     baseURL: `http://${host}:${port}`,
-    trace: "on-first-retry",
+    trace: "on-first-retry"
   },
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
-    },
+      use: { ...devices["Desktop Chrome"] }
+    }
   ],
   webServer: {
     command: webServerCommand,
@@ -32,6 +27,6 @@ export default defineConfig({
     // both the React server and the durable control plane are available.
     url: `http://${host}:8080/`,
     gracefulShutdown: { signal: "SIGTERM", timeout: 10_000 },
-    reuseExistingServer: !process.env.CI,
-  },
+    reuseExistingServer: !process.env.CI
+  }
 });
