@@ -8,6 +8,7 @@
   :serial t
   :pathname "../control-plane/tests/"
   :components ((:file "control-plane-tests")
+               (:file "autodig-control-tests")
                (:file "workspace-integrity-tests")
                (:file "tek9-store-tests")
                (:file "tek9-store-adversarial-tests")
@@ -24,6 +25,7 @@
   :perform (test-op (operation component)
              (declare (ignore operation component))
              (uiop:symbol-call :quasar.tests :run-tests)
+             (funcall (find-symbol "RUN-AUTODIG-CONTROL-TESTS" "QUASAR.TESTS"))
              (funcall (find-symbol "RUN-WORKSPACE-INTEGRITY-TESTS" "QUASAR.TESTS"))
              (funcall (find-symbol "RUN-TEK9-STORE-TESTS" "QUASAR.TESTS"))
              (funcall (find-symbol "RUN-TEK9-STORE-ADVERSARIAL-TESTS" "QUASAR.TESTS"))
