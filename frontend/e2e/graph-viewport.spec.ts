@@ -80,6 +80,9 @@ test("full viewport expands the canvas without replacing the global shell", asyn
   expect(canvasBefore).not.toBeNull();
   expect(sidebarBefore).not.toBeNull();
 
+  const dismissNotice = page.getByRole("button", { name: "Dismiss notification" });
+  if (await dismissNotice.isVisible()) await dismissNotice.click();
+
   await page.getByRole("button", { name: "Enter full viewport" }).click();
 
   await expect(body).toHaveClass(/graph-viewport-full/);
