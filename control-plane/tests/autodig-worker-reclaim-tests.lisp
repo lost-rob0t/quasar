@@ -21,10 +21,11 @@
                        (worker-autodig-command
                         plane "autodig.worker.claim" run-id
                         "worker-restart-workspace" "worker-a")))
+                (first-result (autodig-ok-result first-claim))
                 (first-lease
-                  (and (autodig-ok-result first-claim)
-                       (jsown:val (result first-claim) "leaseId"))))
-           (autodig-reclaim-check (string= (status first-claim) "ok"))
+                  (and first-result
+                       (jsown:val first-result "leaseId"))))
+           (autodig-reclaim-check first-result)
            (autodig-reclaim-check
             (and first-lease (plusp (length first-lease))))
 
@@ -37,29 +38,32 @@
                          (worker-autodig-command
                           plane "autodig.worker.claim" run-id
                           "worker-restart-workspace" "worker-b")))
+                  (replacement-result (autodig-ok-result replacement-claim))
                   (replacement-lease
-                    (and (autodig-ok-result replacement-claim)
-                         (jsown:val (result replacement-claim) "leaseId")))
+                    (and replacement-result
+                         (jsown:val replacement-result "leaseId")))
                   (stale-heartbeat
                     (and first-lease
                          (worker-autodig-command
                           plane "autodig.worker.heartbeat" run-id
                           "worker-restart-workspace" "worker-a"
                           :lease-id first-lease))))
-             (autodig-reclaim-check
-              (string= (status replacement-claim) "ok"))
-             (autodig-reclaim-check
-              (string= (jsown:val (result replacement-claim) "runId") run-id))
-             (autodig-reclaim-check
-              (string= (jsown:val (result replacement-claim) "workerId")
-                       "worker-b"))
+             (autodig-reclaim-check replacement-result)
+             (when replacement-result
+               (autodig-reclaim-check
+                (string= (jsown:val replacement-result "runId") run-id))
+               (autodig-reclaim-check
+                (string= (jsown:val replacement-result "workerId")
+                         "worker-b")))
              (autodig-reclaim-check
               (and replacement-lease
                    (not (string= replacement-lease first-lease))))
              (autodig-reclaim-check
               (string= (status stale-heartbeat) "error"))
              (autodig-reclaim-check
-              (string= (error-code stale-heartbeat) "autodig.stale-worker"))))
+              (and (string= (status stale-heartbeat) "error")
+                   (string= (error-code stale-heartbeat)
+                            "autodig.stale-worker")))))
       (quasar.control-plane:stop-control-plane plane))))
 
 (defun run-autodig-worker-reclaim-tests ()
