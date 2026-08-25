@@ -50,6 +50,17 @@
     :id id
     :workspace workspace)))
 
+(defun worker-autodig-command (plane command run-id workspace worker-id
+                               &key lease-id outcome (id command))
+  (let ((payload (quasar.protocol:json-object
+                  (cons "runId" run-id)
+                  (cons "workerId" worker-id))))
+    (when lease-id
+      (quasar.protocol:object-set payload "leaseId" lease-id))
+    (when outcome
+      (quasar.protocol:object-set payload "outcome" outcome))
+    (call-command plane (make-envelope command payload :id id :workspace workspace))))
+
 (defun test-autodig-capabilities-are-discoverable ()
   (let ((plane (quasar.control-plane:make-control-plane)))
     (quasar.control-plane:start-control-plane plane)
@@ -68,7 +79,11 @@
                               "autodig.run.start"
                               "autodig.run.pause"
                               "autodig.run.resume"
-                              "autodig.run.stop"))
+                              "autodig.run.stop"
+                              "autodig.worker.claim"
+                              "autodig.worker.heartbeat"
+                              "autodig.worker.complete"
+                              "autodig.worker.fail"))
              (autodig-check (member command capabilities :test #'string=))))
       (quasar.control-plane:stop-control-plane plane))))
 
@@ -229,6 +244,82 @@
                                    "autodig.invalid-transition")))
       (quasar.control-plane:stop-control-plane plane))))
 
+(defun test-autodig-worker-claim-is-fenced-and-user-control-invalidates-lease ()
+  (let ((plane (quasar.control-plane:make-control-plane)))
+    (quasar.control-plane:start-control-plane plane)
+    (unwind-protect
+         (let* ((start (start-autodig-run plane
+                                          "worker-claim-request"
+                                          "worker.example"
+                                          "worker-workspace"))
+                (run-id (autodig-run-id start))
+                (claim (and run-id
+                            (worker-autodig-command
+                             plane "autodig.worker.claim" run-id
+                             "worker-workspace" "worker-a")))
+                (lease-id (and (autodig-ok-result claim)
+                               (jsown:val (result claim) "leaseId")))
+                (duplicate-claim
+                  (and run-id
+                       (worker-autodig-command
+                        plane "autodig.worker.claim" run-id
+                        "worker-workspace" "worker-b")))
+                (heartbeat
+                  (and lease-id
+                       (worker-autodig-command
+                        plane "autodig.worker.heartbeat" run-id
+                        "worker-workspace" "worker-a" :lease-id lease-id)))
+                (pause
+                  (and run-id
+                       (transition-autodig-run
+                        plane "autodig.run.pause" run-id
+                        "worker-workspace" "pause-worker-run")))
+                (stale-complete
+                  (and lease-id
+                       (worker-autodig-command
+                        plane "autodig.worker.complete" run-id
+                        "worker-workspace" "worker-a" :lease-id lease-id
+                        :outcome (quasar.protocol:json-object
+                                  (cons "summary" "should not commit")))))
+                (resume
+                  (and run-id
+                       (transition-autodig-run
+                        plane "autodig.run.resume" run-id
+                        "worker-workspace" "resume-worker-run")))
+                (reclaim
+                  (and run-id
+                       (worker-autodig-command
+                        plane "autodig.worker.claim" run-id
+                        "worker-workspace" "worker-c")))
+                (new-lease (and (autodig-ok-result reclaim)
+                                (jsown:val (result reclaim) "leaseId")))
+                (complete
+                  (and new-lease
+                       (worker-autodig-command
+                        plane "autodig.worker.complete" run-id
+                        "worker-workspace" "worker-c" :lease-id new-lease
+                        :outcome (quasar.protocol:json-object
+                                  (cons "summary" "published"))))))
+           (autodig-check (string= (status claim) "ok"))
+           (autodig-check (and lease-id (plusp (length lease-id))))
+           (autodig-check (string= (jsown:val (result claim) "status") "active"))
+           (autodig-check (string= (status duplicate-claim) "error"))
+           (autodig-check (string= (error-code duplicate-claim)
+                                   "autodig.claim-conflict"))
+           (autodig-check (string= (status heartbeat) "ok"))
+           (autodig-check (string= (jsown:val (result pause) "status") "paused"))
+           (autodig-check (string= (status stale-complete) "error"))
+           (autodig-check (string= (error-code stale-complete)
+                                   "autodig.stale-worker"))
+           (autodig-check (string= (jsown:val (result resume) "status") "queued"))
+           (autodig-check (string= (status reclaim) "ok"))
+           (autodig-check (not (string= lease-id new-lease)))
+           (autodig-check (string= (jsown:val (result complete) "status") "completed"))
+           (autodig-check (string= (jsown:val (jsown:val (result complete) "outcome")
+                                              "summary")
+                                   "published")))
+      (quasar.control-plane:stop-control-plane plane))))
+
 (defun run-autodig-control-tests ()
   (setf *autodig-control-failures* 0)
   (test-autodig-capabilities-are-discoverable)
@@ -238,6 +329,7 @@
   (test-autodig-retried-start-is-idempotent)
   (test-autodig-list-is-bounded-and-status-is-summary)
   (test-autodig-pause-resume-stop-transitions)
+  (test-autodig-worker-claim-is-fenced-and-user-control-invalidates-lease)
   (when (plusp *autodig-control-failures*)
     (error "~D Auto-Dig control test(s) failed." *autodig-control-failures*))
   (format t "~&Auto-Dig control tests passed.~%")
