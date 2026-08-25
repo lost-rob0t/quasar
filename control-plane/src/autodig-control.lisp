@@ -218,7 +218,7 @@
 (defun autodig-worker-lease-expired-p (run)
   (let ((last-seen (or (quasar.protocol:json-value run "heartbeatAt")
                        (quasar.protocol:json-value run "claimedAt"))))
-    (and (integerp last-seen)
+    (and (realp last-seen)
          (>= (- (get-universal-time) last-seen)
              +autodig-worker-lease-timeout-seconds+))))
 
