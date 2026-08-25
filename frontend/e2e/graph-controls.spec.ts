@@ -76,7 +76,7 @@ test("uses left click select, left drag pan, and right drag box select", async (
   const dismissNotice = page.getByRole("button", { name: "Dismiss notification" });
   if (await dismissNotice.isVisible()) await dismissNotice.click();
 
-  await page.getByRole("button", { name: "Focus selection" }).click();
+  await page.getByRole("button", { name: "Focus", exact: true }).click();
   await page.waitForTimeout(400);
 
   const bounds = await canvas.boundingBox();
