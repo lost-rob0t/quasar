@@ -73,7 +73,20 @@ jobs:
         run: ./node_modules/.bin/playwright install --with-deps chromium
 
       - name: Real-stack desktop, mobile, mutation, and reload paths
-        run: npm run test:e2e
+        run: npm run test:e2e -- --reporter=github,html
+        env:
+          PLAYWRIGHT_HTML_OPEN: never
+
+      - name: Upload Playwright failure diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-failure-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
 
       - name: Packaged production build, serve, routing, PWA, and security smoke
         run: npm run smoke:production
