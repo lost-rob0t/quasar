@@ -2,6 +2,7 @@
 
 (defparameter +autodig-default-list-limit+ 20)
 (defparameter +autodig-max-list-limit+ 100)
+(defparameter +autodig-worker-lease-timeout-seconds+ 300)
 (defparameter +autodig-public-run-fields+
   '("runId" "requestId" "workspaceId" "target" "status" "enqueued"
     "createdAt" "updatedAt" "outcome" "error"))
@@ -214,13 +215,25 @@
     "workerId" "autodig.invalid-request")
    (quasar.protocol:json-value payload "leaseId")))
 
+(defun autodig-worker-lease-expired-p (run)
+  (let ((last-seen (or (quasar.protocol:json-value run "heartbeatAt")
+                       (quasar.protocol:json-value run "claimedAt"))))
+    (and (integerp last-seen)
+         (>= (- (get-universal-time) last-seen)
+             +autodig-worker-lease-timeout-seconds+))))
+
+(defun autodig-worker-claimable-p (run)
+  (or (string= (autodig-run-status run) "queued")
+      (and (string= (autodig-run-status run) "active")
+           (autodig-worker-lease-expired-p run))))
+
 (defun autodig-worker-claim (plane payload envelope)
   (let* ((workspace-id (autodig-workspace-id envelope))
          (run (autodig-require-run plane workspace-id payload))
          (worker-id (quasar.protocol:ensure-string
                      (quasar.protocol:json-value payload "workerId")
                      "workerId" "autodig.invalid-request")))
-    (unless (string= (autodig-run-status run) "queued")
+    (unless (autodig-worker-claimable-p run)
       (error 'quasar.protocol:quasar-error
              :code "autodig.claim-conflict"
              :message "The Auto-Dig run is not available for claim."))
