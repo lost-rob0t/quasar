@@ -21,10 +21,11 @@
     "test:e2e": "npm --prefix frontend run test:e2e",
     "test:integration:stack": "node scripts/smoke-startup.mjs",
     "check:control-plane-deps": "node scripts/check-control-plane-deps.mjs",
+    "check:record-bounded-mutations": "node scripts/check-record-bounded-mutations.mjs",
     "typecheck": "npm --prefix frontend run typecheck",
     "lint": "npm --prefix frontend run lint",
     "format": "npm --prefix frontend run format",
-    "check": "npm --prefix frontend run check && node scripts/check-control-plane-deps.mjs"
+    "check": "npm --prefix frontend run check && node scripts/check-control-plane-deps.mjs && node scripts/check-record-bounded-mutations.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.2.0",

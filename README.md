@@ -31,7 +31,7 @@ star-bbpd                       other actor services
 
 `star-bbpd`, for example, is an external Python/Pykka actor service that consumes RabbitMQ targets, runs reconnaissance tools such as Subfinder, Nmap, Httpx, Katana and DNS workflows, and publishes derived StarIntel documents and relations. Those capabilities are not reimplemented inside the browser UI.
 
-See [Architecture](docs/ARCHITECTURE.md), the [Tek9 storage ADR](docs/ADR-TEK9-WORKSPACE-STORAGE.md), the [UI migration ledger](docs/UI-MIGRATION.md), and the [capability boundary](docs/CAPABILITY-BOUNDARY.md) for the detailed ownership split.
+See [Architecture](docs/ARCHITECTURE.md), the [Tek9 storage ADR](docs/ADR-TEK9-WORKSPACE-STORAGE.md), the [record-bounded mutation ADR](docs/ADR-RECORD-BOUNDED-MUTATIONS.md), the [UI migration ledger](docs/UI-MIGRATION.md), and the [capability boundary](docs/CAPABILITY-BOUNDARY.md) for the detailed ownership split.
 
 ## Architecture
 
@@ -40,8 +40,14 @@ See [Architecture](docs/ARCHITECTURE.md), the [Tek9 storage ADR](docs/ADR-TEK9-W
 - Common Lisp owns canonical documents, named graph definitions, committed
   graph presentation state, revisions, transactions, and the operation journal.
 - Tek9 is the canonical local embedded document/graph store and LMDB is the
-  durable engine beneath it. The active Lisp workspace remains a compatibility
-  working cache during Phase 1 of issue #24.
+  durable engine beneath it. Ordinary Tek9 mutations use a record-level overlay
+  rather than a fully materialized canonical workspace candidate.
+- Direct document reads, paged snapshots, durable import staging/promotion, and
+  ordinary Tek9 mutations are bounded-memory paths. Mutation memory is
+  proportional to the explicitly touched records plus validation dependencies,
+  not the unrelated workspace corpus.
+- The legacy full-workspace cache remains a compatibility structure, not durable
+  authority, and ordinary Tek9 mutations do not populate it.
 - Cytoscape is a presentation projection. PouchDB is populated only when an
   explicit CouchDB synchronization needs browser-local staging. Migrated
   document and graph writes never fall back to PouchDB.
@@ -103,12 +109,18 @@ an existing store.
 Run commands from the repository root:
 
 ```sh
-npm run check              # format, lint, types, boundaries, static syntax
+npm run check              # format, lint, types, boundaries, mutation architecture guard
 npm run test               # Common Lisp + all frontend unit/integration tests
 npm run smoke              # real Vite/CLOG/WebSocket command exchange
 npm run test:e2e           # Playwright against the complete real stack
 npm run smoke:production   # fresh install, package, serve, route/PWA/security smoke
 ```
+
+The Common Lisp suite includes restart/failure tests, Phase 2 bounded-read and
+durable-import tests, Phase 3 record-bounded mutation tests, 1k-vs-10k retained
+working-set comparisons, and a real 10,000-document Tek9 corpus. The structural
+mutation guard rejects production paths that regress to full-workspace loading,
+private Tek9 APIs, or raw LMDB access.
 
 Playwright uses an isolated authorized workspace per test and covers desktop,
 mobile, real UI mutation, graph membership, reload, and authoritative snapshot
@@ -135,24 +147,32 @@ manifest, and service-worker scope use that same base path.
 ## Protocol and durable graph contract
 
 Commands and responses use `quasar.control.v1` envelopes with correlated IDs,
-stable error codes, and workspace metadata. Successful mutations first apply to
-an isolated candidate. One Tek9/LMDB transaction then commits only the affected
-document/graph records, workspace revision/settings metadata, graph topology and
-adjacency, and one journal entry before the live workspace is replaced,
-acknowledged, or broadcast.
+stable error codes, and workspace metadata. Production Tek9 mutations read
+workspace metadata plus only records required by the operation, apply and
+validate against a bounded record-level overlay, and compile the existing typed
+persistence changes. One Tek9/LMDB transaction then commits the affected
+canonical records/topology, workspace metadata and revision, and one journal
+entry. Success events are emitted only after that durable transaction commits.
+
+Transactions use the same overlay in deterministic operation order and provide
+read-your-own-writes. Memory may grow with the transaction's explicit touched
+records and validation dependencies, but not with unrelated workspace size. The
+bounded transaction budget is 1000 child operations.
 
 StarIntel documents and relation documents are the intelligence records. A
 named graph stores membership plus committed positions, viewport, layout, and
 groups. Optional graph node/edge records are view records whose document and
 endpoint references are validated; they are not a second intelligence corpus.
 The `all-documents` graph projects the full corpus with `documentIds: null`.
-Selection, pan/zoom frames, and editing state remain browser-local.
+Selection, pan/zoom frames, and editing state remain browser-local. Relation
+documents cannot be deleted while a live graph edge still references them.
 
 Implemented durable commands include:
 
 - `workspace.snapshot`, `workspace.transaction`
 - `document.list`, `document.get`, `document.create`, `document.update`,
   `document.delete`
+- `document.import.begin/chunk/commit/abort`
 - `graph.snapshot`, `graph.workspace.put`, `graph.workspace.delete`,
   `graph.workspace.activate`
 - `graph.node.*`, `graph.edge.*`
@@ -161,10 +181,10 @@ Implemented durable commands include:
 Transaction child events have unique operation IDs, a shared transaction ID,
 one committed revision, stable order, event index, and event count.
 File imports are fully prevalidated in the browser, then large corpora are sent
-as ordered, size-bounded chunks below the WebSocket security limit. Lisp still
-stages those chunks in an isolated heap-resident candidate during this phase;
-the final import commit is atomic and durable in Tek9. Durable streaming staging
-and bounded-memory reads/imports remain follow-on work under issue #24.
+as ordered, size-bounded chunks below the WebSocket security limit. Import
+sessions are durably staged in Tek9 with ordered chunk identity, budgets,
+restart-safe promotion/abort, and bounded cleanup. Promotion remains one atomic
+durable commit before success is emitted.
 
 ## Transitional boundaries
 
