@@ -13,7 +13,7 @@
                      "autodig.worker.complete"
                      "autodig.worker.fail"))
     (autodig-ws-check
-     (not (member command quasar.ws:+default-capabilities+ :test #'string=)))))
+     (not (member command quasar.ws::+default-capabilities+ :test #'string=)))))
 
 (defun test-autodig-worker-session-is-least-privilege ()
   (let* ((plane (quasar.control-plane:make-control-plane))
