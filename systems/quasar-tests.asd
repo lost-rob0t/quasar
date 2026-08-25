@@ -3,7 +3,7 @@
   :author "lost-rob0t"
   :license "AGPL-3.0-only"
   :version "0.2.0"
-  :depends-on ("quasar-control"
+  :depends-on ("quasar-web"
                "quasar-starlang")
   :serial t
   :pathname "../control-plane/tests/"
