@@ -139,57 +139,63 @@
 (defun dispatch-message (plane message)
   ;; Loaded after Melissa's async-control-plane extension, so this preserves
   ;; async dispatch while making every command/error visible in debug output.
-  (destructuring-bind (&key envelope reply) message
-    (let* ((id (quasar.protocol:command-envelope-id envelope))
-           (command (quasar.protocol:command-envelope-command envelope))
-           (payload (quasar.protocol:command-envelope-payload envelope))
-           (handler (gethash command (control-plane-handlers plane)))
-           (async-table (gethash plane *async-handler-tables*))
-           (async-handler (and async-table (gethash command async-table)))
-           (workspace (or (quasar.protocol:command-envelope-workspace envelope) "default"))
-           (client (or (quasar.protocol:command-envelope-client envelope) "unknown")))
-      (diagnostic-log :debug "control-plane" "command.received"
-                      :request-id id
-                      :command command
-                      :workspace workspace
-                      :client client
-                      :async (if async-handler t nil))
-      (handler-case
-          (cond
-            (async-handler
-             (diagnostic-log :debug "control-plane" "command.async-dispatch"
-                             :request-id id :command command :workspace workspace)
-             (funcall async-handler id payload envelope reply))
-            (handler
-             (let ((result (funcall handler payload envelope)))
-               (diagnostic-log :debug "control-plane" "command.ok"
+  ;; Principal and authority-kind are server-side actor metadata; they are
+  ;; deliberately never read from the client command envelope or logged.
+  (destructuring-bind (&key envelope reply principal
+                            (authority-kind :internal))
+      message
+    (let ((*command-principal* principal)
+          (*command-authority-kind* authority-kind))
+      (let* ((id (quasar.protocol:command-envelope-id envelope))
+             (command (quasar.protocol:command-envelope-command envelope))
+             (payload (quasar.protocol:command-envelope-payload envelope))
+             (handler (gethash command (control-plane-handlers plane)))
+             (async-table (gethash plane *async-handler-tables*))
+             (async-handler (and async-table (gethash command async-table)))
+             (workspace (or (quasar.protocol:command-envelope-workspace envelope) "default"))
+             (client (or (quasar.protocol:command-envelope-client envelope) "unknown")))
+        (diagnostic-log :debug "control-plane" "command.received"
+                        :request-id id
+                        :command command
+                        :workspace workspace
+                        :client client
+                        :async (if async-handler t nil))
+        (handler-case
+            (cond
+              (async-handler
+               (diagnostic-log :debug "control-plane" "command.async-dispatch"
                                :request-id id :command command :workspace workspace)
-               (funcall reply (quasar.protocol:encode-result id result))))
-            (t
-             (diagnostic-log :warn "control-plane" "command.unknown"
-                             :request-id id :command command :workspace workspace)
-             (funcall reply
-                      (quasar.protocol:encode-error
-                       id "protocol.unknown-command"
-                       (format nil "Unknown command ~A." command)
-                       (quasar.protocol:empty-object)))))
-        (quasar.protocol:quasar-error (condition)
-          (diagnostic-log :error "control-plane" "command.failed"
-                          :request-id id
-                          :command command
-                          :workspace workspace
-                          :code (quasar.protocol:quasar-error-code condition)
-                          :message (quasar.protocol:quasar-error-message condition)
-                          :details (safe-error-details condition))
-          (funcall reply (quasar.protocol:quasar-error-to-envelope id condition)))
-        (error (condition)
-          (diagnostic-log :error "control-plane" "command.crashed"
-                          :request-id id
-                          :command command
-                          :workspace workspace
-                          :condition (princ-to-string condition))
-          (funcall reply
-                   (quasar.protocol:encode-error
-                    id "control-plane.unavailable"
-                    "The control plane could not process the command."
-                    (quasar.protocol:empty-object))))))))
+               (funcall async-handler id payload envelope reply))
+              (handler
+               (let ((result (funcall handler payload envelope)))
+                 (diagnostic-log :debug "control-plane" "command.ok"
+                                 :request-id id :command command :workspace workspace)
+                 (funcall reply (quasar.protocol:encode-result id result))))
+              (t
+               (diagnostic-log :warn "control-plane" "command.unknown"
+                               :request-id id :command command :workspace workspace)
+               (funcall reply
+                        (quasar.protocol:encode-error
+                         id "protocol.unknown-command"
+                         (format nil "Unknown command ~A." command)
+                         (quasar.protocol:empty-object)))))
+          (quasar.protocol:quasar-error (condition)
+            (diagnostic-log :error "control-plane" "command.failed"
+                            :request-id id
+                            :command command
+                            :workspace workspace
+                            :code (quasar.protocol:quasar-error-code condition)
+                            :message (quasar.protocol:quasar-error-message condition)
+                            :details (safe-error-details condition))
+            (funcall reply (quasar.protocol:quasar-error-to-envelope id condition)))
+          (error (condition)
+            (diagnostic-log :error "control-plane" "command.crashed"
+                            :request-id id
+                            :command command
+                            :workspace workspace
+                            :condition (princ-to-string condition))
+            (funcall reply
+                     (quasar.protocol:encode-error
+                      id "control-plane.unavailable"
+                      "The control plane could not process the command."
+                      (quasar.protocol:empty-object)))))))))
