@@ -224,6 +224,7 @@
     #:websocket-server-started-p
     #:register-websocket-session
     #:register-autodig-worker-session
+    #:register-autodig-client-session
     #:websocket-audit-records
     #:attach-subscriber
     #:detach-subscriber))
