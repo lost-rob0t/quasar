@@ -40,6 +40,7 @@
   (validate-explicit-workspaces workspaces "Auto-Dig worker")
   (register-websocket-session
    server token principal workspaces
+   :authority-kind :internal
    :capabilities +autodig-worker-capabilities+))
 
 (defun delegated-autodig-capabilities (scopes)
@@ -72,4 +73,5 @@ for validating the StarIntel credential and principal before registration."
   (validate-explicit-workspaces workspaces "Delegated Auto-Dig user")
   (register-websocket-session
    server token principal workspaces
+   :authority-kind :delegated-user
    :capabilities (delegated-autodig-capabilities scopes)))

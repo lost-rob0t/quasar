@@ -28,6 +28,7 @@
       (autodig-ws-check (string= (getf session :principal)
                                  "scheduled-autodig-worker"))
       (autodig-ws-check (equal (getf session :workspaces) (list workspace)))
+      (autodig-ws-check (eq (getf session :authority-kind) :internal))
       (dolist (command '("autodig.status"
                          "autodig.run.get"
                          "autodig.run.list"
@@ -72,6 +73,7 @@
       (when session
         (autodig-ws-check (string= (getf session :principal) "human-user-1"))
         (autodig-ws-check (equal (getf session :workspaces) '("shared-workspace")))
+        (autodig-ws-check (eq (getf session :authority-kind) :delegated-user))
         (dolist (command '("autodig.status"
                            "autodig.run.get"
                            "autodig.run.list"))
@@ -100,6 +102,7 @@
            (capabilities (and session (getf session :capabilities))))
       (autodig-ws-check session)
       (when session
+        (autodig-ws-check (eq (getf session :authority-kind) :delegated-user))
         (dolist (command '("autodig.status"
                            "autodig.run.get"
                            "autodig.run.list"
@@ -140,6 +143,71 @@
      (null (gethash "delegated-no-autodig"
                     (quasar.ws::websocket-server-sessions server))))))
 
+(defun websocket-submit-function ()
+  (multiple-value-bind (symbol status)
+      (find-symbol "SUBMIT-CONNECTION-COMMAND" "QUASAR.WS")
+    (declare (ignore status))
+    (and symbol (fboundp symbol) (symbol-function symbol))))
+
+(defun test-live-websocket-dispatch-carries-trusted-principal ()
+  (let* ((plane (quasar.control-plane:make-control-plane))
+         (submit (websocket-submit-function)))
+    (autodig-ws-check submit)
+    (when submit
+      (quasar.control-plane:start-control-plane plane)
+      (unwind-protect
+           (let* ((connection
+                    (make-instance 'quasar.ws::ws-connection
+                                   :id "delegated-live"
+                                   :ws nil
+                                   :session-id "session-live"
+                                   :principal "human-live"
+                                   :authority-kind :delegated-user
+                                   :authorized-workspaces '("shared-workspace")
+                                   :capabilities '("autodig.run.start")))
+                  (response nil)
+                  (encoded
+                    (make-envelope
+                     "autodig.run.start"
+                     (quasar.protocol:json-object
+                      (cons "requestId" "live-request")
+                      (cons "target" "live.example"))
+                     :id "live-start"
+                     :workspace "shared-workspace")))
+             (funcall submit
+                      plane connection encoded
+                      (lambda (value) (setf response value)))
+             (loop until response
+                   for index below 1000
+                   do (sleep 0.01))
+             (autodig-ws-check (response-ok-p response))
+             (when response
+               (autodig-ws-check (not (search "human-live" response))))
+             (let ((other-response nil))
+               (funcall submit
+                        plane
+                        (make-instance 'quasar.ws::ws-connection
+                                       :id "delegated-other"
+                                       :ws nil
+                                       :session-id "session-other"
+                                       :principal "human-other"
+                                       :authority-kind :delegated-user
+                                       :authorized-workspaces '("shared-workspace")
+                                       :capabilities '("autodig.run.get"))
+                        (make-envelope
+                         "autodig.run.get"
+                         (quasar.protocol:json-object
+                          (cons "runId" (autodig-run-id response)))
+                         :id "live-cross-user"
+                         :workspace "shared-workspace")
+                        (lambda (value) (setf other-response value)))
+               (loop until other-response
+                     for index below 1000
+                     do (sleep 0.01))
+               (autodig-ws-check
+                (response-error-code-is-p other-response "autodig.run-not-found"))))
+        (quasar.control-plane:stop-control-plane plane)))))
+
 (defun run-autodig-websocket-auth-tests ()
   (setf *autodig-websocket-auth-failures* 0)
   (test-standard-websocket-session-excludes-worker-authority)
@@ -147,6 +215,7 @@
   (test-delegated-autodig-read-session-is-read-only)
   (test-delegated-autodig-control-session-is-narrow)
   (test-delegated-autodig-session-rejects-unrelated-scopes)
+  (test-live-websocket-dispatch-carries-trusted-principal)
   (when (plusp *autodig-websocket-auth-failures*)
     (error "Auto-Dig WebSocket auth tests failed: ~D"
            *autodig-websocket-auth-failures*))
