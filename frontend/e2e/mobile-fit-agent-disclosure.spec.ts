@@ -81,10 +81,10 @@ test("keeps the graph canvas inside the shared mobile shell with three primary c
   await page.locator(".graph-stage").click({ button: "right", position: { x: 180, y: 300 } });
   const radial = page.locator(".graph-context-menu.canvas-actions");
   await expect(radial).toBeVisible();
-  await expect(radial.getByRole("menuitem", { name: /Create node/ })).toBeVisible();
-  await expect(radial.getByRole("menuitem", { name: /Graph/ })).toBeVisible();
-  await expect(radial.getByRole("menuitem", { name: /Layout/ })).toBeVisible();
-  await expect(radial.getByRole("menuitem", { name: /Ingest/ })).toBeVisible();
+  await expect(radial.getByRole("menuitem", { name: "Create node", exact: true })).toBeVisible();
+  await expect(radial.getByRole("menuitem", { name: "Graph", exact: true })).toBeVisible();
+  await expect(radial.getByRole("menuitem", { name: "Layout", exact: true })).toBeVisible();
+  await expect(radial.getByRole("menuitem", { name: "Ingest", exact: true })).toBeVisible();
 });
 
 test("collapses thinking and tool output until expanded", async ({ page }) => {

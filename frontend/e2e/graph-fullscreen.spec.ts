@@ -19,6 +19,9 @@ test("expands only the graph workspace while preserving the global shell", async
   const defaultBounds = await stage.boundingBox();
   expect(defaultBounds).not.toBeNull();
 
+  const dismissNotice = page.getByRole("button", { name: "Dismiss notification" });
+  if (await dismissNotice.isVisible()) await dismissNotice.click();
+
   await page.getByRole("button", { name: "Enter full viewport" }).click();
   await expect(page.locator("body")).toHaveClass(/graph-viewport-full/);
   await expect(sidebar).toBeVisible();

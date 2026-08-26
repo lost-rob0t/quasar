@@ -5,6 +5,7 @@ test("imports a corpus larger than one control-plane message without disconnecti
 }) => {
   test.setTimeout(120_000);
   const count = 2_001;
+  const formattedCount = count.toLocaleString("en-US");
   const runId = Date.now().toString(36);
   const stamp = "2026-01-01T00:00:00.000Z";
   const documents = Array.from({ length: count }, (_, index) => ({
@@ -41,12 +42,15 @@ test("imports a corpus larger than one control-plane message without disconnecti
   await expect(page.getByText("The Common Lisp control plane disconnected.")).toHaveCount(0);
 
   await page.reload();
-  await expect(page.locator(".sidebar")).toContainText(`${count} documents`, { timeout: 90_000 });
+  await expect(page.locator(".sidebar")).toContainText(`${formattedCount} documents`, {
+    timeout: 90_000
+  });
   await expect(page.getByText("The Common Lisp control plane disconnected.")).toHaveCount(0);
 
   await page.goto("/graph?review=all");
   await expect(page.getByRole("heading", { name: "Graph load blocked" })).toHaveCount(0);
   await expect(page.locator(".graph-canvas")).toBeVisible({ timeout: 90_000 });
-  await expect(page.locator(".graph-count")).toContainText(`${count} nodes`, { timeout: 90_000 });
+  const graphCount = page.locator(".graph-count");
+  await expect(graphCount).toContainText(`${count} nodes`, { timeout: 90_000 });
   await expect(page.getByText("The Common Lisp control plane disconnected.")).toHaveCount(0);
 });

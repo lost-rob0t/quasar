@@ -42,7 +42,7 @@ test("creates a graph node through the compact editor and preserves its full-edi
   await expect(page.getByRole("heading", { name: "Start a blank graph" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add graph document" })).toBeVisible();
   await expect(page.getByLabel("Dataset filter", { exact: true })).toBeVisible();
-  await expect(page.getByLabel("Graph layout", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Maltego graph layout", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Enter blank canvas" }).click();
   await page.locator(".graph-stage").click({ button: "right", position: { x: 240, y: 220 } });
@@ -99,7 +99,7 @@ test.describe("responsive application shell", () => {
     await expect(page.getByLabel("Graph statistics")).toBeVisible();
     await expect(page.getByLabel("Graph workspace dock")).toBeVisible();
     await expect(page.getByLabel("Dataset filter", { exact: true })).toBeVisible();
-    await expect(page.getByLabel("Graph layout", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Maltego graph layout", { exact: true })).toBeVisible();
   });
 
   test("uses gesture navigation without horizontal page overflow on mobile", async ({ page }) => {
