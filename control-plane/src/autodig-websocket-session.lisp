@@ -23,6 +23,9 @@
     "autodig.run.stop")
   "Mutation commands granted by canonical StarIntel Auto-Dig control authority.")
 
+(defparameter +delegated-autodig-session-max-ttl-seconds+ 60
+  "Maximum lifetime for a delegated Auto-Dig WebSocket handshake token.")
+
 (defun validate-explicit-workspaces (workspaces session-kind)
   (unless (and (listp workspaces)
                workspaces
@@ -75,3 +78,36 @@ for validating the StarIntel credential and principal before registration."
    server token principal workspaces
    :authority-kind :delegated-user
    :capabilities (delegated-autodig-capabilities scopes)))
+
+(defun register-trusted-delegated-autodig-session
+    (server trusted-caller principal workspaces scopes &key (ttl-seconds 30))
+  "Mint a one-time short-lived delegated session from trusted adapter context.
+
+TRUSTED-CALLER is an authenticated service identity supplied by the private
+adapter boundary, never by the public command envelope. Canonical StarIntel
+scopes are mapped server-side; callers cannot submit Quasar capabilities."
+  (quasar.protocol:ensure-string
+   trusted-caller "trusted caller" "security.unauthorized")
+  (quasar.protocol:ensure-string principal "principal" "security.unauthorized")
+  (validate-explicit-workspaces workspaces "Delegated Auto-Dig user")
+  (when (member "*" workspaces :test #'string=)
+    (error 'quasar.protocol:quasar-error
+           :code "security.forbidden"
+           :message "Delegated Auto-Dig sessions may not use wildcard workspaces."))
+  (unless (and (integerp ttl-seconds)
+               (<= 0 ttl-seconds +delegated-autodig-session-max-ttl-seconds+))
+    (error 'quasar.protocol:quasar-error
+           :code "security.unauthorized"
+           :message "Delegated Auto-Dig session TTL is invalid."))
+  (let* ((token (random-session-id))
+         (expires-at (+ (get-universal-time) ttl-seconds)))
+    (register-websocket-session
+     server token principal workspaces
+     :authority-kind :delegated-user
+     :capabilities (delegated-autodig-capabilities scopes)
+     :expires-at expires-at
+     :one-time-p t)
+    (record-audit server "delegated-session-minted"
+                  :principal principal
+                  :outcome "accepted")
+    (list :token token :expires-at expires-at)))
