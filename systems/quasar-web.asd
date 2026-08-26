@@ -13,6 +13,8 @@
   :pathname "../control-plane/src/"
   :components ((:file "websocket-server")
                (:file "autodig-websocket-session")
+               (:file "delegated-session-lifecycle")
+               (:file "delegated-session-registration-http")
                (:file "actors/melissa/web-capabilities")
                (:file "clog-host")
                (:file "main"))
