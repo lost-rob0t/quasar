@@ -2,6 +2,11 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+build_only=0
+if [[ "${1:-}" == "--build-only" ]]; then
+  build_only=1
+  shift
+fi
 
 if [[ "$(uname -s)" == "Linux" \
   && -z "${IN_NIX_SHELL:-}" \
@@ -10,6 +15,9 @@ if [[ "$(uname -s)" == "Linux" \
   && -f "$repo_root/flake.nix" \
   && -x "$(command -v nix 2>/dev/null || true)" ]]; then
   echo "[production] Entering the repository Nix shell for native runtime libraries..."
+  if [[ "$build_only" -eq 1 ]]; then
+    exec nix develop -c env QUASAR_PRODUCTION_NIX_READY=1 bash scripts/run-production --build-only "$@"
+  fi
   exec nix develop -c env QUASAR_PRODUCTION_NIX_READY=1 bash scripts/run-production "$@"
 fi
 
@@ -31,6 +39,6 @@ sbcl --non-interactive \
 
 echo "Built quasar-server executable"
 
-if [[ "${1:-}" != "--build-only" ]]; then
-  exec "$repo_root/quasar-server"
+if [[ "$build_only" -eq 0 ]]; then
+  exec "$repo_root/quasar-server" "$@"
 fi
