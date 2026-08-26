@@ -15,5 +15,6 @@
                (:file "autodig-websocket-session")
                (:file "actors/melissa/web-capabilities")
                (:file "clog-host")
-               (:file "main"))
+               (:file "main")
+               (:file "configured-main"))
   :in-order-to ((test-op (test-op "quasar-tests"))))
