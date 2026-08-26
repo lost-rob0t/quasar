@@ -12,6 +12,7 @@
   :serial t
   :pathname "../control-plane/src/"
   :components ((:file "websocket-server")
+               (:file "autodig-websocket-session")
                (:file "actors/melissa/web-capabilities")
                (:file "clog-host")
                (:file "main"))

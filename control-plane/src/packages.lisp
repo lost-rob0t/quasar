@@ -223,6 +223,7 @@
     #:stop-websocket-server
     #:websocket-server-started-p
     #:register-websocket-session
+    #:register-autodig-worker-session
     #:websocket-audit-records
     #:attach-subscriber
     #:detach-subscriber))

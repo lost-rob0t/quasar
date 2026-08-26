@@ -26,6 +26,7 @@
                (:file "phase2-stage-cleanup")
                (:file "phase2-store-reads")
                (:file "control-plane")
+               (:file "autodig-control")
                (:file "phase2-control-plane")
                (:file "phase2-hardening")
                (:file "phase2-read-hardening")

@@ -117,7 +117,11 @@ ok =
     "scripts/run-control-plane"
   ) && ok;
 
-const testExpected = externalDeps(["systems/quasar-control.asd", "systems/quasar-starlang.asd"]);
+const testExpected = externalDeps([
+  "systems/quasar-control.asd",
+  "systems/quasar-starlang.asd",
+  "systems/quasar-web.asd"
+]);
 const testLispActual = new Set(parseQuickloadList("scripts/test-lisp"));
 ok = compare("scripts/test-lisp", testExpected, testLispActual, "scripts/test-lisp") && ok;
 
