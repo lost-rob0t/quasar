@@ -54,6 +54,8 @@
    (workspace :initarg :workspace :initform "default" :accessor ws-connection-workspace)
    (session-id :initarg :session-id :reader ws-connection-session-id)
    (principal :initarg :principal :initform "anonymous" :reader ws-connection-principal)
+   (authority-kind :initarg :authority-kind :initform :internal
+                   :reader ws-connection-authority-kind)
    (authorized-workspaces :initarg :authorized-workspaces
                           :reader ws-connection-authorized-workspaces)
    (capabilities :initarg :capabilities :reader ws-connection-capabilities)
@@ -62,7 +64,7 @@
    (command-count :initform 0 :accessor ws-connection-command-count)
    (window-start :initform (get-universal-time) :accessor ws-connection-window-start))
   (:documentation "Per-connection state: workspace subscription, session,
-  rate-limiting counters, and principal identity."))
+  rate-limiting counters, principal identity, and trusted authority kind."))
 
 (defclass websocket-server ()
   ((host :initarg :host :initform "127.0.0.1" :reader websocket-server-host)
@@ -116,11 +118,13 @@
                  :insecure-development-p insecure-development-p))
 
 (defun register-websocket-session (server token principal workspaces
-                                    &key (capabilities +default-capabilities+))
+                                    &key (capabilities +default-capabilities+)
+                                         (authority-kind :internal))
   (quasar.protocol:ensure-string token "session token" "security.unauthorized")
   (bt:with-lock-held ((websocket-server-lock server))
     (setf (gethash token (websocket-server-sessions server))
           (list :principal principal
+                :authority-kind authority-kind
                 :workspaces (copy-list workspaces)
                 :capabilities (copy-list capabilities))))
   token)
@@ -217,6 +221,13 @@
                        (ws-connection-id conn) condition)
         nil))))
 
+(defun submit-connection-command (plane connection encoded reply)
+  "Submit one command with server-authenticated connection authority."
+  (quasar.control-plane:submit-command
+   plane encoded reply
+   :principal (ws-connection-principal connection)
+   :authority-kind (ws-connection-authority-kind connection)))
+
 (defun handle-text-message (server conn message)
   (let ((plane (websocket-server-plane server)))
     (handler-case
@@ -261,8 +272,9 @@
                  (apply #'quasar.protocol:json-array
                         (sort (copy-list (ws-connection-capabilities conn))
                               #'string<))))
-               (quasar.control-plane:submit-command
+               (submit-connection-command
                 plane
+                conn
                 message
                 (lambda (response)
                   (send-connection-text conn response)))))
@@ -322,6 +334,7 @@
 (defun handshake-session (server env)
   (if (websocket-server-insecure-development-p server)
       (list :principal "insecure-development"
+            :authority-kind :internal
             :workspaces '("*")
             :capabilities (websocket-server-capabilities server))
       (bt:with-lock-held ((websocket-server-lock server))
@@ -353,6 +366,8 @@
                                                 :ws ws
                                                 :session-id (random-session-id)
                                                 :principal (getf session :principal)
+                                                :authority-kind
+                                                (getf session :authority-kind :internal)
                                                 :authorized-workspaces
                                                 (getf session :workspaces)
                                                 :capabilities
