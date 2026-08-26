@@ -13,6 +13,12 @@
     (declare (ignore status))
     (and symbol (fboundp symbol) (symbol-function symbol))))
 
+(defun delegated-registration-http-function ()
+  (multiple-value-bind (symbol status)
+      (find-symbol "HANDLE-DELEGATED-SESSION-REGISTRATION-REQUEST" "QUASAR.WS")
+    (declare (ignore status))
+    (and symbol (fboundp symbol) (symbol-function symbol))))
+
 (defun handshake-session-function ()
   (symbol-function (find-symbol "HANDSHAKE-SESSION" "QUASAR.WS")))
 
@@ -117,12 +123,85 @@
              (env (list :query-string (format nil "session=~A" token))))
         (autodig-session-check (null (funcall handshake server env)))))))
 
+(defun registration-env (secret body &key (path "/internal/v1/autodig/delegated-session"))
+  (list :request-method :post
+        :path-info path
+        :headers (list (cons "x-quasar-registration-secret" secret))
+        :raw-body (make-string-input-stream body)))
+
+(defun registration-response-status (response)
+  (first response))
+
+(defun registration-response-object (response)
+  (jsown:parse (first (third response))))
+
+(defun test-http-registration-requires-service-secret ()
+  (let* ((server (make-registration-server))
+         (function (delegated-registration-http-function))
+         (body "{\"principal\":\"human-a\",\"workspaces\":[\"workspace-a\"],\"scopes\":[\"starintel.autodig.read\"]}"))
+    (autodig-session-check function)
+    (when function
+      (let ((denied (funcall function server "expected-secret" "gateway-service"
+                             (registration-env "wrong-secret" body))))
+        (autodig-session-check (= (registration-response-status denied) 401))
+        (autodig-session-check
+         (null (quasar.protocol:json-value
+                (registration-response-object denied) "session")))))))
+
+(defun test-http-registration-rejects_capability_injection_and_wildcard ()
+  (let* ((server (make-registration-server))
+         (function (delegated-registration-http-function)))
+    (when function
+      (dolist (body
+               '("{\"principal\":\"human-a\",\"workspaces\":[\"*\"],\"scopes\":[\"starintel.autodig.read\"]}"
+                 "{\"principal\":\"human-a\",\"workspaces\":[\"workspace-a\"],\"scopes\":[\"starintel.autodig.read\"],\"capabilities\":[\"autodig.run.start\"]}"))
+        (let ((response
+                (funcall function server "expected-secret" "gateway-service"
+                         (registration-env "expected-secret" body))))
+          (autodig-session-check
+           (member (registration-response-status response) '(400 403))))))))
+
+(defun test-http-registration-mints_private_one_time_session ()
+  (let* ((server (make-registration-server))
+         (function (delegated-registration-http-function))
+         (handshake (handshake-session-function)))
+    (when function
+      (let* ((body "{\"principal\":\"human-a\",\"workspaces\":[\"workspace-a\"],\"scopes\":[\"starintel.autodig.read\",\"starintel.autodig.control\"],\"ttlSeconds\":30}")
+             (response
+               (funcall function server "expected-secret" "gateway-service"
+                        (registration-env "expected-secret" body)))
+             (object (registration-response-object response))
+             (token (quasar.protocol:json-value object "session"))
+             (expires-at (quasar.protocol:json-value object "expiresAt")))
+        (autodig-session-check (= (registration-response-status response) 201))
+        (autodig-session-check (and (stringp token) (plusp (length token))))
+        (autodig-session-check (integerp expires-at))
+        (autodig-session-check (not (search "expected-secret" (first (third response)))))
+        (let ((env (list :query-string (format nil "session=~A" token))))
+          (autodig-session-check (funcall handshake server env))
+          (autodig-session-check (null (funcall handshake server env))))))))
+
+(defun test-http-registration_is_private_route_only ()
+  (let* ((server (make-registration-server))
+         (function (delegated-registration-http-function))
+         (body "{\"principal\":\"human-a\",\"workspaces\":[\"workspace-a\"],\"scopes\":[\"starintel.autodig.read\"]}"))
+    (when function
+      (let ((response
+              (funcall function server "expected-secret" "gateway-service"
+                       (registration-env "expected-secret" body
+                                         :path "/v1/bixby/autodig/session"))))
+        (autodig-session-check (= (registration-response-status response) 404))))))
+
 (defun run-autodig-delegated-session-registration-tests ()
   (setf *autodig-session-registration-failures* 0)
   (test-registration-requires-trusted-caller)
   (test-registration-rejects-capability-and-workspace-injection)
   (test-registration-mints-one-time-expiring-session)
   (test-expired-registration-cannot-handshake)
+  (test-http-registration-requires-service-secret)
+  (test-http-registration-rejects_capability_injection_and_wildcard)
+  (test-http-registration-mints_private_one_time_session)
+  (test-http-registration_is_private_route_only)
   (when (plusp *autodig-session-registration-failures*)
     (error "Auto-Dig delegated session registration tests failed: ~D"
            *autodig-session-registration-failures*))
