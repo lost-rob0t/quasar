@@ -97,12 +97,36 @@
          (quasar.protocol:quasar-error () t)
          (error () t))))))
 
+(defun test-startup-wires-client-session-only-when-fully-configured ()
+  (let* ((plane (quasar.control-plane:make-control-plane))
+         (server (quasar.ws:make-websocket-server plane))
+         (token "configured-client-token"))
+    (autodig-ws-check
+     (null (quasar.app::register-configured-autodig-client-session
+            server nil nil nil)))
+    (autodig-ws-check
+     (handler-case
+         (progn
+           (quasar.app::register-configured-autodig-client-session
+            server token "service-principal" nil)
+           nil)
+       (quasar.protocol:quasar-error () t)
+       (error () t)))
+    (quasar.app::register-configured-autodig-client-session
+     server token "service-principal" '("*"))
+    (let ((session (gethash token (quasar.ws::websocket-server-sessions server))))
+      (autodig-ws-check session)
+      (autodig-ws-check
+       (equal (getf session :capabilities)
+              quasar.ws::+autodig-client-capabilities+)))))
+
 (defun run-autodig-websocket-auth-tests ()
   (setf *autodig-websocket-auth-failures* 0)
   (test-standard-websocket-session-excludes-worker-authority)
   (test-autodig-worker-session-is-least-privilege)
   (test-autodig-client-session-is-public-lifecycle-only)
   (test-autodig-client-session-rejects-invalid-authority-inputs)
+  (test-startup-wires-client-session-only-when-fully-configured)
   (when (plusp *autodig-websocket-auth-failures*)
     (error "Auto-Dig WebSocket auth tests failed: ~D"
            *autodig-websocket-auth-failures*))
