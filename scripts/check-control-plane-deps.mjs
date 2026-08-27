@@ -1,10 +1,19 @@
 #!/usr/bin/env node
-// Static guard against Common Lisp dependency/bootstrap and storage-boundary drift.
+// Static guard against Common Lisp dependency/bootstrap, native-runtime,
+// and storage-boundary drift.
 import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const repoRoot = new URL("../", import.meta.url).pathname;
 const expectedTek9Sha = "ca24ef35ea6877420cbca057dd7fb702fe29a740";
+const nativeNixPackages = ["openssl", "rabbitmq-c", "libffi", "sqlite", "lmdb"];
+const nativeAptPackages = [
+  "libffi-dev",
+  "libssl-dev",
+  "libsqlite3-dev",
+  "librabbitmq-dev",
+  "liblmdb-dev",
+];
 
 function readText(relativePath) {
   return readFileSync(join(repoRoot, relativePath), "utf-8");
@@ -73,6 +82,16 @@ function compare(label, expected, actualSet, scriptPath) {
   return false;
 }
 
+function checkContainsAll(label, text, required) {
+  const missing = required.filter((token) => !text.includes(token));
+  if (missing.length === 0) {
+    console.log(`  OK   ${label}: ${required.join(", ")}`);
+    return true;
+  }
+  console.error(`  FAIL ${label}: missing ${missing.join(", ")}`);
+  return false;
+}
+
 function walkFiles(directory) {
   const files = [];
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -117,6 +136,15 @@ ok =
     "scripts/run-control-plane"
   ) && ok;
 
+const runProductionActual = new Set(parseQuickloadList("scripts/run-production"));
+ok =
+  compare(
+    "scripts/run-production",
+    webExpected,
+    runProductionActual,
+    "scripts/run-production"
+  ) && ok;
+
 const testExpected = externalDeps([
   "systems/quasar-control.asd",
   "systems/quasar-starlang.asd",
@@ -131,6 +159,28 @@ if (/ql:quickload/.test(devMjs)) {
   ok = false;
 } else {
   console.log("  OK   scripts/dev.mjs delegates to scripts/run-control-plane");
+}
+if (!devMjs.includes("check-native-runtime.mjs")) {
+  console.error("  FAIL scripts/dev.mjs must preflight native shared libraries before starting services");
+  ok = false;
+} else {
+  console.log("  OK   scripts/dev.mjs preflights native shared libraries");
+}
+if (devMjs.includes("process.env.IN_NIX_SHELL")) {
+  console.error("  FAIL scripts/dev.mjs must not treat an unrelated Nix shell as the Quasar dev shell");
+  ok = false;
+} else {
+  console.log("  OK   scripts/dev.mjs requires the Quasar-specific dev-shell marker");
+}
+
+for (const scriptPath of ["scripts/run-production", "scripts/smoke-production.mjs"]) {
+  const text = readText(scriptPath);
+  if (text.includes("IN_NIX_SHELL")) {
+    console.error(`  FAIL ${scriptPath} must not treat an unrelated Nix shell as the Quasar repository shell`);
+    ok = false;
+  } else {
+    console.log(`  OK   ${scriptPath} requires a Quasar-specific repository-shell marker`);
+  }
 }
 
 const bootstrap = readText("scripts/bootstrap-lisp-deps");
@@ -150,6 +200,19 @@ if (!clogPin || !tek9Pin) {
     console.log(`  OK   Tek9 pin matches verified master ${expectedTek9Sha}`);
   }
 }
+ok =
+  checkContainsAll("Tek9 sibling checkout", bootstrap, [
+    "QUASAR_TEK9_PATH",
+    "$HOME/starintel/tek9",
+  ]) && ok;
+
+for (const scriptPath of ["scripts/run-control-plane", "scripts/run-production", "scripts/test-lisp"]) {
+  ok =
+    checkContainsAll(`${scriptPath} Tek9 source registry`, readText(scriptPath), [
+      "QUASAR_TEK9_PATH",
+      "$HOME/starintel/tek9",
+    ]) && ok;
+}
 
 const ciYml = readText(".github/workflows/ci.yml");
 if (/ql:quickload/.test(ciYml)) {
@@ -167,6 +230,28 @@ if (!ciYml.includes("bash scripts/bootstrap-lisp-deps")) {
 } else {
   console.log("  OK   .github/workflows/ci.yml delegates pinned Lisp sources to scripts/bootstrap-lisp-deps");
 }
+
+console.log("\nChecking native runtime dependency contract...");
+const flake = readText("flake.nix");
+const runControlPlane = readText("scripts/run-control-plane");
+ok = checkContainsAll("flake.nix runtimeLibs", flake, nativeNixPackages) && ok;
+ok =
+  checkContainsAll("flake.nix repository shell markers", flake, [
+    "export QUASAR_DEV_NIX_READY=1",
+    "export QUASAR_PRODUCTION_NIX_READY=1",
+    "export QUASAR_PRODUCTION_SMOKE_NIX_READY=1",
+  ]) && ok;
+ok = checkContainsAll("flake.nix Tek9 source registry", flake, ["QUASAR_TEK9_PATH", "$HOME/starintel/tek9"]) && ok;
+ok = checkContainsAll("scripts/run-control-plane Nix fallback", runControlPlane, nativeNixPackages) && ok;
+ok = checkContainsAll("CI Ubuntu native packages", ciYml, nativeAptPackages) && ok;
+ok =
+  checkContainsAll("CI runtime execution gates", ciYml, [
+    "node scripts/check-native-runtime.mjs",
+    "DeterminateSystems/nix-installer-action@v22",
+    "nix develop --command",
+    "env -u QUASAR_DEV_NIX_READY -u LD_LIBRARY_PATH IN_NIX_SHELL=impure npm run smoke",
+    "npm run smoke",
+  ]) && ok;
 
 console.log("\nChecking Quasar/Tek9 storage boundaries...");
 
@@ -199,8 +284,8 @@ ok =
 
 if (!ok) {
   console.error(
-    "\nDependency or storage-boundary drift detected. Fix the architecture instead of weakening this guard."
+    "\nDependency, runtime, or storage-boundary drift detected. Fix the architecture instead of weakening this guard."
   );
   process.exit(1);
 }
-console.log("\nAll Common Lisp dependency, bootstrap, and Phase 2 storage boundaries are consistent.");
+console.log("\nAll Common Lisp dependency, native runtime, bootstrap, and Phase 2 storage boundaries are consistent.");

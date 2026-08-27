@@ -16,7 +16,6 @@ let exiting = false;
 function enterNixDevelopmentShell() {
   if (
     process.platform !== "linux" ||
-    process.env.IN_NIX_SHELL ||
     process.env.QUASAR_DEV_NIX_READY ||
     !existsSync("/nix/store") ||
     !existsSync(join(repoRoot, "flake.nix"))
@@ -102,6 +101,20 @@ function validateExecutables() {
   }
 }
 
+function validateNativeRuntime() {
+  const check = spawnSync(process.execPath, [join(repoRoot, "scripts", "check-native-runtime.mjs")], {
+    cwd: repoRoot,
+    env: process.env,
+    encoding: "utf-8",
+    timeout: 10_000,
+  });
+  if (check.stdout) process.stdout.write(check.stdout);
+  if (check.stderr) process.stderr.write(check.stderr);
+  if (check.status !== 0) {
+    fail("Native runtime dependency preflight failed before service startup.");
+  }
+}
+
 function startProcess(name, command, args, options = {}) {
   const proc = spawn(command, args, {
     stdio: ["ignore", "pipe", "pipe"],
@@ -156,7 +169,7 @@ function shutdown(exitCode = 0) {
   }
 
   setTimeout(() => {
-    for (const { name, proc } of processes) {
+    for (const { proc } of processes) {
       if (!proc.killed) {
         try {
           proc.kill("SIGKILL");
@@ -178,6 +191,7 @@ console.log("Starting Quasar development stack...");
 console.log(`  repository: ${repoRoot}`);
 
 validateExecutables();
+validateNativeRuntime();
 validateDependencies();
 
 const env = { ...process.env };

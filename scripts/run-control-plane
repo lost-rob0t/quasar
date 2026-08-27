@@ -11,12 +11,16 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+tek9_path="${QUASAR_TEK9_PATH:-$HOME/starintel/tek9}"
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
 
 # Isolate ASDF source registry from user-local CL projects
-export CL_SOURCE_REGISTRY="(:source-registry (:tree \"$HOME/quicklisp/local-projects/\") (:tree \"$HOME/quicklisp/dists/quicklisp/software/\") (:tree \"$repo_root/systems/\") :ignore-inherited-configuration)"
+export CL_SOURCE_REGISTRY="(:source-registry (:tree \"$tek9_path/\") (:tree \"$HOME/quicklisp/local-projects/\") (:tree \"$HOME/quicklisp/dists/quicklisp/software/\") (:tree \"$repo_root/systems/\") :ignore-inherited-configuration)"
 
-for native_name in openssl lmdb; do
+# Best-effort support for direct invocation on Nix hosts outside nix develop.
+# npm run dev normally enters the flake shell first; this fallback must cover
+# every native runtime library Quasar declares, not an arbitrary subset.
+for native_name in openssl rabbitmq-c libffi sqlite lmdb; do
   native_lib="$(nix-store -q --requisites /nix/var/nix/profiles/default 2>/dev/null | grep -m1 "$native_name" || true)"
   if [[ -n "${native_lib}" && -d "${native_lib}/lib" ]]; then
     export LD_LIBRARY_PATH="${native_lib}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"

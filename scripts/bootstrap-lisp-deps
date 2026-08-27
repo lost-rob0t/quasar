@@ -8,13 +8,14 @@ CLOG_SHA="9ee022a97ab4109f2ff6d2b9c43ba6da286d6302"
 TEK9_SHA="ca24ef35ea6877420cbca057dd7fb702fe29a740"
 
 local_projects="${QUASAR_QUICKLISP_LOCAL_PROJECTS:-$HOME/quicklisp/local-projects}"
-mkdir -p "$local_projects"
+tek9_path="${QUASAR_TEK9_PATH:-$HOME/starintel/tek9}"
+mkdir -p "$local_projects" "$(dirname "$tek9_path")"
 
 sync_dependency() {
   local name="$1"
   local url="$2"
   local sha="$3"
-  local path="$local_projects/$name"
+  local path="$4"
 
   if [[ ! -d "$path/.git" ]]; then
     git clone --quiet "$url" "$path"
@@ -41,8 +42,8 @@ sync_dependency() {
   fi
 }
 
-sync_dependency "clog" "https://github.com/rabbibotton/clog.git" "$CLOG_SHA"
-sync_dependency "tek9" "https://github.com/lost-rob0t/tek9.git" "$TEK9_SHA"
+sync_dependency "clog" "https://github.com/rabbibotton/clog.git" "$CLOG_SHA" "$local_projects/clog"
+sync_dependency "tek9" "https://github.com/lost-rob0t/tek9.git" "$TEK9_SHA" "$tek9_path"
 
 printf 'Pinned Common Lisp dependencies ready:\n  CLOG %s\n  Tek9 %s\n' \
   "$CLOG_SHA" "$TEK9_SHA"
