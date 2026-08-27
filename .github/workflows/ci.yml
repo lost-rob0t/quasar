@@ -54,6 +54,9 @@ jobs:
           printf '%s\n' '(load #p"/home/runner/quicklisp/setup.lisp")' > /home/runner/.sbclrc
           bash scripts/bootstrap-lisp-deps
 
+      - name: Verify native runtime libraries are load-path visible
+        run: node scripts/check-native-runtime.mjs
+
       - name: Common Lisp transaction, persistence, and control-plane tests
         run: npm run test:lisp
 
@@ -66,7 +69,7 @@ jobs:
             exit 1
           fi
 
-      - name: Complete development stack smoke test
+      - name: Complete Ubuntu development stack smoke test
         run: npm run smoke
 
       - name: Install tracked Playwright browser runtime
@@ -90,3 +93,29 @@ jobs:
 
       - name: Packaged production build, serve, routing, PWA, and security smoke
         run: npm run smoke:production
+
+  nix-runtime:
+    name: Fresh Nix runtime + real startup
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v22
+
+      - name: Bootstrap and smoke test inside the repository flake
+        run: |
+          nix develop --command bash -lc '
+            set -euo pipefail
+            npm ci
+            curl --fail --silent --show-error --output /tmp/quicklisp.lisp https://beta.quicklisp.org/quicklisp.lisp
+            sbcl --non-interactive \
+              --load /tmp/quicklisp.lisp \
+              --eval "(quicklisp-quickstart:install :path #p\"$HOME/quicklisp/\")"
+            printf "%s\n" "(load #p\"$HOME/quicklisp/setup.lisp\")" > "$HOME/.sbclrc"
+            bash scripts/bootstrap-lisp-deps
+            node scripts/check-native-runtime.mjs
+            LOAD_ONLY=1 bash scripts/run-control-plane
+            npm run smoke
+          '
