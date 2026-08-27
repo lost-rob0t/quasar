@@ -31,6 +31,8 @@
               chromium
               gcc
               gnumake
+              curl
+              git
             ] ++ runtimeLibs;
 
             shellHook = ''
