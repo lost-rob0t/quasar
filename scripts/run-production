@@ -21,16 +21,20 @@ if [[ "$(uname -s)" == "Linux" \
   exec nix develop -c env QUASAR_PRODUCTION_NIX_READY=1 bash scripts/run-production "$@"
 fi
 
+export CL_SOURCE_REGISTRY="(:source-registry (:tree \"$HOME/quicklisp/local-projects/\") (:tree \"$HOME/quicklisp/dists/quicklisp/software/\") (:tree \"$repo_root/systems/\") :ignore-inherited-configuration)"
+
 # A single root install is the supported monorepo dependency path.
 cd "$repo_root"
+node scripts/check-native-runtime.mjs
 npm ci
 npm run build
 
-# Build the Lisp systems and save an executable.
+# Build the Lisp systems and save an executable. Keep this dependency list
+# identical to scripts/run-control-plane; CI statically guards the contract.
 sbcl --non-interactive \
   --eval '(setf asdf:*central-registry* nil)' \
   --eval '(asdf:clear-configuration)' \
-  --eval '(ql:quickload (list :babel :dexador :jsown :quri :sento :bordeaux-threads :clog :websocket-driver) :silent t)' \
+  --eval '(ql:quickload (list :babel :bordeaux-threads :clack :clog :dexador :jsown :quri :sento :tek9 :websocket-driver) :silent t)' \
   --eval '(asdf:load-asd (truename "systems/quasar-control.asd"))' \
   --eval '(asdf:load-asd (truename "systems/quasar-starlang.asd"))' \
   --eval '(asdf:load-asd (truename "systems/quasar-web.asd"))' \
