@@ -16,7 +16,6 @@ let exiting = false;
 function enterNixDevelopmentShell() {
   if (
     process.platform !== "linux" ||
-    process.env.IN_NIX_SHELL ||
     process.env.QUASAR_DEV_NIX_READY ||
     !existsSync("/nix/store") ||
     !existsSync(join(repoRoot, "flake.nix"))

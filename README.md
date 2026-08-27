@@ -67,9 +67,11 @@ npm run dev
 ```
 
 `scripts/bootstrap-lisp-deps` is the canonical source for git-pinned Common Lisp
-source dependencies such as CLOG and Tek9. It installs exact commits into
-Quicklisp `local-projects` and refuses to overwrite a dirty existing checkout.
-CI calls the same script rather than carrying a second set of dependency pins.
+source dependencies such as CLOG and Tek9. It installs CLOG into Quicklisp
+`local-projects` and keeps Tek9 as the sibling repository
+`$HOME/starintel/tek9`. Set `QUASAR_TEK9_PATH` to use another workspace root.
+The bootstrap refuses to overwrite a dirty existing checkout. CI calls the same
+script rather than carrying a second set of dependency pins.
 
 On Linux hosts with Nix available, plain `npm run dev` and
 `./scripts/run-production` automatically re-enter this repository's pinned Nix

@@ -36,13 +36,17 @@
             ] ++ runtimeLibs;
 
             shellHook = ''
+              export QUASAR_DEV_NIX_READY=1
+              export QUASAR_PRODUCTION_NIX_READY=1
+              export QUASAR_PRODUCTION_SMOKE_NIX_READY=1
+              export QUASAR_TEK9_PATH="''${QUASAR_TEK9_PATH:-$HOME/starintel/tek9}"
               export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeLibs}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
               export TMPDIR="/tmp"
               export TMP="/tmp"
               export TEMP="/tmp"
               export XDG_CONFIG_HOME="''${XDG_CONFIG_HOME:-$HOME/.config}"
               export XDG_CACHE_HOME="''${XDG_CACHE_HOME:-$HOME/.cache}"
-              export CL_SOURCE_REGISTRY="(:source-registry (:tree \"$HOME/quicklisp/local-projects/\") (:tree \"$HOME/quicklisp/dists/quicklisp/software/\") (:tree \"$PWD/systems/\") :ignore-inherited-configuration)"
+              export CL_SOURCE_REGISTRY="(:source-registry (:tree \"$QUASAR_TEK9_PATH/\") (:tree \"$HOME/quicklisp/local-projects/\") (:tree \"$HOME/quicklisp/dists/quicklisp/software/\") (:tree \"$PWD/systems/\") :ignore-inherited-configuration)"
               mkdir -p "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME"
               echo "Quasar monorepo dev environment ready"
               echo "  nix develop && npm ci && npm run dev"

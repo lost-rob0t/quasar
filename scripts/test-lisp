@@ -2,11 +2,12 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+tek9_path="${QUASAR_TEK9_PATH:-$HOME/starintel/tek9}"
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
 
 # Isolate ASDF source registry from user-local CL projects (e.g. Lem's qlot)
 # that may provide incompatible versions of named-readtables or other deps.
-export CL_SOURCE_REGISTRY="(:source-registry (:tree \"$HOME/quicklisp/local-projects/\") (:tree \"$HOME/quicklisp/dists/quicklisp/software/\") (:tree \"$repo_root/systems/\") :ignore-inherited-configuration)"
+export CL_SOURCE_REGISTRY="(:source-registry (:tree \"$tek9_path/\") (:tree \"$HOME/quicklisp/local-projects/\") (:tree \"$HOME/quicklisp/dists/quicklisp/software/\") (:tree \"$repo_root/systems/\") :ignore-inherited-configuration)"
 
 # Find native libraries for CFFI-based systems (NixOS compatibility).
 for native_name in openssl lmdb; do

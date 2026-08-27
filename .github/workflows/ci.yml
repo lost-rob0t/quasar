@@ -117,5 +117,5 @@ jobs:
             bash scripts/bootstrap-lisp-deps
             node scripts/check-native-runtime.mjs
             LOAD_ONLY=1 bash scripts/run-control-plane
-            npm run smoke
+            env -u QUASAR_DEV_NIX_READY -u LD_LIBRARY_PATH IN_NIX_SHELL=impure npm run smoke
           '

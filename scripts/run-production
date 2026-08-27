@@ -2,6 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+tek9_path="${QUASAR_TEK9_PATH:-$HOME/starintel/tek9}"
 build_only=0
 if [[ "${1:-}" == "--build-only" ]]; then
   build_only=1
@@ -9,7 +10,6 @@ if [[ "${1:-}" == "--build-only" ]]; then
 fi
 
 if [[ "$(uname -s)" == "Linux" \
-  && -z "${IN_NIX_SHELL:-}" \
   && -z "${QUASAR_PRODUCTION_NIX_READY:-}" \
   && -d /nix/store \
   && -f "$repo_root/flake.nix" \
@@ -21,7 +21,7 @@ if [[ "$(uname -s)" == "Linux" \
   exec nix develop -c env QUASAR_PRODUCTION_NIX_READY=1 bash scripts/run-production "$@"
 fi
 
-export CL_SOURCE_REGISTRY="(:source-registry (:tree \"$HOME/quicklisp/local-projects/\") (:tree \"$HOME/quicklisp/dists/quicklisp/software/\") (:tree \"$repo_root/systems/\") :ignore-inherited-configuration)"
+export CL_SOURCE_REGISTRY="(:source-registry (:tree \"$tek9_path/\") (:tree \"$HOME/quicklisp/local-projects/\") (:tree \"$HOME/quicklisp/dists/quicklisp/software/\") (:tree \"$repo_root/systems/\") :ignore-inherited-configuration)"
 
 # A single root install is the supported monorepo dependency path.
 cd "$repo_root"

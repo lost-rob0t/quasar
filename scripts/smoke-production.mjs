@@ -8,7 +8,6 @@ const executable = `${repoRoot}quasar-server`;
 
 if (
   process.platform === "linux" &&
-  !process.env.IN_NIX_SHELL &&
   !process.env.QUASAR_PRODUCTION_SMOKE_NIX_READY &&
   existsSync("/nix/store") &&
   existsSync(`${repoRoot}flake.nix`)

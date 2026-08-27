@@ -166,6 +166,22 @@ if (!devMjs.includes("check-native-runtime.mjs")) {
 } else {
   console.log("  OK   scripts/dev.mjs preflights native shared libraries");
 }
+if (devMjs.includes("process.env.IN_NIX_SHELL")) {
+  console.error("  FAIL scripts/dev.mjs must not treat an unrelated Nix shell as the Quasar dev shell");
+  ok = false;
+} else {
+  console.log("  OK   scripts/dev.mjs requires the Quasar-specific dev-shell marker");
+}
+
+for (const scriptPath of ["scripts/run-production", "scripts/smoke-production.mjs"]) {
+  const text = readText(scriptPath);
+  if (text.includes("IN_NIX_SHELL")) {
+    console.error(`  FAIL ${scriptPath} must not treat an unrelated Nix shell as the Quasar repository shell`);
+    ok = false;
+  } else {
+    console.log(`  OK   ${scriptPath} requires a Quasar-specific repository-shell marker`);
+  }
+}
 
 const bootstrap = readText("scripts/bootstrap-lisp-deps");
 const clogPin = bootstrap.match(/CLOG_SHA="([0-9a-f]{40})"/);
@@ -183,6 +199,19 @@ if (!clogPin || !tek9Pin) {
   } else {
     console.log(`  OK   Tek9 pin matches verified master ${expectedTek9Sha}`);
   }
+}
+ok =
+  checkContainsAll("Tek9 sibling checkout", bootstrap, [
+    "QUASAR_TEK9_PATH",
+    "$HOME/starintel/tek9",
+  ]) && ok;
+
+for (const scriptPath of ["scripts/run-control-plane", "scripts/run-production", "scripts/test-lisp"]) {
+  ok =
+    checkContainsAll(`${scriptPath} Tek9 source registry`, readText(scriptPath), [
+      "QUASAR_TEK9_PATH",
+      "$HOME/starintel/tek9",
+    ]) && ok;
 }
 
 const ciYml = readText(".github/workflows/ci.yml");
@@ -206,6 +235,13 @@ console.log("\nChecking native runtime dependency contract...");
 const flake = readText("flake.nix");
 const runControlPlane = readText("scripts/run-control-plane");
 ok = checkContainsAll("flake.nix runtimeLibs", flake, nativeNixPackages) && ok;
+ok =
+  checkContainsAll("flake.nix repository shell markers", flake, [
+    "export QUASAR_DEV_NIX_READY=1",
+    "export QUASAR_PRODUCTION_NIX_READY=1",
+    "export QUASAR_PRODUCTION_SMOKE_NIX_READY=1",
+  ]) && ok;
+ok = checkContainsAll("flake.nix Tek9 source registry", flake, ["QUASAR_TEK9_PATH", "$HOME/starintel/tek9"]) && ok;
 ok = checkContainsAll("scripts/run-control-plane Nix fallback", runControlPlane, nativeNixPackages) && ok;
 ok = checkContainsAll("CI Ubuntu native packages", ciYml, nativeAptPackages) && ok;
 ok =
@@ -213,6 +249,7 @@ ok =
     "node scripts/check-native-runtime.mjs",
     "DeterminateSystems/nix-installer-action@v22",
     "nix develop --command",
+    "env -u QUASAR_DEV_NIX_READY -u LD_LIBRARY_PATH IN_NIX_SHELL=impure npm run smoke",
     "npm run smoke",
   ]) && ok;
 
