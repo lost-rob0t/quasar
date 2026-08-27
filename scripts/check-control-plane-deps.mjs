@@ -1,10 +1,19 @@
 #!/usr/bin/env node
-// Static guard against Common Lisp dependency/bootstrap and storage-boundary drift.
+// Static guard against Common Lisp dependency/bootstrap, native-runtime,
+// and storage-boundary drift.
 import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const repoRoot = new URL("../", import.meta.url).pathname;
 const expectedTek9Sha = "ca24ef35ea6877420cbca057dd7fb702fe29a740";
+const nativeNixPackages = ["openssl", "rabbitmq-c", "libffi", "sqlite", "lmdb"];
+const nativeAptPackages = [
+  "libffi-dev",
+  "libssl-dev",
+  "libsqlite3-dev",
+  "librabbitmq-dev",
+  "liblmdb-dev",
+];
 
 function readText(relativePath) {
   return readFileSync(join(repoRoot, relativePath), "utf-8");
@@ -73,6 +82,16 @@ function compare(label, expected, actualSet, scriptPath) {
   return false;
 }
 
+function checkContainsAll(label, text, required) {
+  const missing = required.filter((token) => !text.includes(token));
+  if (missing.length === 0) {
+    console.log(`  OK   ${label}: ${required.join(", ")}`);
+    return true;
+  }
+  console.error(`  FAIL ${label}: missing ${missing.join(", ")}`);
+  return false;
+}
+
 function walkFiles(directory) {
   const files = [];
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -117,6 +136,15 @@ ok =
     "scripts/run-control-plane"
   ) && ok;
 
+const runProductionActual = new Set(parseQuickloadList("scripts/run-production"));
+ok =
+  compare(
+    "scripts/run-production",
+    webExpected,
+    runProductionActual,
+    "scripts/run-production"
+  ) && ok;
+
 const testExpected = externalDeps([
   "systems/quasar-control.asd",
   "systems/quasar-starlang.asd",
@@ -131,6 +159,12 @@ if (/ql:quickload/.test(devMjs)) {
   ok = false;
 } else {
   console.log("  OK   scripts/dev.mjs delegates to scripts/run-control-plane");
+}
+if (!devMjs.includes("check-native-runtime.mjs")) {
+  console.error("  FAIL scripts/dev.mjs must preflight native shared libraries before starting services");
+  ok = false;
+} else {
+  console.log("  OK   scripts/dev.mjs preflights native shared libraries");
 }
 
 const bootstrap = readText("scripts/bootstrap-lisp-deps");
@@ -168,6 +202,20 @@ if (!ciYml.includes("bash scripts/bootstrap-lisp-deps")) {
   console.log("  OK   .github/workflows/ci.yml delegates pinned Lisp sources to scripts/bootstrap-lisp-deps");
 }
 
+console.log("\nChecking native runtime dependency contract...");
+const flake = readText("flake.nix");
+const runControlPlane = readText("scripts/run-control-plane");
+ok = checkContainsAll("flake.nix runtimeLibs", flake, nativeNixPackages) && ok;
+ok = checkContainsAll("scripts/run-control-plane Nix fallback", runControlPlane, nativeNixPackages) && ok;
+ok = checkContainsAll("CI Ubuntu native packages", ciYml, nativeAptPackages) && ok;
+ok =
+  checkContainsAll("CI runtime execution gates", ciYml, [
+    "node scripts/check-native-runtime.mjs",
+    "DeterminateSystems/nix-installer-action@v22",
+    "nix develop --command",
+    "npm run smoke",
+  ]) && ok;
+
 console.log("\nChecking Quasar/Tek9 storage boundaries...");
 
 const controlPlaneRoot = join(repoRoot, "control-plane/src");
@@ -199,8 +247,8 @@ ok =
 
 if (!ok) {
   console.error(
-    "\nDependency or storage-boundary drift detected. Fix the architecture instead of weakening this guard."
+    "\nDependency, runtime, or storage-boundary drift detected. Fix the architecture instead of weakening this guard."
   );
   process.exit(1);
 }
-console.log("\nAll Common Lisp dependency, bootstrap, and Phase 2 storage boundaries are consistent.");
+console.log("\nAll Common Lisp dependency, native runtime, bootstrap, and Phase 2 storage boundaries are consistent.");
