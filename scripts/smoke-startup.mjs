@@ -27,10 +27,25 @@ function findOpenSsl() {
   return null;
 }
 
-function waitForHttp(url, timeoutMs) {
+function childExitError(child, name) {
+  if (child.exitCode !== null) {
+    return new Error(`${name} exited before becoming healthy (code ${child.exitCode})`);
+  }
+  if (child.signalCode) {
+    return new Error(`${name} exited before becoming healthy (signal ${child.signalCode})`);
+  }
+  return null;
+}
+
+function waitForHttp(url, timeoutMs, child) {
   const start = Date.now();
   return new Promise((resolve, reject) => {
     function attempt() {
+      const exited = childExitError(child, "development stack");
+      if (exited) {
+        reject(exited);
+        return;
+      }
       if (Date.now() - start > timeoutMs) {
         reject(new Error(`Timeout waiting for ${url}`));
         return;
@@ -107,10 +122,15 @@ function websocketExchange(url) {
   });
 }
 
-function waitForWs(url, timeoutMs) {
+function waitForWs(url, timeoutMs, child) {
   const start = Date.now();
   return new Promise((resolve, reject) => {
     async function attempt() {
+      const exited = childExitError(child, "development stack");
+      if (exited) {
+        reject(exited);
+        return;
+      }
       if (Date.now() - start > timeoutMs) {
         reject(new Error(`Timeout waiting for WS ${url}`));
         return;
@@ -156,22 +176,24 @@ async function runSmokeTest() {
 
   try {
     console.log("  waiting for Vite (http://127.0.0.1:5173)...");
-    await waitForHttp("http://127.0.0.1:5173", 60000);
+    await waitForHttp("http://127.0.0.1:5173", 60000, dev);
     console.log("  Vite OK");
 
     console.log("  waiting for CLOG (http://127.0.0.1:8080)...");
-    await waitForHttp("http://127.0.0.1:8080", 60000);
+    await waitForHttp("http://127.0.0.1:8080", 60000, dev);
     console.log("  CLOG OK");
 
     console.log("  waiting for WebSocket (ws://127.0.0.1:8081)...");
-    await waitForWs("ws://127.0.0.1:8081", 60000);
+    await waitForWs("ws://127.0.0.1:8081", 60000, dev);
     console.log("  WebSocket OK");
 
+    const exited = childExitError(dev, "development stack");
+    if (exited) throw exited;
     console.log("\nSmoke test PASSED: all services started.");
   } catch (error) {
     console.error(`\nSmoke test FAILED: ${error.message}`);
-    console.error("stdout:", stdout.slice(-2000));
-    console.error("stderr:", stderr.slice(-2000));
+    console.error("stdout:", stdout.slice(-4000));
+    console.error("stderr:", stderr.slice(-4000));
     exitCode = 1;
   } finally {
     if (dev.pid) {
