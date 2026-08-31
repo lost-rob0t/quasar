@@ -1,5 +1,5 @@
-import cytoscape from "cytoscape";
 import { GRAPH_STYLE } from "../lib/graph-style";
+import { createGraphAdapter } from "./GraphAdapter";
 
 export const DEFAULT_RENDERER_BENCHMARK_SIZES = [
   100, 250, 500, 750, 1_000, 1_500, 2_000, 3_000, 4_000, 6_000, 8_000, 12_000, 16_000, 24_000,
@@ -126,13 +126,13 @@ async function benchmarkCase({ root, backend, nodes, motionFrames }) {
 
   try {
     const started = performance.now();
-    cy = cytoscape({
+    cy = createGraphAdapter({
       container,
       elements,
       style: GRAPH_STYLE,
       layout: { name: "preset" },
       pixelRatio: 1,
-      webgl: backend === "webgl",
+      rendererPreference: backend,
       minZoom: 0.01,
       maxZoom: 8,
       motionBlur: false,
