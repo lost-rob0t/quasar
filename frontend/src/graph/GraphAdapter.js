@@ -177,6 +177,10 @@ export class GraphAdapter {
         zoomingEnabled: true,
         userZoomingEnabled: true,
         wheelSensitivity: DEFAULT_WHEEL_SENSITIVITY,
+        pixelRatio: 1,
+        hideEdgesOnViewport: true,
+        textureOnViewport: true,
+        motionBlur: false,
         ...cytoscapeOptions,
         webgl: renderer.webgl,
         selectionType: "single"
