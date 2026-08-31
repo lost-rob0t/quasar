@@ -23,7 +23,9 @@ function rounded(value) {
 
 function tableRows(rows) {
   return rows.map((row) => ({
+    requested: row.requestedBackend,
     backend: row.backend,
+    fallback: row.rendererFallback,
     nodes: row.nodes,
     elements: row.elements,
     firstFrameMs: rounded(row.firstFrameMs),
@@ -41,12 +43,18 @@ function comparisonRows(rows) {
   const bySize = new Map();
   for (const row of rows) {
     const pair = bySize.get(row.nodes) || {};
-    pair[row.backend] = row;
+    pair[row.requestedBackend] = row;
     bySize.set(row.nodes, pair);
   }
 
   return [...bySize.entries()]
-    .filter(([, pair]) => pair.canvas && pair.webgl && !pair.canvas.error && !pair.webgl.error)
+    .filter(
+      ([, pair]) =>
+        pair.canvas?.backend === "canvas" &&
+        pair.webgl?.backend === "webgl" &&
+        !pair.canvas.error &&
+        !pair.webgl.error
+    )
     .map(([nodes, pair]) => ({
       nodes,
       firstFrameSpeedup: rounded(pair.canvas.firstFrameMs / pair.webgl.firstFrameMs),
