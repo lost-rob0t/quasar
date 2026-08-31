@@ -134,77 +134,99 @@ async function measureMotion(cy, frameCount, mutateViewport) {
 async function benchmarkCase({ root, backend, nodes, motionFrames }) {
   const container = createContainer(root);
   const elements = makeElements(nodes);
-  const started = performance.now();
-  const cy = cytoscape({
-    container,
-    elements,
-    style: GRAPH_STYLE,
-    layout: { name: "preset" },
-    pixelRatio: 1,
-    webgl: backend === "webgl",
-    minZoom: 0.01,
-    maxZoom: 8,
-    motionBlur: false,
-    textureOnViewport: false
-  });
+  let cy;
 
-  await settleFrames(2);
-  const firstFrameMs = performance.now() - started;
-
-  const pan = await measureMotion(cy, motionFrames, (frame) => {
-    cy.panBy({ x: frame % 2 === 0 ? 8 : -8, y: frame % 3 === 0 ? 4 : -4 });
-  });
-
-  const zoomStart = cy.zoom();
-  const zoom = await measureMotion(cy, motionFrames, (frame) => {
-    const factor = frame % 2 === 0 ? 1.015 : 1 / 1.015;
-    cy.zoom({ level: cy.zoom() * factor, renderedPosition: { x: 800, y: 450 } });
-  });
-  cy.zoom(zoomStart);
-
-  const mutationCount = Math.max(1, Math.floor(nodes * 0.01));
-  const mutationElements = [];
-  for (let index = 0; index < mutationCount; index += 1) {
-    const id = `mutation:${index}`;
-    mutationElements.push({
-      data: { id, label: id, color: "#f59e0b", shape: "ellipse", dtype: "entity" },
-      position: { x: index * 4, y: -96 }
+  try {
+    const started = performance.now();
+    cy = cytoscape({
+      container,
+      elements,
+      style: GRAPH_STYLE,
+      layout: { name: "preset" },
+      pixelRatio: 1,
+      webgl: backend === "webgl",
+      minZoom: 0.01,
+      maxZoom: 8,
+      motionBlur: false,
+      textureOnViewport: false
     });
-    mutationElements.push({
-      data: {
-        id: `mutation-edge:${index}`,
-        source: id,
-        target: `node:${index % nodes}`,
-        directed: true,
-        label: "mutation"
-      }
+
+    await settleFrames(2);
+    const firstFrameMs = performance.now() - started;
+
+    const pan = await measureMotion(cy, motionFrames, (frame) => {
+      cy.panBy({ x: frame % 2 === 0 ? 8 : -8, y: frame % 3 === 0 ? 4 : -4 });
     });
+
+    const zoomStart = cy.zoom();
+    const zoom = await measureMotion(cy, motionFrames, (frame) => {
+      const factor = frame % 2 === 0 ? 1.015 : 1 / 1.015;
+      cy.zoom({ level: cy.zoom() * factor, renderedPosition: { x: 800, y: 450 } });
+    });
+    cy.zoom(zoomStart);
+
+    const mutationCount = Math.max(1, Math.floor(nodes * 0.01));
+    const mutationElements = [];
+    for (let index = 0; index < mutationCount; index += 1) {
+      const id = `mutation:${index}`;
+      mutationElements.push({
+        data: { id, label: id, color: "#f59e0b", shape: "ellipse", dtype: "entity" },
+        position: { x: index * 4, y: -96 }
+      });
+      mutationElements.push({
+        data: {
+          id: `mutation-edge:${index}`,
+          source: id,
+          target: `node:${index % nodes}`,
+          directed: true,
+          label: "mutation"
+        }
+      });
+    }
+
+    const mutationStarted = performance.now();
+    cy.add(mutationElements);
+    await settleFrames(2);
+    const mutationMs = performance.now() - mutationStarted;
+
+    return {
+      backend,
+      nodes,
+      elements: elements.length,
+      firstFrameMs,
+      panAverageMs: pan.averageMs,
+      panP95Ms: pan.p95Ms,
+      panFps: pan.fps,
+      zoomAverageMs: zoom.averageMs,
+      zoomP95Ms: zoom.p95Ms,
+      zoomFps: zoom.fps,
+      mutationCount,
+      mutationMs,
+      error: null
+    };
+  } finally {
+    cy?.destroy();
+    root.replaceChildren();
+    await settleFrames(1);
   }
+}
 
-  const mutationStarted = performance.now();
-  cy.add(mutationElements);
-  await settleFrames(2);
-  const mutationMs = performance.now() - mutationStarted;
-
-  const row = {
+function failureRow(backend, nodes, error) {
+  return {
     backend,
     nodes,
-    elements: elements.length,
-    firstFrameMs,
-    panAverageMs: pan.averageMs,
-    panP95Ms: pan.p95Ms,
-    panFps: pan.fps,
-    zoomAverageMs: zoom.averageMs,
-    zoomP95Ms: zoom.p95Ms,
-    zoomFps: zoom.fps,
-    mutationCount,
-    mutationMs
+    elements: nodes * 2 - 1,
+    firstFrameMs: null,
+    panAverageMs: null,
+    panP95Ms: null,
+    panFps: null,
+    zoomAverageMs: null,
+    zoomP95Ms: null,
+    zoomFps: null,
+    mutationCount: Math.max(1, Math.floor(nodes * 0.01)),
+    mutationMs: null,
+    error: error instanceof Error ? error.message : String(error)
   };
-
-  cy.destroy();
-  root.replaceChildren();
-  await settleFrames(1);
-  return row;
 }
 
 export async function runQuasarGraphRendererBenchmark({
@@ -221,7 +243,11 @@ export async function runQuasarGraphRendererBenchmark({
   for (const backend of backends) {
     if (backend === "webgl" && !gpu.supported) continue;
     for (const nodes of sizes) {
-      rows.push(await benchmarkCase({ root, backend, nodes, motionFrames }));
+      try {
+        rows.push(await benchmarkCase({ root, backend, nodes, motionFrames }));
+      } catch (error) {
+        rows.push(failureRow(backend, nodes, error));
+      }
     }
   }
 
