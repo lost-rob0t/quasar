@@ -120,6 +120,67 @@ export const GRAPH_STYLE = [
   { selector: ".labels-hidden", style: { label: "" } }
 ];
 
+export const LARGE_GRAPH_ELEMENT_THRESHOLD = 8_000;
+export const VERY_LARGE_GRAPH_ELEMENT_THRESHOLD = 32_000;
+
+const LARGE_GRAPH_STYLE = [
+  {
+    selector: "node",
+    style: {
+      "min-zoomed-font-size": 10,
+      "border-width": 1,
+      "overlay-padding": 4
+    }
+  },
+  {
+    selector: "edge",
+    style: {
+      label: "",
+      width: 1,
+      "curve-style": "haystack",
+      "target-arrow-shape": "none"
+    }
+  },
+  {
+    selector: "edge:selected, edge.path",
+    style: {
+      label: "data(label)",
+      "curve-style": "bezier",
+      "target-arrow-shape": "triangle"
+    }
+  }
+];
+
+const VERY_LARGE_GRAPH_STYLE = [
+  {
+    selector: "node",
+    style: {
+      "min-zoomed-font-size": 18,
+      "overlay-padding": 2
+    }
+  },
+  {
+    selector: "edge",
+    style: {
+      width: 0.75
+    }
+  }
+];
+
+export function graphPerformanceTier(elementCount) {
+  const count = Number(elementCount) || 0;
+  if (count >= VERY_LARGE_GRAPH_ELEMENT_THRESHOLD) return "very-large";
+  if (count >= LARGE_GRAPH_ELEMENT_THRESHOLD) return "large";
+  return "normal";
+}
+
+export function graphStyleForElementCount(elementCount = 0) {
+  const tier = graphPerformanceTier(elementCount);
+  if (tier === "very-large") return [...GRAPH_STYLE, ...LARGE_GRAPH_STYLE, ...VERY_LARGE_GRAPH_STYLE];
+  if (tier === "large") return [...GRAPH_STYLE, ...LARGE_GRAPH_STYLE];
+  return GRAPH_STYLE;
+}
+
 const THEME_COLOR = {
   "#e5eef9": "--text",
   "#07111f": "--bg-deep",
@@ -133,9 +194,9 @@ const THEME_COLOR = {
   "#ef4444": "--danger"
 };
 
-export function themedGraphStyle(root = document.documentElement) {
+export function themedGraphStyle(root = document.documentElement, elementCount = 0) {
   const tokens = getComputedStyle(root);
-  return GRAPH_STYLE.map((rule) => ({
+  return graphStyleForElementCount(elementCount).map((rule) => ({
     ...rule,
     style: Object.fromEntries(
       Object.entries(rule.style).map(([property, value]) => {
