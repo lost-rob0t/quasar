@@ -1,5 +1,9 @@
 import cytoscape from "cytoscape";
 import edgehandles from "cytoscape-edgehandles";
+import {
+  graphRendererPreferenceFromEnv,
+  resolveGraphRenderer
+} from "./graph-renderer";
 import { installGraphGestures } from "./graph-gestures";
 import { installMaltegoLayouts } from "./maltego-layouts";
 import { installUserNavigationGuard } from "./user-navigation-guard";
@@ -154,9 +158,21 @@ function exposeDevelopmentGraph(cy) {
   });
 }
 
+function exposeRendererState(container, renderer) {
+  if (!container?.dataset) return;
+  container.dataset.graphRenderer = renderer.backend;
+  container.dataset.graphRendererRequested = renderer.requested;
+  container.dataset.graphRendererFallback = String(renderer.fallback);
+}
+
 export class GraphAdapter {
   static create(options) {
     registerPlugins();
+    const { rendererPreference, ...cytoscapeOptions } = options;
+    const renderer = resolveGraphRenderer({
+      preference: rendererPreference ?? graphRendererPreferenceFromEnv(),
+      webglSupported: options.headless ? false : undefined
+    });
     const cy = installMaltegoLayouts(
       cytoscape({
         panningEnabled: true,
@@ -164,10 +180,12 @@ export class GraphAdapter {
         zoomingEnabled: true,
         userZoomingEnabled: true,
         wheelSensitivity: DEFAULT_WHEEL_SENSITIVITY,
-        ...options,
+        ...cytoscapeOptions,
+        webgl: renderer.webgl,
         selectionType: "single"
       })
     );
+    exposeRendererState(options.container, renderer);
     const restoreUserNavigation = installUserNavigationGuard(cy);
     cy.one("destroy", restoreUserNavigation);
     installAutomaticNodePlacement(cy);
