@@ -1,9 +1,6 @@
 import cytoscape from "cytoscape";
 import edgehandles from "cytoscape-edgehandles";
-import {
-  graphRendererPreferenceFromEnv,
-  resolveGraphRenderer
-} from "./graph-renderer";
+import { graphRendererPreferenceFromEnv, resolveGraphRenderer } from "./graph-renderer";
 import { installGraphGestures } from "./graph-gestures";
 import { installMaltegoLayouts } from "./maltego-layouts";
 import { installUserNavigationGuard } from "./user-navigation-guard";
