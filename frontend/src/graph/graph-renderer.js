@@ -20,9 +20,10 @@ export function detectWebGLSupport(documentRef = globalThis.document) {
   }
 }
 
-export function resolveGraphRenderer(
-  { preference = GRAPH_RENDERER_AUTO, webglSupported = detectWebGLSupport() } = {}
-) {
+export function resolveGraphRenderer({
+  preference = GRAPH_RENDERER_AUTO,
+  webglSupported = detectWebGLSupport()
+} = {}) {
   const requested = normalizeGraphRendererPreference(preference);
   const wantsWebGL = requested === GRAPH_RENDERER_WEBGL || requested === GRAPH_RENDERER_AUTO;
   const webgl = wantsWebGL && webglSupported;
