@@ -46,7 +46,8 @@ function tableRows(rows) {
     zoomFps: rounded(row.zoomFps),
     zoomP95Ms: rounded(row.zoomP95Ms),
     mutationCount: row.mutationCount,
-    mutationMs: rounded(row.mutationMs)
+    mutationMs: rounded(row.mutationMs),
+    error: row.error || ""
   }));
 }
 
@@ -59,7 +60,7 @@ function comparisonRows(rows) {
   }
 
   return [...bySize.entries()]
-    .filter(([, pair]) => pair.canvas && pair.webgl)
+    .filter(([, pair]) => pair.canvas && pair.webgl && !pair.canvas.error && !pair.webgl.error)
     .map(([nodes, pair]) => ({
       nodes,
       firstFrameSpeedup: rounded(pair.canvas.firstFrameMs / pair.webgl.firstFrameMs),
