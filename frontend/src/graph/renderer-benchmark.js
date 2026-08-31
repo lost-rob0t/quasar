@@ -141,6 +141,8 @@ async function benchmarkCase({ root, backend, nodes, motionFrames }) {
 
     await settleFrames(2);
     const firstFrameMs = performance.now() - started;
+    const actualBackend = container.dataset.graphRenderer || backend;
+    const rendererFallback = container.dataset.graphRendererFallback === "true";
 
     const pan = await measureMotion(cy, motionFrames, (frame) => {
       cy.panBy({ x: frame % 2 === 0 ? 8 : -8, y: frame % 3 === 0 ? 4 : -4 });
@@ -178,7 +180,9 @@ async function benchmarkCase({ root, backend, nodes, motionFrames }) {
     const mutationMs = performance.now() - mutationStarted;
 
     return {
-      backend,
+      requestedBackend: backend,
+      backend: actualBackend,
+      rendererFallback,
       nodes,
       elements: elements.length,
       firstFrameMs,
@@ -201,7 +205,9 @@ async function benchmarkCase({ root, backend, nodes, motionFrames }) {
 
 function failureRow(backend, nodes, error) {
   return {
+    requestedBackend: backend,
     backend,
+    rendererFallback: false,
     nodes,
     elements: nodes * 2 - 1,
     firstFrameMs: null,
