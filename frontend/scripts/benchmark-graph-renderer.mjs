@@ -106,9 +106,7 @@ try {
   console.log("\nGPU context");
   console.table([result.gpu]);
   if (result.gpu.software) {
-    console.warn(
-      "WARNING: browser reports a software WebGL renderer; rerun headed on a GPU-backed desktop for hardware numbers."
-    );
+    console.warn("WARNING: browser reports a software WebGL renderer; rerun headed on a GPU-backed desktop for hardware numbers.");
   }
 
   console.log("\nCanvas vs WebGL renderer sweep");
