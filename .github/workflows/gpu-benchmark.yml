@@ -37,6 +37,7 @@ jobs:
 
           git fetch --depth=1 origin main
           git worktree add --detach /tmp/quasar-main FETCH_HEAD
+          mkdir -p /tmp/quasar-main/frontend/benchmarks
           cp frontend/src/graph/renderer-benchmark.js /tmp/quasar-main/frontend/src/graph/renderer-benchmark.js
           cp frontend/benchmarks/graph-renderer.html /tmp/quasar-main/frontend/benchmarks/graph-renderer.html
           cp frontend/scripts/benchmark-graph-renderer.mjs /tmp/quasar-main/frontend/scripts/benchmark-graph-renderer.mjs
