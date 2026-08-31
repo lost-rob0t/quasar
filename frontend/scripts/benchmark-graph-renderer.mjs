@@ -26,6 +26,7 @@ function tableRows(rows) {
     requested: row.requestedBackend,
     backend: row.backend,
     fallback: row.rendererFallback,
+    tier: row.performanceTier,
     nodes: row.nodes,
     elements: row.elements,
     firstFrameMs: rounded(row.firstFrameMs),
