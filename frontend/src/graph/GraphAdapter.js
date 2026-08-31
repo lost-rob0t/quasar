@@ -238,6 +238,7 @@ export class GraphAdapter {
         wheelSensitivity: DEFAULT_WHEEL_SENSITIVITY,
         pixelRatio: 1,
         hideEdgesOnViewport: true,
+        hideLabelsOnViewport: true,
         textureOnViewport: true,
         motionBlur: false,
         ...cytoscapeOptions,
