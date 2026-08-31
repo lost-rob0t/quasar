@@ -41,5 +41,6 @@ export function resolveGraphRenderer({
 }
 
 export function graphRendererPreferenceFromEnv(env = import.meta.env) {
-  return normalizeGraphRendererPreference(env?.VITE_GRAPH_RENDERER);
+  if (!env?.VITE_GRAPH_RENDERER) return GRAPH_RENDERER_CANVAS;
+  return normalizeGraphRendererPreference(env.VITE_GRAPH_RENDERER);
 }
