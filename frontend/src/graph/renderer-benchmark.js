@@ -2,22 +2,8 @@ import cytoscape from "cytoscape";
 import { GRAPH_STYLE } from "../lib/graph-style";
 
 export const DEFAULT_RENDERER_BENCHMARK_SIZES = [
-  100,
-  250,
-  500,
-  750,
-  1_000,
-  1_500,
-  2_000,
-  3_000,
-  4_000,
-  6_000,
-  8_000,
-  12_000,
-  16_000,
-  24_000,
-  32_000,
-  50_000
+  100, 250, 500, 750, 1_000, 1_500, 2_000, 3_000, 4_000, 6_000, 8_000, 12_000, 16_000, 24_000,
+  32_000, 50_000
 ];
 
 const NODE_SPACING = 64;
