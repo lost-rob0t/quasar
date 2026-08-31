@@ -94,7 +94,9 @@ function getGpuInfo() {
     if (!gl) return { supported: false, vendor: null, renderer: null, software: false };
 
     const extension = gl.getExtension("WEBGL_debug_renderer_info");
-    const vendor = extension ? gl.getParameter(extension.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR);
+    const vendor = extension
+      ? gl.getParameter(extension.UNMASKED_VENDOR_WEBGL)
+      : gl.getParameter(gl.VENDOR);
     const renderer = extension
       ? gl.getParameter(extension.UNMASKED_RENDERER_WEBGL)
       : gl.getParameter(gl.RENDERER);
