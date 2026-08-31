@@ -5,7 +5,9 @@ export const GRAPH_RENDERER_WEBGL = "webgl";
 const VALID_RENDERERS = new Set([GRAPH_RENDERER_AUTO, GRAPH_RENDERER_CANVAS, GRAPH_RENDERER_WEBGL]);
 
 export function normalizeGraphRendererPreference(preference) {
-  const normalized = String(preference || GRAPH_RENDERER_AUTO).trim().toLowerCase();
+  const normalized = String(preference || GRAPH_RENDERER_AUTO)
+    .trim()
+    .toLowerCase();
   return VALID_RENDERERS.has(normalized) ? normalized : GRAPH_RENDERER_AUTO;
 }
 
