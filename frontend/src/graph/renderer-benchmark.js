@@ -16,6 +16,12 @@ async function settleFrames(count = 2) {
   for (let index = 0; index < count; index += 1) await nextFrame();
 }
 
+function waitForRender(cy) {
+  return new Promise((resolve) => {
+    cy.one("render", () => resolve(performance.now()));
+  });
+}
+
 function percentile(values, quantile) {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((left, right) => left - right);
@@ -100,21 +106,20 @@ function getGpuInfo() {
 }
 
 async function measureMotion(cy, frameCount, mutateViewport) {
-  const frameTimes = [];
-  let previous = performance.now();
+  const renderTimes = [];
 
   for (let frame = 0; frame < frameCount; frame += 1) {
+    const started = performance.now();
+    const rendered = waitForRender(cy);
     mutateViewport(frame);
-    await nextFrame();
-    const now = performance.now();
-    frameTimes.push(now - previous);
-    previous = now;
+    await rendered;
+    renderTimes.push(performance.now() - started);
   }
 
-  const averageMs = mean(frameTimes);
+  const averageMs = mean(renderTimes);
   return {
     averageMs,
-    p95Ms: percentile(frameTimes, 0.95),
+    p95Ms: percentile(renderTimes, 0.95),
     fps: averageMs > 0 ? 1_000 / averageMs : 0
   };
 }
@@ -135,14 +140,14 @@ async function benchmarkCase({ root, backend, nodes, motionFrames }) {
       rendererPreference: backend,
       minZoom: 0.01,
       maxZoom: 8,
-      motionBlur: false,
-      textureOnViewport: false
+      motionBlur: false
     });
 
     await settleFrames(2);
     const firstFrameMs = performance.now() - started;
     const actualBackend = container.dataset.graphRenderer || backend;
     const rendererFallback = container.dataset.graphRendererFallback === "true";
+    const performanceTier = container.dataset.graphPerformanceTier || "normal";
 
     const pan = await measureMotion(cy, motionFrames, (frame) => {
       cy.panBy({ x: frame % 2 === 0 ? 8 : -8, y: frame % 3 === 0 ? 4 : -4 });
@@ -153,7 +158,9 @@ async function benchmarkCase({ root, backend, nodes, motionFrames }) {
       const factor = frame % 2 === 0 ? 1.015 : 1 / 1.015;
       cy.zoom({ level: cy.zoom() * factor, renderedPosition: { x: 800, y: 450 } });
     });
+    const zoomResetRender = waitForRender(cy);
     cy.zoom(zoomStart);
+    await zoomResetRender;
 
     const mutationCount = Math.max(1, Math.floor(nodes * 0.01));
     const mutationElements = [];
@@ -175,14 +182,16 @@ async function benchmarkCase({ root, backend, nodes, motionFrames }) {
     }
 
     const mutationStarted = performance.now();
+    const mutationRendered = waitForRender(cy);
     cy.add(mutationElements);
-    await settleFrames(2);
+    await mutationRendered;
     const mutationMs = performance.now() - mutationStarted;
 
     return {
       requestedBackend: backend,
       backend: actualBackend,
       rendererFallback,
+      performanceTier,
       nodes,
       elements: elements.length,
       firstFrameMs,
@@ -208,6 +217,7 @@ function failureRow(backend, nodes, error) {
     requestedBackend: backend,
     backend,
     rendererFallback: false,
+    performanceTier: null,
     nodes,
     elements: nodes * 2 - 1,
     firstFrameMs: null,
