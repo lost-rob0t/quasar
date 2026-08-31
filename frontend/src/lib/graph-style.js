@@ -1,3 +1,5 @@
+import { LARGE_GRAPH_CLASS, VERY_LARGE_GRAPH_CLASS } from "../graph/graph-performance";
+
 export const GRAPH_STYLE = [
   {
     selector: "node",
@@ -117,15 +119,9 @@ export const GRAPH_STYLE = [
       "line-style": "dashed"
     }
   },
-  { selector: ".labels-hidden", style: { label: "" } }
-];
-
-export const LARGE_GRAPH_ELEMENT_THRESHOLD = 8_000;
-export const VERY_LARGE_GRAPH_ELEMENT_THRESHOLD = 32_000;
-
-const LARGE_GRAPH_STYLE = [
+  { selector: ".labels-hidden", style: { label: "" } },
   {
-    selector: "node",
+    selector: `node.${LARGE_GRAPH_CLASS}`,
     style: {
       "min-zoomed-font-size": 10,
       "border-width": 1,
@@ -133,7 +129,7 @@ const LARGE_GRAPH_STYLE = [
     }
   },
   {
-    selector: "edge",
+    selector: `edge.${LARGE_GRAPH_CLASS}`,
     style: {
       label: "",
       width: 1,
@@ -142,44 +138,27 @@ const LARGE_GRAPH_STYLE = [
     }
   },
   {
-    selector: "edge:selected, edge.path",
+    selector: `edge.${LARGE_GRAPH_CLASS}:selected, edge.${LARGE_GRAPH_CLASS}.path`,
     style: {
       label: "data(label)",
       "curve-style": "bezier",
       "target-arrow-shape": "triangle"
     }
-  }
-];
-
-const VERY_LARGE_GRAPH_STYLE = [
+  },
   {
-    selector: "node",
+    selector: `node.${VERY_LARGE_GRAPH_CLASS}`,
     style: {
       "min-zoomed-font-size": 18,
       "overlay-padding": 2
     }
   },
   {
-    selector: "edge",
+    selector: `edge.${VERY_LARGE_GRAPH_CLASS}`,
     style: {
       width: 0.75
     }
   }
 ];
-
-export function graphPerformanceTier(elementCount) {
-  const count = Number(elementCount) || 0;
-  if (count >= VERY_LARGE_GRAPH_ELEMENT_THRESHOLD) return "very-large";
-  if (count >= LARGE_GRAPH_ELEMENT_THRESHOLD) return "large";
-  return "normal";
-}
-
-export function graphStyleForElementCount(elementCount = 0) {
-  const tier = graphPerformanceTier(elementCount);
-  if (tier === "very-large") return [...GRAPH_STYLE, ...LARGE_GRAPH_STYLE, ...VERY_LARGE_GRAPH_STYLE];
-  if (tier === "large") return [...GRAPH_STYLE, ...LARGE_GRAPH_STYLE];
-  return GRAPH_STYLE;
-}
 
 const THEME_COLOR = {
   "#e5eef9": "--text",
@@ -194,9 +173,9 @@ const THEME_COLOR = {
   "#ef4444": "--danger"
 };
 
-export function themedGraphStyle(root = document.documentElement, elementCount = 0) {
+export function themedGraphStyle(root = document.documentElement) {
   const tokens = getComputedStyle(root);
-  return graphStyleForElementCount(elementCount).map((rule) => ({
+  return GRAPH_STYLE.map((rule) => ({
     ...rule,
     style: Object.fromEntries(
       Object.entries(rule.style).map(([property, value]) => {
