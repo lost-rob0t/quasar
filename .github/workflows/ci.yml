@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-  pull_request:
+    branches:
+      - gpu-graph-renderer
   workflow_dispatch:
 
 jobs:
@@ -74,6 +75,69 @@ jobs:
 
       - name: Install tracked Playwright browser runtime
         run: ./node_modules/.bin/playwright install --with-deps chromium
+
+      - name: Benchmark branch Canvas/WebGL against current main Canvas
+        env:
+          QUASAR_GRAPH_BENCH_SIZES: "100,250,500,750,1000,1500,2000,3000,4000,6000,8000,12000,16000,24000,32000,50000"
+          QUASAR_GRAPH_BENCH_FRAMES: "8"
+        run: |
+          set -euo pipefail
+
+          export QUASAR_GRAPH_BENCH_JSON=/tmp/quasar-branch.json
+          npm run benchmark:graph-renderer
+
+          git fetch --depth=1 origin main
+          git worktree add --detach /tmp/quasar-main FETCH_HEAD
+          cp frontend/src/graph/renderer-benchmark.js /tmp/quasar-main/frontend/src/graph/renderer-benchmark.js
+          cp frontend/benchmarks/graph-renderer.html /tmp/quasar-main/frontend/benchmarks/graph-renderer.html
+          cp frontend/scripts/benchmark-graph-renderer.mjs /tmp/quasar-main/frontend/scripts/benchmark-graph-renderer.mjs
+          sed -i 's/{ sizes: benchmarkSizes, motionFrames: frames }/{ sizes: benchmarkSizes, motionFrames: frames, backends: ["canvas"] }/' /tmp/quasar-main/frontend/scripts/benchmark-graph-renderer.mjs
+
+          (
+            cd /tmp/quasar-main
+            npm ci
+            QUASAR_GRAPH_BENCH_JSON=/tmp/quasar-main.json \
+            QUASAR_GRAPH_BENCH_SIZES="$QUASAR_GRAPH_BENCH_SIZES" \
+            QUASAR_GRAPH_BENCH_FRAMES="$QUASAR_GRAPH_BENCH_FRAMES" \
+            node frontend/scripts/benchmark-graph-renderer.mjs
+          )
+
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const main = JSON.parse(fs.readFileSync('/tmp/quasar-main.json', 'utf8'));
+          const branch = JSON.parse(fs.readFileSync('/tmp/quasar-branch.json', 'utf8'));
+          const rows = new Map();
+          for (const row of main.rows) {
+            if (row.requestedBackend === 'canvas' && !row.error) {
+              rows.set(row.nodes, { nodes: row.nodes, main: row });
+            }
+          }
+          for (const row of branch.rows) {
+            if (row.error || row.rendererFallback) continue;
+            const out = rows.get(row.nodes) || { nodes: row.nodes };
+            if (row.requestedBackend === 'canvas') out.branchCanvas = row;
+            if (row.requestedBackend === 'webgl') out.branchWebgl = row;
+            rows.set(row.nodes, out);
+          }
+          const n = v => Number.isFinite(v) ? Number(v.toFixed(2)) : null;
+          const result = [...rows.values()].sort((a,b) => a.nodes-b.nodes).map(r => ({
+            nodes: r.nodes,
+            mainFirstMs: n(r.main?.firstFrameMs),
+            mainPanFps: n(r.main?.panFps),
+            mainZoomFps: n(r.main?.zoomFps),
+            mainMutationMs: n(r.main?.mutationMs),
+            webglFirstMs: n(r.branchWebgl?.firstFrameMs),
+            webglPanFps: n(r.branchWebgl?.panFps),
+            webglZoomFps: n(r.branchWebgl?.zoomFps),
+            webglMutationMs: n(r.branchWebgl?.mutationMs),
+            firstSpeedup: r.main && r.branchWebgl ? n(r.main.firstFrameMs / r.branchWebgl.firstFrameMs) : null,
+            panSpeedup: r.main && r.branchWebgl ? n(r.branchWebgl.panFps / r.main.panFps) : null,
+            zoomSpeedup: r.main && r.branchWebgl ? n(r.branchWebgl.zoomFps / r.main.zoomFps) : null,
+            mutationSpeedup: r.main && r.branchWebgl ? n(r.main.mutationMs / r.branchWebgl.mutationMs) : null
+          }));
+          console.log('QUASAR_BENCH_COMPARE_JSON=' + JSON.stringify(result));
+          console.log('QUASAR_BENCH_GPU_JSON=' + JSON.stringify(branch.gpu));
+          NODE
 
       - name: Real-stack desktop, mobile, mutation, and reload paths
         run: npm run test:e2e -- --reporter=github,html
