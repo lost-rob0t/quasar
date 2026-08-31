@@ -2,11 +2,7 @@ export const GRAPH_RENDERER_AUTO = "auto";
 export const GRAPH_RENDERER_CANVAS = "canvas";
 export const GRAPH_RENDERER_WEBGL = "webgl";
 
-const VALID_RENDERERS = new Set([
-  GRAPH_RENDERER_AUTO,
-  GRAPH_RENDERER_CANVAS,
-  GRAPH_RENDERER_WEBGL
-]);
+const VALID_RENDERERS = new Set([GRAPH_RENDERER_AUTO, GRAPH_RENDERER_CANVAS, GRAPH_RENDERER_WEBGL]);
 
 export function normalizeGraphRendererPreference(preference) {
   const normalized = String(preference || GRAPH_RENDERER_AUTO).trim().toLowerCase();
@@ -24,10 +20,9 @@ export function detectWebGLSupport(documentRef = globalThis.document) {
   }
 }
 
-export function resolveGraphRenderer({
-  preference = GRAPH_RENDERER_AUTO,
-  webglSupported = detectWebGLSupport()
-} = {}) {
+export function resolveGraphRenderer(
+  { preference = GRAPH_RENDERER_AUTO, webglSupported = detectWebGLSupport() } = {}
+) {
   const requested = normalizeGraphRendererPreference(preference);
   const wantsWebGL = requested === GRAPH_RENDERER_WEBGL || requested === GRAPH_RENDERER_AUTO;
   const webgl = wantsWebGL && webglSupported;
