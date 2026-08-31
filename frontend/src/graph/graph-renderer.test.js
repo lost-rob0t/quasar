@@ -3,6 +3,7 @@ import {
   GRAPH_RENDERER_AUTO,
   GRAPH_RENDERER_CANVAS,
   GRAPH_RENDERER_WEBGL,
+  graphRendererPreferenceFromEnv,
   normalizeGraphRendererPreference,
   resolveGraphRenderer
 } from "./graph-renderer";
@@ -17,6 +18,21 @@ describe("normalizeGraphRendererPreference", () => {
   it("falls back to auto for invalid input", () => {
     expect(normalizeGraphRendererPreference("wat")).toBe(GRAPH_RENDERER_AUTO);
     expect(normalizeGraphRendererPreference()).toBe(GRAPH_RENDERER_AUTO);
+  });
+});
+
+describe("graphRendererPreferenceFromEnv", () => {
+  it("keeps Canvas as the unconfigured production default", () => {
+    expect(graphRendererPreferenceFromEnv({})).toBe(GRAPH_RENDERER_CANVAS);
+  });
+
+  it("allows auto and WebGL to be enabled explicitly", () => {
+    expect(graphRendererPreferenceFromEnv({ VITE_GRAPH_RENDERER: "auto" })).toBe(
+      GRAPH_RENDERER_AUTO
+    );
+    expect(graphRendererPreferenceFromEnv({ VITE_GRAPH_RENDERER: "webgl" })).toBe(
+      GRAPH_RENDERER_WEBGL
+    );
   });
 });
 
