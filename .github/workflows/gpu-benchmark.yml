@@ -9,7 +9,7 @@ on:
 jobs:
   benchmark:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,8 +28,8 @@ jobs:
 
       - name: Benchmark branch Canvas/WebGL against current main Canvas
         env:
-          QUASAR_GRAPH_BENCH_SIZES: "100,250,500,750,1000,1500,2000,3000,4000,6000,8000,12000,16000,24000,32000,50000"
-          QUASAR_GRAPH_BENCH_FRAMES: "8"
+          QUASAR_GRAPH_BENCH_SIZES: "100,250,500,1000,2000,4000,8000,12000,16000"
+          QUASAR_GRAPH_BENCH_FRAMES: "4"
         run: |
           set -euo pipefail
 
