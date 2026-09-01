@@ -23,39 +23,6 @@ jobs:
   live-http-contract:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    services:
-      rabbitmq:
-        image: rabbitmq:4.3.4-management
-        ports:
-          - 5672:5672
-        options: >-
-          --health-cmd "rabbitmq-diagnostics -q ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 6
-
-      couchdb:
-        image: couchdb:3.5.2
-        ports:
-          - 5984:5984
-        env:
-          COUCHDB_USER: admin
-          COUCHDB_PASSWORD: password
-        options: >-
-          --health-cmd "curl -f http://localhost:5984/_up || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 6
-
-      valkey:
-        image: valkey/valkey:9.0.1-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "valkey-cli ping | grep -q PONG"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 6
 
     steps:
       - name: Checkout Quasar
@@ -83,67 +50,78 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
-      - name: Build the pinned real StarIntel server
-        run: nix build ./.ci/starintel-server#default --out-link "$RUNNER_TEMP/star-server"
+      - name: Build and load the pinned real StarIntel stack
+        working-directory: .ci/starintel-server
+        run: nix run .#load-images
 
-      - name: Initialize disposable StarIntel databases
+      - name: Prepare disposable known-credential stack
         shell: bash
         run: |
           set -euo pipefail
-          for database in starintel starintel-gserver-auth starintel-event-source; do
-            status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
-              --user admin:password \
-              --request PUT \
-              "http://127.0.0.1:5984/$database")"
-            case "$status" in
-              201|202|412) ;;
-              *) echo "failed to create $database: HTTP $status" >&2; exit 1 ;;
-            esac
-          done
+          credentials="$RUNNER_TEMP/starintel-secrets"
+          mkdir -p "$credentials"
+          printf '%s\n' 'quasar-ci-couchdb-password' > "$credentials/couchdb_password"
+          printf '%s\n' 'quasar-ci-couchdb-secret' > "$credentials/couchdb_secret"
+          printf '%s\n' 'QUASARCICOOKIE' > "$credentials/erlang_cookie"
+          printf '%s\n' 'quasar-ci-rabbitmq-password' > "$credentials/rabbitmq_password"
+          printf '%s\n' 'quasar-ci-valkey-password' > "$credentials/valkey_password"
+          printf '%s\n' 'quasar-ci-auth-pepper' > "$credentials/auth_pepper"
+          printf '%s\n' 'quasar-ci-bootstrap-secret' > "$credentials/auth_bootstrap_secret"
+          chmod 0600 "$credentials"/*
+
+          cat > .ci/starintel-server/quasar-ci.compose.yml <<'YAML'
+          services:
+            star-server:
+              environment:
+                STAR_AUTH_INITIAL_USERNAME: ${STARINTEL_TEST_USERNAME}
+                STAR_AUTH_INITIAL_PASSWORD: ${STARINTEL_TEST_PASSWORD}
+          YAML
 
       - name: Start StarIntel with known CI credentials
         shell: bash
-        run: |
-          set -euo pipefail
-          env \
-            COUCHDB_HOST=127.0.0.1 \
-            COUCHDB_PORT=5984 \
-            COUCHDB_DATABASE=starintel \
-            COUCHDB_USER=admin \
-            COUCHDB_PASSWORD=password \
-            RABBITMQ_ADDRESS=127.0.0.1 \
-            RABBITMQ_PORT=5672 \
-            RABBITMQ_USER=guest \
-            RABBITMQ_PASSWORD=guest \
-            VALKEY_HOST=127.0.0.1 \
-            VALKEY_PORT=6379 \
-            HTTP_API_LISTEN_ADDRESS=127.0.0.1 \
-            HTTP_API_PORT=5000 \
-            STAR_AUTH_MODE=api-key \
-            STAR_AUTH_PEPPER=quasar-ci-known-pepper \
-            STAR_AUTH_INITIAL_USERNAME="$STARINTEL_TEST_USERNAME" \
-            STAR_AUTH_INITIAL_PASSWORD="$STARINTEL_TEST_PASSWORD" \
-            STAR_AUTH_PASSWORD_ITERATIONS=1000 \
-            STAR_AUTH_BOOTSTRAP_SECRET=quasar-ci-known-bootstrap-secret \
-            STAR_AUTH_ALLOWED_ORIGINS="$STARINTEL_TEST_ORIGIN" \
-            "$RUNNER_TEMP/star-server/bin/star-server" \
-            >"$RUNNER_TEMP/starintel-server.log" 2>&1 &
-          echo "$!" > "$RUNNER_TEMP/starintel-server.pid"
+        working-directory: .ci/starintel-server
+        env:
+          CREDENTIALS_DIR: ${{ runner.temp }}/starintel-secrets
+          COMPOSE_PROJECT_NAME: quasar-starintel-contract
+          COUCHDB_USER: admin
+          RABBITMQ_USER: starintel
+          STAR_AUTH_PASSWORD_ITERATIONS: "1000"
+          STAR_AUTH_ALLOWED_ORIGINS: ${{ env.STARINTEL_TEST_ORIGIN }}
+          STARINTEL_TEST_USERNAME: ${{ env.STARINTEL_TEST_USERNAME }}
+          STARINTEL_TEST_PASSWORD: ${{ env.STARINTEL_TEST_PASSWORD }}
+        run: >-
+          docker compose
+          -f docker-compose.yml
+          -f quasar-ci.compose.yml
+          up --detach --wait --wait-timeout 300
 
-          if ! timeout 120 bash -c \
-            'until curl --fail --silent http://127.0.0.1:5000/health >/dev/null; do sleep 1; done'; then
-            cat "$RUNNER_TEMP/starintel-server.log" >&2
-            exit 1
-          fi
-
-      - name: Verify public discovery and browser CORS contract
+      - name: Verify public discovery, login, context, and browser CORS contract
         shell: bash
         run: |
           set -euo pipefail
+
           curl --fail --silent --show-error \
             "$STARINTEL_TEST_URL/api/v1/capabilities" \
             | jq -e '.status == "ok" and (.data.authentication.modes | index("api-key"))' \
             >/dev/null
+
+          login_response="$(
+            curl --fail --silent --show-error \
+              --request POST \
+              --header 'Content-Type: application/json' \
+              --data "$(jq -cn \
+                --arg username "$STARINTEL_TEST_USERNAME" \
+                --arg password "$STARINTEL_TEST_PASSWORD" \
+                '{username:$username,password:$password}')" \
+              "$STARINTEL_TEST_URL/auth/login"
+          )"
+          api_key="$(jq -er '.api_key' <<<"$login_response")"
+          [[ "$api_key" == star_sk_v1_* ]]
+
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $api_key" \
+            "$STARINTEL_TEST_URL/auth/context" \
+            | jq -e '.principal_id != null' >/dev/null
 
           headers="$RUNNER_TEMP/starintel-cors-headers"
           curl --fail --silent --show-error \
@@ -157,25 +135,56 @@ jobs:
           grep -Fqi "Access-Control-Allow-Origin: $STARINTEL_TEST_ORIGIN" "$headers"
           grep -Fqi 'Access-Control-Allow-Headers:' "$headers"
 
-      - name: Run Quasar unit tests for the StarIntel client
+      - name: Run Quasar StarIntel unit tests
         run: npm --prefix frontend exec -- vitest run src/lib/starintel-server.test.js
 
       - name: Run Quasar against the real authenticated StarIntel server
         run: npm --prefix frontend exec -- vitest run tests/integration/starintel-server-live.test.js
 
-      - name: Upload StarIntel server log on failure
+      - name: Capture StarIntel stack logs
+        if: ${{ failure() }}
+        shell: bash
+        working-directory: .ci/starintel-server
+        env:
+          CREDENTIALS_DIR: ${{ runner.temp }}/starintel-secrets
+          COMPOSE_PROJECT_NAME: quasar-starintel-contract
+          COUCHDB_USER: admin
+          RABBITMQ_USER: starintel
+          STAR_AUTH_PASSWORD_ITERATIONS: "1000"
+          STAR_AUTH_ALLOWED_ORIGINS: ${{ env.STARINTEL_TEST_ORIGIN }}
+          STARINTEL_TEST_USERNAME: ${{ env.STARINTEL_TEST_USERNAME }}
+          STARINTEL_TEST_PASSWORD: ${{ env.STARINTEL_TEST_PASSWORD }}
+        run: >-
+          docker compose
+          -f docker-compose.yml
+          -f quasar-ci.compose.yml
+          logs --no-color
+          > "$RUNNER_TEMP/starintel-compose.log" 2>&1
+
+      - name: Upload StarIntel stack log on failure
         if: ${{ failure() }}
         uses: actions/upload-artifact@v4
         with:
-          name: starintel-contract-server-${{ github.run_id }}
-          path: ${{ runner.temp }}/starintel-server.log
+          name: starintel-contract-stack-${{ github.run_id }}
+          path: ${{ runner.temp }}/starintel-compose.log
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Stop StarIntel server
+      - name: Stop StarIntel stack
         if: ${{ always() }}
         shell: bash
-        run: |
-          if test -f "$RUNNER_TEMP/starintel-server.pid"; then
-            kill "$(cat "$RUNNER_TEMP/starintel-server.pid")" 2>/dev/null || true
-          fi
+        working-directory: .ci/starintel-server
+        env:
+          CREDENTIALS_DIR: ${{ runner.temp }}/starintel-secrets
+          COMPOSE_PROJECT_NAME: quasar-starintel-contract
+          COUCHDB_USER: admin
+          RABBITMQ_USER: starintel
+          STAR_AUTH_PASSWORD_ITERATIONS: "1000"
+          STAR_AUTH_ALLOWED_ORIGINS: ${{ env.STARINTEL_TEST_ORIGIN }}
+          STARINTEL_TEST_USERNAME: ${{ env.STARINTEL_TEST_USERNAME }}
+          STARINTEL_TEST_PASSWORD: ${{ env.STARINTEL_TEST_PASSWORD }}
+        run: >-
+          docker compose
+          -f docker-compose.yml
+          -f quasar-ci.compose.yml
+          down --volumes --remove-orphans
