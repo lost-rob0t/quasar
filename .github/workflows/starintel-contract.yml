@@ -87,7 +87,31 @@ jobs:
           STAR_AUTH_ALLOWED_ORIGINS: ${{ env.STARINTEL_TEST_ORIGIN }}
         run: docker compose up --detach --wait --wait-timeout 300
 
-      - name: Provision known user and verify HTTP auth contract
+      - name: Provision known user with server-local admin
+        shell: bash
+        working-directory: .ci/starintel-server
+        env:
+          CREDENTIALS_DIR: ${{ runner.temp }}/starintel-secrets
+          COMPOSE_PROJECT_NAME: quasar-starintel-contract
+          COUCHDB_USER: admin
+          RABBITMQ_USER: starintel
+          STAR_AUTH_PASSWORD_ITERATIONS: "1000"
+          STAR_AUTH_ALLOWED_ORIGINS: ${{ env.STARINTEL_TEST_ORIGIN }}
+        run: |
+          set -euo pipefail
+          result="$(
+            printf '%s\n' "$STARINTEL_TEST_PASSWORD" | \
+              docker compose exec -T star-server \
+                /bin/star-server admin user create \
+                  --username "$STARINTEL_TEST_USERNAME" \
+                  --scopes identity:read,documents:read,search:read,views:read,targets:read,tenant:default \
+                  --password-stdin \
+                  --no-must-change-password
+          )"
+          jq -e --arg username "$STARINTEL_TEST_USERNAME" \
+            '.user.username == $username' <<<"$result" >/dev/null
+
+      - name: Verify public discovery, login, context, and browser CORS contract
         shell: bash
         run: |
           set -euo pipefail
@@ -96,44 +120,6 @@ jobs:
             "$STARINTEL_TEST_URL/api/v1/capabilities" \
             | jq -e '.status == "ok" and (.data.authentication.modes | index("api-key"))' \
             >/dev/null
-
-          bootstrap_response="$(
-            curl --fail --silent --show-error \
-              --request POST \
-              --header 'Content-Type: application/json' \
-              --header "X-Star-Bootstrap-Secret: $STARINTEL_TEST_BOOTSTRAP_SECRET" \
-              --data '{"owner":"quasar-ci-bootstrap-admin"}' \
-              "$STARINTEL_TEST_URL/auth/bootstrap"
-          )"
-          bootstrap_key="$(jq -er '.api_key' <<<"$bootstrap_response")"
-          [[ "$bootstrap_key" == star_sk_v1_* ]]
-
-          user_payload="$(
-            jq -cn \
-              --arg username "$STARINTEL_TEST_USERNAME" \
-              --arg password "$STARINTEL_TEST_PASSWORD" \
-              '{
-                username:$username,
-                password:$password,
-                principal_type:"user",
-                scopes:[
-                  "identity:read",
-                  "documents:read",
-                  "search:read",
-                  "views:read",
-                  "targets:read",
-                  "tenant:default"
-                ],
-                must_change_password:false
-              }'
-          )"
-          curl --fail --silent --show-error \
-            --request POST \
-            --header "Authorization: Bearer $bootstrap_key" \
-            --header 'Content-Type: application/json' \
-            --data "$user_payload" \
-            "$STARINTEL_TEST_URL/auth/users" \
-            | jq -e '.username == env.STARINTEL_TEST_USERNAME' >/dev/null
 
           login_response="$(
             curl --fail --silent --show-error \
