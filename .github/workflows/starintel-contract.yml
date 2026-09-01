@@ -1,0 +1,181 @@
+name: StarIntel HTTP Contract
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: starintel-contract-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  STARINTEL_SERVER_REF: 8fb297d146e7332fae7e38170b5b49d49530ac53
+  STARINTEL_TEST_URL: http://127.0.0.1:5000
+  STARINTEL_TEST_ORIGIN: http://127.0.0.1:4173
+  STARINTEL_TEST_USERNAME: quasar-ci
+  STARINTEL_TEST_PASSWORD: quasar-ci-known-password
+
+jobs:
+  live-http-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      rabbitmq:
+        image: rabbitmq:4.3.4-management
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 6
+
+      couchdb:
+        image: couchdb:3.5.2
+        ports:
+          - 5984:5984
+        env:
+          COUCHDB_USER: admin
+          COUCHDB_PASSWORD: password
+        options: >-
+          --health-cmd "curl -f http://localhost:5984/_up || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 6
+
+      valkey:
+        image: valkey/valkey:9.0.1-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping | grep -q PONG"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 6
+
+    steps:
+      - name: Checkout Quasar
+        uses: actions/checkout@v4
+
+      - name: Checkout pinned StarIntel server contract
+        uses: actions/checkout@v4
+        with:
+          repository: lost-rob0t/starintel-server
+          ref: ${{ env.STARINTEL_SERVER_REF }}
+          path: .ci/starintel-server
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install Quasar dependencies
+        run: npm ci
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Build the pinned real StarIntel server
+        run: nix build ./.ci/starintel-server#default --out-link "$RUNNER_TEMP/star-server"
+
+      - name: Initialize disposable StarIntel databases
+        shell: bash
+        run: |
+          set -euo pipefail
+          for database in starintel starintel-gserver-auth starintel-event-source; do
+            status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+              --user admin:password \
+              --request PUT \
+              "http://127.0.0.1:5984/$database")"
+            case "$status" in
+              201|202|412) ;;
+              *) echo "failed to create $database: HTTP $status" >&2; exit 1 ;;
+            esac
+          done
+
+      - name: Start StarIntel with known CI credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          env \
+            COUCHDB_HOST=127.0.0.1 \
+            COUCHDB_PORT=5984 \
+            COUCHDB_DATABASE=starintel \
+            COUCHDB_USER=admin \
+            COUCHDB_PASSWORD=password \
+            RABBITMQ_ADDRESS=127.0.0.1 \
+            RABBITMQ_PORT=5672 \
+            RABBITMQ_USER=guest \
+            RABBITMQ_PASSWORD=guest \
+            VALKEY_HOST=127.0.0.1 \
+            VALKEY_PORT=6379 \
+            HTTP_API_LISTEN_ADDRESS=127.0.0.1 \
+            HTTP_API_PORT=5000 \
+            STAR_AUTH_MODE=api-key \
+            STAR_AUTH_PEPPER=quasar-ci-known-pepper \
+            STAR_AUTH_INITIAL_USERNAME="$STARINTEL_TEST_USERNAME" \
+            STAR_AUTH_INITIAL_PASSWORD="$STARINTEL_TEST_PASSWORD" \
+            STAR_AUTH_PASSWORD_ITERATIONS=1000 \
+            STAR_AUTH_BOOTSTRAP_SECRET=quasar-ci-known-bootstrap-secret \
+            STAR_AUTH_ALLOWED_ORIGINS="$STARINTEL_TEST_ORIGIN" \
+            "$RUNNER_TEMP/star-server/bin/star-server" \
+            >"$RUNNER_TEMP/starintel-server.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/starintel-server.pid"
+
+          if ! timeout 120 bash -c \
+            'until curl --fail --silent http://127.0.0.1:5000/health >/dev/null; do sleep 1; done'; then
+            cat "$RUNNER_TEMP/starintel-server.log" >&2
+            exit 1
+          fi
+
+      - name: Verify public discovery and browser CORS contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            "$STARINTEL_TEST_URL/api/v1/capabilities" \
+            | jq -e '.status == "ok" and (.data.authentication.modes | index("api-key"))' \
+            >/dev/null
+
+          headers="$RUNNER_TEMP/starintel-cors-headers"
+          curl --fail --silent --show-error \
+            --dump-header "$headers" \
+            --output /dev/null \
+            --request OPTIONS \
+            --header "Origin: $STARINTEL_TEST_ORIGIN" \
+            --header 'Access-Control-Request-Method: POST' \
+            --header 'Access-Control-Request-Headers: content-type,authorization' \
+            "$STARINTEL_TEST_URL/auth/login"
+          grep -Fqi "Access-Control-Allow-Origin: $STARINTEL_TEST_ORIGIN" "$headers"
+          grep -Fqi 'Access-Control-Allow-Headers:' "$headers"
+
+      - name: Run Quasar unit tests for the StarIntel client
+        run: npm --prefix frontend exec -- vitest run src/lib/starintel-server.test.js
+
+      - name: Run Quasar against the real authenticated StarIntel server
+        run: npm --prefix frontend exec -- vitest run tests/integration/starintel-server-live.test.js
+
+      - name: Upload StarIntel server log on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: starintel-contract-server-${{ github.run_id }}
+          path: ${{ runner.temp }}/starintel-server.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Stop StarIntel server
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if test -f "$RUNNER_TEMP/starintel-server.pid"; then
+            kill "$(cat "$RUNNER_TEMP/starintel-server.pid")" 2>/dev/null || true
+          fi
