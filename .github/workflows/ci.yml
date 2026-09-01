@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-  pull_request:
+    branches:
+      - gpu-graph-renderer
   workflow_dispatch:
 
 jobs:

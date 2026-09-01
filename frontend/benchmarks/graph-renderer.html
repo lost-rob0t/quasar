@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Quasar graph renderer benchmark</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        min-width: 1600px;
+        min-height: 900px;
+        background: #07111f;
+      }
+
+      #benchmark-root {
+        width: 1600px;
+        height: 900px;
+        overflow: hidden;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="benchmark-root"></main>
+    <script type="module">
+      import { runQuasarGraphRendererBenchmark } from "/src/graph/renderer-benchmark.js";
+
+      window.runQuasarGraphRendererBenchmark = runQuasarGraphRendererBenchmark;
+    </script>
+  </body>
+</html>

@@ -1,3 +1,5 @@
+import { LARGE_GRAPH_CLASS, VERY_LARGE_GRAPH_CLASS } from "../graph/graph-performance";
+
 export const GRAPH_STYLE = [
   {
     selector: "node",
@@ -117,7 +119,45 @@ export const GRAPH_STYLE = [
       "line-style": "dashed"
     }
   },
-  { selector: ".labels-hidden", style: { label: "" } }
+  { selector: ".labels-hidden", style: { label: "" } },
+  {
+    selector: `node.${LARGE_GRAPH_CLASS}`,
+    style: {
+      "min-zoomed-font-size": 10,
+      "border-width": 1,
+      "overlay-padding": 4
+    }
+  },
+  {
+    selector: `edge.${LARGE_GRAPH_CLASS}`,
+    style: {
+      label: "",
+      width: 1,
+      "curve-style": "haystack",
+      "target-arrow-shape": "none"
+    }
+  },
+  {
+    selector: `edge.${LARGE_GRAPH_CLASS}:selected, edge.${LARGE_GRAPH_CLASS}.path`,
+    style: {
+      label: "data(label)",
+      "curve-style": "bezier",
+      "target-arrow-shape": "triangle"
+    }
+  },
+  {
+    selector: `node.${VERY_LARGE_GRAPH_CLASS}`,
+    style: {
+      "min-zoomed-font-size": 18,
+      "overlay-padding": 2
+    }
+  },
+  {
+    selector: `edge.${VERY_LARGE_GRAPH_CLASS}`,
+    style: {
+      width: 0.75
+    }
+  }
 ];
 
 const THEME_COLOR = {

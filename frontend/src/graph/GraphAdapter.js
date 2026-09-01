@@ -1,5 +1,12 @@
 import cytoscape from "cytoscape";
 import edgehandles from "cytoscape-edgehandles";
+import {
+  LARGE_GRAPH_CLASS,
+  VERY_LARGE_GRAPH_CLASS,
+  graphPerformanceClasses,
+  graphPerformanceTier
+} from "./graph-performance";
+import { graphRendererPreferenceFromEnv, resolveGraphRenderer } from "./graph-renderer";
 import { installGraphGestures } from "./graph-gestures";
 import { installMaltegoLayouts } from "./maltego-layouts";
 import { installUserNavigationGuard } from "./user-navigation-guard";
@@ -7,6 +14,7 @@ import { installUserNavigationGuard } from "./user-navigation-guard";
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 const AUTO_NODE_SPACING = 96;
 const NODE_SIZE_SAMPLE_LIMIT = 16;
+const PERFORMANCE_CLASSES = `${LARGE_GRAPH_CLASS} ${VERY_LARGE_GRAPH_CLASS}`;
 export const DEFAULT_WHEEL_SENSITIVITY = 0.42;
 export const MAX_WHEEL_SENSITIVITY = 4;
 export const TARGET_RENDERED_NODE_SIZE = 38;
@@ -109,6 +117,58 @@ function installAutomaticNodePlacement(cy) {
   return cy;
 }
 
+function installGraphPerformanceTier(cy, container) {
+  let activeTier = null;
+  let scheduled = false;
+  let addedIds = [];
+
+  const applyTier = () => {
+    scheduled = false;
+    const tier = graphPerformanceTier(cy.elements().length);
+    const classes = graphPerformanceClasses(cy.elements().length);
+
+    if (tier !== activeTier) {
+      cy.batch(() => {
+        const elements = cy.elements();
+        elements.removeClass(PERFORMANCE_CLASSES);
+        if (classes.length) elements.addClass(classes.join(" "));
+      });
+      activeTier = tier;
+    } else if (classes.length && addedIds.length) {
+      const added = cy.collection();
+      for (const id of addedIds) {
+        const element = cy.getElementById(id);
+        if (element.length) added.merge(element);
+      }
+      if (added.length) added.addClass(classes.join(" "));
+    }
+
+    addedIds = [];
+    if (container?.dataset) container.dataset.graphPerformanceTier = tier;
+  };
+
+  const schedule = () => {
+    if (scheduled) return;
+    scheduled = true;
+    const enqueue = globalThis.queueMicrotask || ((callback) => Promise.resolve().then(callback));
+    enqueue(applyTier);
+  };
+  const onAdd = (event) => {
+    addedIds.push(event.target.id());
+    schedule();
+  };
+  const onRemove = () => schedule();
+
+  cy.on("add", onAdd);
+  cy.on("remove", onRemove);
+  applyTier();
+
+  cy.one("destroy", () => {
+    cy.off("add", onAdd);
+    cy.off("remove", onRemove);
+  });
+}
+
 function installViewportInput(cy, options) {
   const container = options.container;
   const allowPan = options.panningEnabled !== false && options.userPanningEnabled !== false;
@@ -154,9 +214,21 @@ function exposeDevelopmentGraph(cy) {
   });
 }
 
+function exposeRendererState(container, renderer) {
+  if (!container?.dataset) return;
+  container.dataset.graphRenderer = renderer.backend;
+  container.dataset.graphRendererRequested = renderer.requested;
+  container.dataset.graphRendererFallback = String(renderer.fallback);
+}
+
 export class GraphAdapter {
   static create(options) {
     registerPlugins();
+    const { rendererPreference, ...cytoscapeOptions } = options;
+    const renderer = resolveGraphRenderer({
+      preference: rendererPreference ?? graphRendererPreferenceFromEnv(),
+      webglSupported: options.headless ? false : undefined
+    });
     const cy = installMaltegoLayouts(
       cytoscape({
         panningEnabled: true,
@@ -164,10 +236,18 @@ export class GraphAdapter {
         zoomingEnabled: true,
         userZoomingEnabled: true,
         wheelSensitivity: DEFAULT_WHEEL_SENSITIVITY,
-        ...options,
+        pixelRatio: 1,
+        hideEdgesOnViewport: true,
+        hideLabelsOnViewport: true,
+        textureOnViewport: true,
+        motionBlur: false,
+        ...cytoscapeOptions,
+        webgl: renderer.webgl,
         selectionType: "single"
       })
     );
+    exposeRendererState(options.container, renderer);
+    installGraphPerformanceTier(cy, options.container);
     const restoreUserNavigation = installUserNavigationGuard(cy);
     cy.one("destroy", restoreUserNavigation);
     installAutomaticNodePlacement(cy);
