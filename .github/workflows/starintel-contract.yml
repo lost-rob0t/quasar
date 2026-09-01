@@ -87,8 +87,6 @@ jobs:
           RABBITMQ_USER: starintel
           STAR_AUTH_PASSWORD_ITERATIONS: "1000"
           STAR_AUTH_ALLOWED_ORIGINS: ${{ env.STARINTEL_TEST_ORIGIN }}
-          STARINTEL_TEST_USERNAME: ${{ env.STARINTEL_TEST_USERNAME }}
-          STARINTEL_TEST_PASSWORD: ${{ env.STARINTEL_TEST_PASSWORD }}
         run: >-
           docker compose
           -f docker-compose.yml
@@ -152,8 +150,6 @@ jobs:
           RABBITMQ_USER: starintel
           STAR_AUTH_PASSWORD_ITERATIONS: "1000"
           STAR_AUTH_ALLOWED_ORIGINS: ${{ env.STARINTEL_TEST_ORIGIN }}
-          STARINTEL_TEST_USERNAME: ${{ env.STARINTEL_TEST_USERNAME }}
-          STARINTEL_TEST_PASSWORD: ${{ env.STARINTEL_TEST_PASSWORD }}
         run: >-
           docker compose
           -f docker-compose.yml
@@ -181,8 +177,6 @@ jobs:
           RABBITMQ_USER: starintel
           STAR_AUTH_PASSWORD_ITERATIONS: "1000"
           STAR_AUTH_ALLOWED_ORIGINS: ${{ env.STARINTEL_TEST_ORIGIN }}
-          STARINTEL_TEST_USERNAME: ${{ env.STARINTEL_TEST_USERNAME }}
-          STARINTEL_TEST_PASSWORD: ${{ env.STARINTEL_TEST_PASSWORD }}
         run: >-
           docker compose
           -f docker-compose.yml
