@@ -31,9 +31,9 @@ function v1Capabilities(overrides = {}) {
 
 describe("starintel-server client", () => {
   it("normalizes URLs and keeps configured credentials opt-in", () => {
-    expect(
-      starIntelServerInternals.serverUrl({ serverUrl: "http://localhost:5000/" }, "/")
-    ).toBe("http://localhost:5000/");
+    expect(starIntelServerInternals.serverUrl({ serverUrl: "http://localhost:5000/" }, "/")).toBe(
+      "http://localhost:5000/"
+    );
     expect(starIntelServerInternals.authorization({ serverToken: "token" })).toBeNull();
     expect(
       starIntelServerInternals.authorization(
@@ -83,9 +83,7 @@ describe("starintel-server client", () => {
       password: "known-password"
     });
     expect(fetch.mock.calls[2][0]).toBe("http://localhost:5000/auth/context");
-    expect(fetch.mock.calls[2][1].headers.get("Authorization")).toBe(
-      "Bearer star_sk_v1_session"
-    );
+    expect(fetch.mock.calls[2][1].headers.get("Authorization")).toBe("Bearer star_sk_v1_session");
   });
 
   it("uses an explicit API key without calling the login route", async () => {
@@ -103,9 +101,7 @@ describe("starintel-server client", () => {
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(fetch.mock.calls[0][1].headers.has("Authorization")).toBe(false);
     expect(fetch.mock.calls[1][0]).toBe("http://localhost:5000/auth/context");
-    expect(fetch.mock.calls[1][1].headers.get("Authorization")).toBe(
-      "Bearer star_sk_v1_explicit"
-    );
+    expect(fetch.mock.calls[1][1].headers.get("Authorization")).toBe("Bearer star_sk_v1_explicit");
   });
 
   it("reports missing v1 credentials instead of silently attempting Basic auth", async () => {
@@ -145,9 +141,9 @@ describe("starintel-server client", () => {
     const fetch = vi.fn().mockResolvedValueOnce(jsonResponse({ msg: "boom" }, 500));
     vi.stubGlobal("fetch", fetch);
 
-    await expect(
-      probeStarIntelServer({ serverUrl: "http://localhost:5000" })
-    ).rejects.toThrow("StarIntel server: boom");
+    await expect(probeStarIntelServer({ serverUrl: "http://localhost:5000" })).rejects.toThrow(
+      "StarIntel server: boom"
+    );
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
@@ -169,9 +165,7 @@ describe("starintel-server client", () => {
 
     expect(fetch.mock.calls[0][1].headers.has("Authorization")).toBe(false);
     expect(fetch.mock.calls[1][0]).toBe("http://localhost:5000/new/target/actor%20one");
-    expect(fetch.mock.calls[1][1].headers.get("Authorization")).toBe(
-      "Bearer star_sk_v1_target"
-    );
+    expect(fetch.mock.calls[1][1].headers.get("Authorization")).toBe("Bearer star_sk_v1_target");
     expect(fetch.mock.calls[1][1].headers.has("Idempotency-Key")).toBe(false);
   });
 
