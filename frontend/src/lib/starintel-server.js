@@ -10,8 +10,12 @@ function serverUrl(configuration, path = "") {
   return `${base}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
-function authorization(configuration, { allowBasic = false, token = null } = {}) {
-  const bearer = String(token || configuration?.serverToken || "").trim();
+function authorization(
+  configuration,
+  { allowBasic = false, allowConfiguredToken = false, token = null } = {}
+) {
+  const configuredToken = allowConfiguredToken ? configuration?.serverToken : "";
+  const bearer = String(token || configuredToken || "").trim();
   if (bearer) return `Bearer ${bearer}`;
   if (allowBasic && configuration?.serverUsername) {
     return `Basic ${btoa(`${configuration.serverUsername}:${configuration.serverPassword || ""}`)}`;
@@ -31,11 +35,16 @@ function networkFailure(configuration, path, error) {
 }
 
 async function request(configuration, path, options = {}) {
-  const { allowBasic = false, token = null, ...fetchOptions } = options;
+  const {
+    allowBasic = false,
+    allowConfiguredToken = false,
+    token = null,
+    ...fetchOptions
+  } = options;
   const headers = new Headers(fetchOptions.headers || {});
   headers.set("Accept", "application/json");
   if (fetchOptions.body != null) headers.set("Content-Type", "application/json");
-  const auth = authorization(configuration, { allowBasic, token });
+  const auth = authorization(configuration, { allowBasic, allowConfiguredToken, token });
   if (auth) headers.set("Authorization", auth);
 
   let response;
@@ -86,7 +95,10 @@ async function discoverServer(configuration) {
     return { mode: "v1", capabilities: unwrapCapabilities(payload) };
   } catch (error) {
     if (error.status !== 404) throw error;
-    const legacy = await request(configuration, "/");
+    const legacy = await request(configuration, "/", {
+      allowBasic: true,
+      allowConfiguredToken: true
+    });
     return {
       mode: "legacy",
       capabilities: {
@@ -193,6 +205,7 @@ export async function submitTargetToServer(configuration, target) {
   return request(configuration, `/new/target/${encodeURIComponent(actor)}`, {
     method: "POST",
     allowBasic: true,
+    allowConfiguredToken: true,
     body: JSON.stringify(document)
   });
 }
