@@ -51,7 +51,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npm --prefix frontend exec -- prettier --write src/lib/starintel-server.test.js
+          npm --prefix frontend exec -- prettier --write frontend/src/lib/starintel-server.test.js
           git diff -- frontend/src/lib/starintel-server.test.js
           git diff --exit-code -- frontend/src/lib/starintel-server.test.js
           npm run check
