@@ -48,7 +48,13 @@ jobs:
         run: npm ci
 
       - name: Run fast Quasar quality gate
-        run: npm run check
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix frontend exec -- prettier --write src/lib/starintel-server.test.js
+          git diff -- frontend/src/lib/starintel-server.test.js
+          git diff --exit-code -- frontend/src/lib/starintel-server.test.js
+          npm run check
 
       - name: Install Nix
         uses: cachix/install-nix-action@v31
