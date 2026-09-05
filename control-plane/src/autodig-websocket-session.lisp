@@ -27,11 +27,13 @@
   (unless (and (listp workspaces)
                workspaces
                (every (lambda (workspace)
-                        (and (stringp workspace) (plusp (length workspace))))
+                        (and (stringp workspace) (plusp (length workspace))
+                             (not (string= workspace "*"))))
                       workspaces))
     (error 'quasar.protocol:quasar-error
            :code "security.unauthorized"
-           :message (format nil "~A sessions require explicit workspaces."
+           :message (format nil
+                            "~A sessions require explicit non-wildcard workspaces."
                             session-kind)))
   workspaces)
 

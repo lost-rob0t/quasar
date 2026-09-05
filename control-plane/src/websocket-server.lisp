@@ -92,6 +92,9 @@
                  :reader websocket-server-capabilities)
    (sessions :initform (make-hash-table :test #'equal)
              :reader websocket-server-sessions)
+   (delegated-registration-secret :initarg :delegated-registration-secret
+                                  :initform nil
+                                  :reader websocket-server-delegated-registration-secret)
    (insecure-development-p :initarg :insecure-development-p
                            :initform nil
                            :reader websocket-server-insecure-development-p)
@@ -107,14 +110,16 @@
    command capability checks are enforced."))
 
 (defun make-websocket-server (plane &key (host "127.0.0.1") (port 8081)
-                              (max-message-size +default-max-message-size+)
-                              (allowed-origins +default-allowed-origins+)
-                              (capabilities +default-capabilities+)
-                              (insecure-development-p nil))
+                               (max-message-size +default-max-message-size+)
+                               (allowed-origins +default-allowed-origins+)
+                               (capabilities +default-capabilities+)
+                               (delegated-registration-secret nil)
+                               (insecure-development-p nil))
   (make-instance 'websocket-server :plane plane :host host :port port
                  :max-message-size max-message-size
                  :allowed-origins allowed-origins
                  :capabilities capabilities
+                 :delegated-registration-secret delegated-registration-secret
                  :insecure-development-p insecure-development-p))
 
 (defun register-websocket-session (server token principal workspaces
@@ -128,6 +133,23 @@
                 :workspaces (copy-list workspaces)
                 :capabilities (copy-list capabilities))))
   token)
+
+(defun lookup-websocket-session (server token)
+  "Return the session registered under TOKEN, sweeping expired sessions.
+
+Sessions that carry an :expires-at in the past are removed and NIL is
+returned. Sessions without :expires-at (worker and internal registrations)
+never expire here. Expired delegated sessions therefore fail the WebSocket
+handshake deterministically."
+  (when token
+    (bt:with-lock-held ((websocket-server-lock server))
+      (let ((session (gethash token (websocket-server-sessions server))))
+        (let ((expires-at (getf session :expires-at)))
+          (if (and expires-at (<= expires-at (get-universal-time)))
+              (progn
+                (remhash token (websocket-server-sessions server))
+                nil)
+              session))))))
 
 (defun record-audit (server action &key principal workspace command outcome)
   (bt:with-lock-held ((websocket-server-lock server))
@@ -337,9 +359,7 @@
             :authority-kind :internal
             :workspaces '("*")
             :capabilities (websocket-server-capabilities server))
-      (bt:with-lock-held ((websocket-server-lock server))
-        (gethash (query-parameter env "session")
-                 (websocket-server-sessions server)))))
+      (lookup-websocket-session server (query-parameter env "session"))))
 
 (defun start-websocket-server (server)
   (unless (websocket-server-started-p server)
