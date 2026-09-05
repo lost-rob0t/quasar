@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify monorepo layout
+        run: |
+          test ! -e .gitmodules
+          test ! -e frontend-overlay
+          test ! -e scripts/prepare-frontend.sh
+          test -f frontend/package.json
+          test -f frontend/src/app/main.tsx
+          test -f frontend/src/control-plane/client.ts
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install monorepo dependencies from the root lockfile
+        run: npm ci
+
+      - name: Format, lint, type, boundary, and static checks
+        run: npm run check
+
+      - name: Frontend unit and integration tests
+        run: |
+          npm --prefix frontend run test:unit
+          npm --prefix frontend run test:integration
+
+      - name: Production frontend build
+        run: npm run build
+
+      - name: Install Common Lisp runtime dependencies
+        run: |
+          SUDO=""
+          if command -v sudo >/dev/null 2>&1 && [ "$(id -u)" != "0" ]; then
+            SUDO="sudo"
+          fi
+          $SUDO apt-get update --quiet
+          $SUDO apt-get install --yes --quiet \
+            sbcl curl git libffi-dev libssl-dev libsqlite3-dev librabbitmq-dev liblmdb-dev
+          curl --fail --silent --show-error --output /tmp/quicklisp.lisp \
+            https://beta.quicklisp.org/quicklisp.lisp
+          sbcl --non-interactive \
+            --load /tmp/quicklisp.lisp \
+            --eval "(quicklisp-quickstart:install :path #p\"$HOME/quicklisp/\")"
+          printf '%s\n' "(load #p\"$HOME/quicklisp/setup.lisp\")" > "$HOME/.sbclrc"
+          bash scripts/bootstrap-lisp-deps
+
+      - name: Verify native runtime libraries are load-path visible
+        run: node scripts/check-native-runtime.mjs
+
+      - name: Common Lisp transaction, persistence, and control-plane tests
+        run: npm run test:lisp
+
+      - name: Load the real quasar-web system
+        run: |
+          output=$(mktemp)
+          LOAD_ONLY=1 bash scripts/run-control-plane 2>&1 | tee "$output"
+          if grep -iE '(undefined.*function|UNDEFINED-FUNCTION|; caught.*ERROR.*condition)' "$output"; then
+            echo "quasar-web produced a compilation error or undefined function" >&2
+            exit 1
+          fi
+
+      - name: Complete Ubuntu development stack smoke test
+        run: npm run smoke
+
+      - name: Install tracked Playwright browser runtime
+        run: ./node_modules/.bin/playwright install --with-deps chromium
+
+      - name: Real-stack desktop, mobile, mutation, and reload paths
+        run: npm run test:e2e -- --reporter=html
+        env:
+          PLAYWRIGHT_HTML_OPEN: never
+
+      - name: Upload Playwright failure diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-failure-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+
+      - name: Packaged production build, serve, routing, PWA, and security smoke
+        run: npm run smoke:production
+
+  nix-runtime:
+    name: Fresh Nix runtime + real startup
+    runs-on: nixos
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bootstrap and smoke test inside the repository flake
+        run: |
+          nix develop --command bash -lc '
+            set -euo pipefail
+            npm ci
+            curl --fail --silent --show-error --output /tmp/quicklisp.lisp https://beta.quicklisp.org/quicklisp.lisp
+            sbcl --non-interactive \
+              --load /tmp/quicklisp.lisp \
+              --eval "(quicklisp-quickstart:install :path #p\"$HOME/quicklisp/\")"
+            printf "%s\n" "(load #p\"$HOME/quicklisp/setup.lisp\")" > "$HOME/.sbclrc"
+            bash scripts/bootstrap-lisp-deps
+            node scripts/check-native-runtime.mjs
+            LOAD_ONLY=1 bash scripts/run-control-plane
+            env -u QUASAR_DEV_NIX_READY -u LD_LIBRARY_PATH IN_NIX_SHELL=impure npm run smoke
+          '
