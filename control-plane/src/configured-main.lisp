@@ -1,5 +1,14 @@
 (in-package #:quasar.app)
 
+(defun environment-port (name default)
+  (let ((value (uiop:getenv name)))
+    (if (or (null value) (zerop (length value)))
+        default
+        (let ((port (parse-integer value :junk-allowed nil)))
+          (unless (<= 1 port 65535)
+            (error "~A must be a TCP port between 1 and 65535." name))
+          port))))
+
 (defun main (&key
                (insecure-development-p nil)
                (open-browser-p nil)
@@ -24,8 +33,12 @@ from example_configs/init.lisp. Invalid configuration aborts startup."
                                (bt:signal-semaphore *shutdown-semaphore*))))
   (unwind-protect
        (progn
-         (start :insecure-development-p insecure-development-p
-                :open-browser-p open-browser-p)
+         (start :host (or (uiop:getenv "QUASAR_HOST") "127.0.0.1")
+                 :port (environment-port "QUASAR_HTTP_PORT" 8080)
+                 :ws-port (environment-port "QUASAR_WS_PORT" 8081)
+                 :storage-path (uiop:getenv "QUASAR_STORAGE_PATH")
+                 :insecure-development-p insecure-development-p
+                 :open-browser-p open-browser-p)
          (bt:wait-on-semaphore *shutdown-semaphore*))
     (stop)
     (setf *shutdown-semaphore* nil)))

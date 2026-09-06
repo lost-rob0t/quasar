@@ -18,7 +18,43 @@
     },
     "root": {
       "inputs": {
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs",
+        "starintel-biz": "starintel-biz",
+        "tek9": "tek9"
+      }
+    },
+    "starintel-biz": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1788721651,
+        "narHash": "sha256-DjtUjmaoyuO6H60N8J3Y2g/r6m3HYpR2Ppij5g1qwEo=",
+        "ref": "refs/heads/main",
+        "rev": "c25f9e8972c2392c9c43f30c2254654012d26d38",
+        "revCount": 2,
+        "type": "git",
+        "url": "https://git.starintel.actor/starintel-labs/starintel-biz"
+      },
+      "original": {
+        "rev": "c25f9e8972c2392c9c43f30c2254654012d26d38",
+        "type": "git",
+        "url": "https://git.starintel.actor/starintel-labs/starintel-biz"
+      }
+    },
+    "tek9": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1787002297,
+        "narHash": "sha256-ntX5V5R6/96jLaD89RdtfeW9wenIU3DkwR0Agbyb/j0=",
+        "ref": "refs/heads/master",
+        "rev": "ca24ef35ea6877420cbca057dd7fb702fe29a740",
+        "revCount": 124,
+        "type": "git",
+        "url": "https://git.starintel.actor/starintel-labs/tek9"
+      },
+      "original": {
+        "rev": "ca24ef35ea6877420cbca057dd7fb702fe29a740",
+        "type": "git",
+        "url": "https://git.starintel.actor/starintel-labs/tek9"
       }
     }
   },
