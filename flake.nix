@@ -11,6 +11,47 @@
       forAllSystems = fn: builtins.listToAttrs (map (s: { name = s; value = fn s; }) systems);
     in
     {
+      packages = forAllSystems (system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+        in
+        {
+          # The standalone web edition bundle: the Vite production build of
+          # frontend/ served as a root-hosted static SPA. This is the same
+          # artifact CLOG serves locally (frontend/dist); the hosted edition
+          # omits the Common Lisp control plane, per the capability boundary.
+          web-dist = pkgs.buildNpmPackage {
+            pname = "quasar-web-dist";
+            version = "0.2.0";
+            src = self;
+
+            npmDepsHash = "";
+            makeCacheWritable = true;
+            forceGitDeps = true;
+            nativeBuildInputs = [ pkgs.git ];
+
+            npmBuild = "npm --prefix frontend run build";
+
+            installPhase = ''
+              runHook preInstall
+              test -f frontend/dist/index.html
+              test -f frontend/dist/404.html
+              mkdir -p "$out/share/quasar-web"
+              cp -r frontend/dist "$out/share/quasar-web/dist"
+              runHook postInstall
+            '';
+
+            passthru.distRoot = "share/quasar-web/dist";
+
+            meta = with pkgs.lib; {
+              description = "Quasar standalone web edition (Vite production bundle)";
+              license = licenses.agpl3Only;
+              platforms = platforms.linux;
+            };
+          };
+
+          default = self.packages.${system}.web-dist;
+        });
       devShells = forAllSystems (system:
         let
           pkgs = import nixpkgs { inherit system; };
