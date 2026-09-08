@@ -63,12 +63,20 @@ STORAGE-PATH overrides the normal XDG data path when Quasar creates that store."
                   :port port
                   :session-token *browser-session-token*
                   :open-browser-p open-browser-p)
+        (quasar.log:log-event
+         :info "app" "start"
+         :host host :port port :ws-port ws-port
+         :storage-path storage-path)
         *control-plane*)
     (error (condition)
+      (quasar.log:log-event
+       :error "app" "start-failed"
+       :condition (princ-to-string condition))
       (stop)
       (error condition))))
 
 (defun stop ()
+  (quasar.log:log-event :info "app" "stop")
   (when *websocket-server*
     (stop-websocket-server *websocket-server*)
     (setf *websocket-server* nil))
@@ -83,6 +91,8 @@ STORAGE-PATH overrides the normal XDG data path when Quasar creates that store."
     (setf *workspace-store* nil
           *workspace-store-owned-p* nil))
   (setf *browser-session-token* nil)
+  (quasar.log:flush-logs)
+  (quasar.log:shutdown-logging)
   t)
 
 (defun main (&key (insecure-development-p nil) (open-browser-p nil))

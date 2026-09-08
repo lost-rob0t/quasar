@@ -326,4 +326,5 @@
                 #:unsubscribe
                 #:control-plane-workspaces
                 #:control-plane-store)
-  (:export #:run-tests))
+  (:export #:run-tests
+           #:run-logging-tests))
