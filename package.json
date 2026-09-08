@@ -26,7 +26,8 @@
     "format": "npm --prefix frontend run format",
     "check": "npm --prefix frontend run check && node scripts/check-control-plane-deps.mjs",
     "benchmark:graph": "npm --prefix frontend run benchmark:graph",
-    "benchmark:graph-renderer": "npm --prefix frontend run benchmark:graph-renderer"
+    "benchmark:graph-renderer": "npm --prefix frontend run benchmark:graph-renderer",
+    "bench:logging": "bash scripts/bench-logging"
   },
   "devDependencies": {
     "concurrently": "^9.2.0",

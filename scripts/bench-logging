@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Logging performance harness.
+#
+# Measures per-event latency and allocation for the quasar.log facility
+# across the sink configurations that matter operationally: the default
+# stdout text sink, the durable JSON file sink with immediate flush,
+# the relaxed flush policy, and the level-filtered path. Numbers are
+# informational regressions guards, not CI gates.
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+tek9_path="${QUASAR_TEK9_PATH:-$HOME/starintel/tek9}"
+export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
+
+export CL_SOURCE_REGISTRY="(:source-registry (:tree \"$tek9_path/\") (:tree \"$HOME/quicklisp/local-projects/\") (:tree \"$HOME/quicklisp/dists/quicklisp/software/\") (:tree \"$repo_root/systems/\") :ignore-inherited-configuration)"
+
+for native_name in openssl lmdb; do
+  native_lib="$(nix-store -q --requisites /nix/var/nix/profiles/default 2>/dev/null | grep -m1 "$native_name" || true)"
+  if [[ -n "${native_lib}" && -d "${native_lib}/lib" ]]; then
+    export LD_LIBRARY_PATH="${native_lib}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  fi
+done
+
+cd "$repo_root"
+
+nix develop -c sbcl --non-interactive --load scripts/bench-logging.lisp

@@ -1,49 +1,14 @@
 (in-package #:quasar.control-plane)
 
-(defun parse-log-level (value)
-  (let ((level (string-downcase (or value "debug"))))
-    (cond
-      ((string= level "debug") :debug)
-      ((string= level "info") :info)
-      ((member level '("warn" "warning") :test #'string=) :warn)
-      ((string= level "error") :error)
-      ((string= level "off") :off)
-      (t :debug))))
-
-(defun log-level-rank (level)
-  (ecase level
-    (:debug 10)
-    (:info 20)
-    (:warn 30)
-    (:error 40)
-    (:off 100)))
+;;; Diagnostic logging now lives in quasar.log, layered on log4cl.
+;;; DIAGNOSTIC-LOG remains as the historical entry point so workspace
+;;; and dispatch instrumentation keep their call sites unchanged.
+(defun diagnostic-log (level subsystem event &rest fields)
+  (apply #'quasar.log:log-event level subsystem event fields))
 
 (defun configured-log-level ()
-  ;; Local developer processes are intentionally verbose by default. CI is
-  ;; quieter unless QUASAR_LOG_LEVEL=debug is explicitly requested.
-  (parse-log-level
-   (or (uiop:getenv "QUASAR_LOG_LEVEL")
-       (and (uiop:getenv "CI") "info")
-       "debug")))
-
-(defun diagnostic-timestamp ()
-  (multiple-value-bind (second minute hour day month year)
-      (decode-universal-time (get-universal-time) 0)
-    (format nil "~4,'0D-~2,'0D-~2,'0DT~2,'0D:~2,'0D:~2,'0DZ"
-            year month day hour minute second)))
-
-(defun diagnostic-log (level subsystem event &rest fields)
-  (when (>= (log-level-rank level)
-            (log-level-rank (configured-log-level)))
-    (format *error-output* "~&[quasar] ~A ~A ~A ~A"
-            (diagnostic-timestamp)
-            (string-upcase (symbol-name level))
-            subsystem
-            event)
-    (loop for (key value) on fields by #'cddr
-          do (format *error-output* " ~A=~S" key value))
-    (terpri *error-output*)
-    (finish-output *error-output*)))
+  "Deprecated wrapper; see quasar.log:configured-log-level."
+  (quasar.log:configured-log-level))
 
 (defun safe-error-details (condition)
   (or (quasar.protocol:quasar-error-details condition)

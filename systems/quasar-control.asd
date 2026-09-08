@@ -9,6 +9,7 @@
                "bordeaux-threads"
                "dexador"
                "jsown"
+               "log4cl"
                "quri"
                "sento"
                "tek9")
@@ -19,6 +20,9 @@
                (:file "persistence-plan")
                (:file "store")
                (:file "config")
+               ;; Logging is standalone infrastructure: configured after
+               ;; config.lisp, available to every later subsystem.
+               (:file "logging")
                (:file "store-maintenance")
                (:file "phase2-store-core")
                (:file "phase2-store-page-fix")

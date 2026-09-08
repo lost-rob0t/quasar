@@ -39,6 +39,7 @@
     (let* ((id (quasar.protocol:command-envelope-id envelope))
            (command (quasar.protocol:command-envelope-command envelope))
            (payload (quasar.protocol:command-envelope-payload envelope))
+           (workspace (or (quasar.protocol:command-envelope-workspace envelope) "default"))
            (handler (gethash command (control-plane-handlers plane)))
            (async-table (gethash plane *async-handler-tables*))
            (async-handler (and async-table (gethash command async-table))))
@@ -59,7 +60,10 @@
         (quasar.protocol:quasar-error (condition)
           (funcall reply (quasar.protocol:quasar-error-to-envelope id condition)))
         (error (condition)
-          (format *error-output* "~&[control-plane] unexpected error: ~A~%" condition)
+          (quasar.log:log-event
+           :error "control-plane" "command.crashed"
+           :request-id id :command command :workspace workspace
+           :condition (princ-to-string condition))
           (funcall reply
                    (quasar.protocol:encode-error
                     id "control-plane.unavailable"

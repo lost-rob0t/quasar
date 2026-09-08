@@ -3,8 +3,12 @@
 (defvar *server* nil)
 
 (defun log-websocket (format-control &rest arguments)
-  (format *error-output* "~&[websocket] ~?~%" format-control arguments)
-  (finish-output *error-output*))
+  "Deprecated format-based shim; routed through the shared quasar.log
+facility so websocket diagnostics carry timestamps, levels, and the
+configured sink."
+  (quasar.log:log-event
+   :info "websocket" "server.log"
+   :message (apply #'format nil format-control arguments)))
 
 (defparameter +default-max-message-size+ (* 1024 1024)
   "Maximum message size in bytes (1 MB default).")
@@ -217,8 +221,10 @@
     (handler-case
         (wsd:send-text (ws-connection-ws conn) message)
       (error (condition)
-        (log-websocket "send failed on ~A: ~A"
-                       (ws-connection-id conn) condition)
+        (quasar.log:log-event
+         :warn "websocket" "connection.send-failed"
+         :connection (ws-connection-id conn)
+         :condition (princ-to-string condition))
         nil))))
 
 (defun submit-connection-command (plane connection encoded reply)
@@ -290,7 +296,9 @@
           (safe-decode-id message)
           condition)))
       (error ()
-        (log-websocket "invalid message on ~A" (ws-connection-id conn))
+        (quasar.log:log-event
+         :warn "websocket" "message.invalid"
+         :connection (ws-connection-id conn))
         (send-connection-text
          conn
          (protocol-error-envelope
@@ -348,15 +356,19 @@
             (lambda (env)
                (let* ((origin (request-header env "origin"))
                       (session (handshake-session server env)))
-                 (cond
-                   ((not (origin-allowed-p server origin))
-                    (log-websocket "rejected handshake: origin denied (~A)" origin)
-                    (record-audit server "handshake" :outcome "origin-denied")
-                    '(403 (:content-type "text/plain") ("Origin denied")))
-                   ((null session)
-                    (log-websocket "rejected handshake: unauthorized")
-                    (record-audit server "handshake" :outcome "unauthorized")
-                    '(401 (:content-type "text/plain") ("Unauthorized")))
+                  (cond
+                    ((not (origin-allowed-p server origin))
+                     (quasar.log:log-event
+                      :warn "websocket" "handshake.rejected"
+                      :reason "origin-denied" :origin origin)
+                     (record-audit server "handshake" :outcome "origin-denied")
+                     '(403 (:content-type "text/plain") ("Origin denied")))
+                    ((null session)
+                     (quasar.log:log-event
+                      :warn "websocket" "handshake.rejected"
+                      :reason "unauthorized")
+                     (record-audit server "handshake" :outcome "unauthorized")
+                     '(401 (:content-type "text/plain") ("Unauthorized")))
                    (t
                     (let* ((ws (wsd:make-server env))
                            (connection-id
@@ -381,16 +393,20 @@
                                 (handle-text-message server conn message)))
                       (wsd:on :close ws
                               (lambda (&rest args)
-                                (log-websocket "connection ~A closed: ~S"
-                                               connection-id args)
+                                (quasar.log:log-event
+                                 :info "websocket" "connection.closed"
+                                 :connection connection-id
+                                 :reason (princ-to-string args))
                                 (bt:with-lock-held ((websocket-server-lock server))
                                   (remhash connection-id
                                            (websocket-server-connections server)))))
                       (record-audit server "handshake"
                                     :principal (getf session :principal)
                                     :outcome "accepted")
-                      (log-websocket "accepted connection ~A for ~A"
-                                     connection-id (getf session :principal))
+                      (quasar.log:log-event
+                       :info "websocket" "connection.accepted"
+                       :connection connection-id
+                       :principal (getf session :principal))
                       (lambda (responder)
                         (declare (ignore responder))
                          (wsd:start-connection ws)))))))))
@@ -400,9 +416,10 @@
                              :port (websocket-server-port server)
                              :use-default-middlewares nil))
         (setf (websocket-server-started-p server) t)
-        (log-websocket "listening on ws://~A:~D"
-                       (websocket-server-host server)
-                       (websocket-server-port server))))
+        (quasar.log:log-event
+         :info "websocket" "server.listening"
+         :host (websocket-server-host server)
+         :port (websocket-server-port server))))
   server)
 
 (defun stop-websocket-server (server)
@@ -416,7 +433,7 @@
     (setf (websocket-server-acceptor server) nil
           (websocket-server-started-p server) nil
           *resource* nil)
-    (log-websocket "stopped"))
+    (quasar.log:log-event :info "websocket" "server.stopped"))
   t)
 
 (defun attach-subscriber (server)

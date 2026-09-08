@@ -3,8 +3,14 @@
   (:export
    #:*autodig-persistence-backend*
    #:*autodig-filesystem-path*
+   #:*log-sink*
+   #:*log-file-path*
+   #:*log-level*
+   #:*log-file-format*
+   #:*log-immediate-flush*
    #:default-init-path
    #:default-autodig-filesystem-path
+   #:default-log-file-path
    #:ensure-init-file
    #:load-init-file
    #:resolve-init-path
@@ -15,6 +21,15 @@
 
 (defparameter *autodig-persistence-backend* :tek9)
 (defparameter *autodig-filesystem-path* nil)
+
+;;; Logging surface. The default sink is stdout so `npm run dev` and
+;;; systemd/container deployments observe server output with no
+;;; configuration; a durable file sink is opt-in through the init file.
+(defparameter *log-sink* :stdout)
+(defparameter *log-file-path* nil)
+(defparameter *log-level* nil)
+(defparameter *log-file-format* :json)
+(defparameter *log-immediate-flush* t)
 
 (defun default-config-home ()
   (let ((xdg (uiop:getenv "XDG_CONFIG_HOME")))
@@ -34,9 +49,17 @@
 (defun default-autodig-filesystem-path ()
   (merge-pathnames #P"quasar/autodig/" (default-data-home)))
 
+(defun default-log-file-path ()
+  (merge-pathnames #P"quasar/logs/quasar.log" (default-data-home)))
+
 (defun reset-config ()
   (setf *autodig-persistence-backend* :tek9
-        *autodig-filesystem-path* nil)
+        *autodig-filesystem-path* nil
+        *log-sink* :stdout
+        *log-file-path* nil
+        *log-level* nil
+        *log-file-format* :json
+        *log-immediate-flush* t)
   t)
 
 (defun repository-example-init-path ()

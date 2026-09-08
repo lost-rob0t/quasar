@@ -20,6 +20,10 @@ QUASAR_INIT_FILE, then the XDG config path are used. A missing file is created
 from example_configs/init.lisp. Invalid configuration aborts startup."
   (quasar.config:safe-load-init
    (or init-path (quasar.config:resolve-init-path)))
+  ;; Logging is configured before anything else starts so startup
+  ;; itself is observable, and invalid logging configuration fails
+  ;; closed exactly like the rest of the init file.
+  (quasar.log:apply-config)
   (setf *shutdown-semaphore* (bt:make-semaphore :count 0))
   #+sbcl
   (progn
