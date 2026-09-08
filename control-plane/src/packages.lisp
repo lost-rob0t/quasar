@@ -224,6 +224,8 @@
     #:websocket-server-started-p
     #:register-websocket-session
     #:register-autodig-worker-session
+    #:lookup-websocket-session
+    #:handle-delegated-session-registration
     #:websocket-audit-records
     #:attach-subscriber
     #:detach-subscriber))
