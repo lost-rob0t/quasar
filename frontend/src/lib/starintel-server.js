@@ -41,6 +41,39 @@ async function request(configuration, path, options = {}) {
   return body;
 }
 
+function deploymentString(object, key, fallback = "") {
+  const value = object && typeof object === "object" ? object[key] : null;
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function normalizeActorDeployment(manifest) {
+  if (!manifest || typeof manifest !== "object") return null;
+  const actorId = deploymentString(manifest, "id");
+  if (!actorId) return null;
+  const service = manifest.service && typeof manifest.service === "object" ? manifest.service : {};
+  const runtime = manifest.runtime && typeof manifest.runtime === "object" ? manifest.runtime : {};
+  const dispatch = manifest.dispatch && typeof manifest.dispatch === "object" ? manifest.dispatch : {};
+  const location = deploymentString(runtime, "location", "remote");
+  const language = deploymentString(service, "language", "unknown");
+  const serviceId = deploymentString(service, "id", "starintel-server");
+  return {
+    id: `star-runtime:${actorId}`,
+    actorId,
+    label: deploymentString(manifest, "label", actorId),
+    description: deploymentString(manifest, "description", "StarIntel server-managed actor deployment."),
+    source: "",
+    serverManaged: true,
+    readOnly: true,
+    origin: location,
+    language,
+    serviceId,
+    service: { ...service },
+    runtime: { ...runtime, location },
+    dispatch: { ...dispatch, actor: deploymentString(dispatch, "actor", actorId) },
+    manifest: structuredClone(manifest)
+  };
+}
+
 export async function probeStarIntelServer(configuration) {
   try {
     const capabilities = await request(configuration, "/api/v1/capabilities");
@@ -61,6 +94,15 @@ export async function probeStarIntelServer(configuration) {
       fallbackReason: error.message
     };
   }
+}
+
+export async function listStarIntelActors(configuration) {
+  const response = await request(configuration, "/api/v1/actors");
+  const actors = response?.data?.actors;
+  if (!Array.isArray(actors)) {
+    throw new Error("StarIntel server: actor discovery response did not contain data.actors");
+  }
+  return actors.map(normalizeActorDeployment).filter(Boolean);
 }
 
 export async function submitTargetToServer(configuration, target) {
@@ -84,4 +126,8 @@ export async function submitTargetToServer(configuration, target) {
   }
 }
 
-export const starIntelServerInternals = Object.freeze({ serverUrl, authorization });
+export const starIntelServerInternals = Object.freeze({
+  serverUrl,
+  authorization,
+  normalizeActorDeployment
+});

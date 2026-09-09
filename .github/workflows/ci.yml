@@ -1,9 +1,10 @@
 name: CI
 
 on:
+  pull_request:
   push:
     branches:
-      - gpu-graph-renderer
+      - main
   workflow_dispatch:
 
 jobs:
@@ -46,7 +47,7 @@ jobs:
         run: |
           sudo apt-get update --quiet
           sudo apt-get install --yes --quiet \
-            sbcl curl git libffi-dev libssl-dev libsqlite3-dev librabbitmq-dev liblmdb-dev
+            sbcl curl git libffi-dev libssl-dev libsqlite3-dev librabbitmq-dev
           curl --fail --silent --show-error --output /tmp/quicklisp.lisp \
             https://beta.quicklisp.org/quicklisp.lisp
           sbcl --non-interactive \
