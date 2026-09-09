@@ -1,9 +1,10 @@
 name: CI
 
 on:
+  pull_request:
   push:
     branches:
-      - gpu-graph-renderer
+      - main
   workflow_dispatch:
 
 jobs:
@@ -34,6 +35,18 @@ jobs:
       - name: Format, lint, type, boundary, and static checks
         run: npm run check
 
+      - name: Emit exact Prettier rewrite on static-check failure
+        if: failure()
+        run: |
+          npm --prefix frontend exec -- prettier --write \
+            e2e/live-actor-discovery.spec.ts \
+            src/components/ActorManager.jsx \
+            src/lib/starintel-server.js
+          git diff -- \
+            frontend/e2e/live-actor-discovery.spec.ts \
+            frontend/src/components/ActorManager.jsx \
+            frontend/src/lib/starintel-server.js
+
       - name: Frontend unit and integration tests
         run: |
           npm --prefix frontend run test:unit
@@ -46,7 +59,7 @@ jobs:
         run: |
           sudo apt-get update --quiet
           sudo apt-get install --yes --quiet \
-            sbcl curl git libffi-dev libssl-dev libsqlite3-dev librabbitmq-dev liblmdb-dev
+            sbcl curl git libffi-dev libssl-dev libsqlite3-dev librabbitmq-dev
           curl --fail --silent --show-error --output /tmp/quicklisp.lisp \
             https://beta.quicklisp.org/quicklisp.lisp
           sbcl --non-interactive \

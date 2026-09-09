@@ -12,6 +12,7 @@ import {
   Trash2
 } from "lucide-react";
 import { BUILTIN_ACTORS, isBuiltinActor, normalizeActorManifest } from "../lib/actors";
+import { listStarIntelActors } from "../lib/starintel-server";
 import { useQuasar } from "../store";
 import "../actor-manager.css";
 
@@ -20,15 +21,25 @@ const EDITOR_TABS = ["code", "config", "runtime"];
 
 function actorConfig(actor) {
   if (!actor) return {};
+  if (actor.serverManaged) return actor.manifest || {};
   const { source: _source, ...config } = actor;
   return config;
 }
 
 function actorDraft(actor) {
   return {
-    source: String(actor?.source || ""),
+    source: actor?.serverManaged ? "" : String(actor?.source || ""),
     config: JSON.stringify(actorConfig(actor), null, 2)
   };
+}
+
+function actorKind(actor) {
+  if (actor?.serverManaged) {
+    const origin = actor.origin === "local" ? "local" : "remote";
+    const language = actor.language === "common-lisp" ? "Lisp" : actor.language || "runtime";
+    return `${origin} · ${language}`;
+  }
+  return isBuiltinActor(actor) ? "built-in" : "custom";
 }
 
 function defaultActor() {
@@ -70,7 +81,12 @@ export default function ActorManager() {
   const { actors, persistSettings, runActor, selectedIds, settings, setNotice } = useQuasar();
   const currentSettings = settings || {};
   const customActors = Array.isArray(currentSettings.actors) ? currentSettings.actors : [];
-  const allActors = useMemo(() => [...BUILTIN_ACTORS, ...customActors], [customActors]);
+  const [serverActors, setServerActors] = useState([]);
+  const [serverActorState, setServerActorState] = useState({ state: "idle", message: "" });
+  const allActors = useMemo(
+    () => [...BUILTIN_ACTORS, ...customActors, ...serverActors],
+    [customActors, serverActors]
+  );
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(allActors[0]?.id || NEW_ACTOR);
   const [editorTab, setEditorTab] = useState("code");
@@ -80,19 +96,57 @@ export default function ActorManager() {
   const selectedActor =
     selectedId === NEW_ACTOR ? null : allActors.find((actor) => actor.id === selectedId) || null;
   const builtin = Boolean(selectedActor && isBuiltinActor(selectedActor));
-  const editable = !builtin;
+  const serverManaged = Boolean(selectedActor?.serverManaged);
+  const editable = !builtin && !serverManaged;
   const canRunSelected = Boolean(
-    selectedActor && selectedIds.length && (builtin || currentSettings.actorsEnabled)
+    selectedActor &&
+      !serverManaged &&
+      selectedIds.length &&
+      (builtin || currentSettings.actorsEnabled)
   );
   const filteredActors = allActors.filter((actor) => {
     const needle = query.trim().toLowerCase();
     if (!needle) return true;
-    return [actor.id, actor.label, actor.description].some((value) =>
-      String(value || "")
-        .toLowerCase()
-        .includes(needle)
+    return [actor.id, actor.actorId, actor.label, actor.description, actor.serviceId, actor.language].some(
+      (value) =>
+        String(value || "")
+          .toLowerCase()
+          .includes(needle)
     );
   });
+
+  useEffect(() => {
+    const serverUrl = String(currentSettings.serverUrl || "").trim();
+    if (!serverUrl) {
+      setServerActors([]);
+      setServerActorState({ state: "idle", message: "Configure a StarIntel server to discover actors." });
+      return undefined;
+    }
+    let cancelled = false;
+    setServerActorState({ state: "loading", message: "Discovering StarIntel actors…" });
+    listStarIntelActors(currentSettings)
+      .then((nextActors) => {
+        if (cancelled) return;
+        setServerActors(nextActors);
+        setServerActorState({
+          state: "active",
+          message: `Discovered ${nextActors.length} StarIntel server actor(s).`
+        });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setServerActors([]);
+        setServerActorState({ state: "error", message: error.message });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    currentSettings.serverPassword,
+    currentSettings.serverToken,
+    currentSettings.serverUrl,
+    currentSettings.serverUsername
+  ]);
 
   useEffect(() => {
     if (selectedId === NEW_ACTOR) return;
@@ -141,17 +195,18 @@ export default function ActorManager() {
   }
 
   async function deleteActor() {
-    if (!selectedActor || builtin) return;
+    if (!selectedActor || builtin || serverManaged) return;
     if (!window.confirm(`Delete ${selectedActor.label}?`)) return;
     const nextActors = customActors.filter((actor) => actor.id !== selectedActor.id);
     await persistSettings({ actors: nextActors });
-    const fallback = [...BUILTIN_ACTORS, ...nextActors][0] || null;
+    const fallback = [...BUILTIN_ACTORS, ...nextActors, ...serverActors][0] || null;
     setSelectedId(fallback?.id || NEW_ACTOR);
     setDraft(actorDraft(fallback || defaultActor()));
     setStatus({ kind: "success", message: `Deleted ${selectedActor.label}.` });
   }
 
   async function duplicateActor() {
+    if (serverManaged) return;
     const source =
       selectedActor ||
       normalizeActorManifest({
@@ -173,7 +228,7 @@ export default function ActorManager() {
   }
 
   async function runSelectedActor() {
-    if (!selectedActor) return;
+    if (!selectedActor || serverManaged) return;
     try {
       setStatus({ kind: "running", message: `Running ${selectedActor.label}…` });
       const result = await runActor(selectedActor, selectedIds);
@@ -205,13 +260,13 @@ export default function ActorManager() {
         <div>
           <p className="eyebrow">Actor system</p>
           <h1>Actor studio</h1>
-          <p>Create, inspect, update, clone, and delete browser actor manifests.</p>
+          <p>Create browser actors and inspect local or remote StarIntel actor deployments.</p>
         </div>
         <div className="button-row">
           <button className="button" type="button" onClick={createActor}>
             <Plus size={16} /> Create actor
           </button>
-          <button className="button" type="button" onClick={duplicateActor}>
+          <button className="button" type="button" disabled={serverManaged} onClick={duplicateActor}>
             <Copy size={16} /> Clone
           </button>
           <button className="button primary" type="button" disabled={!editable} onClick={saveActor}>
@@ -234,6 +289,7 @@ export default function ActorManager() {
           <div className="actor-browser-summary">
             <span>{BUILTIN_ACTORS.length} built-in</span>
             <span>{customActors.length} custom</span>
+            <span>{serverActors.length} server</span>
           </div>
           <div className="actor-record-list" role="listbox" aria-label="Actors">
             <button
@@ -248,7 +304,7 @@ export default function ActorManager() {
               </span>
             </button>
             {filteredActors.map((actor) => {
-              const readonly = isBuiltinActor(actor);
+              const readonly = isBuiltinActor(actor) || actor.serverManaged;
               return (
                 <button
                   type="button"
@@ -259,20 +315,25 @@ export default function ActorManager() {
                   {readonly ? <Settings2 size={15} /> : <Code2 size={15} />}
                   <span>
                     <strong>{actor.label}</strong>
-                    <small>{actor.id}</small>
+                    <small>{actor.actorId || actor.id}</small>
                   </span>
-                  <em>{readonly ? "built-in" : "custom"}</em>
+                  <em>{actorKind(actor)}</em>
                 </button>
               );
             })}
           </div>
+          {serverActorState.message && (
+            <p className={serverActorState.state === "error" ? "validation-error" : "muted"}>
+              {serverActorState.message}
+            </p>
+          )}
         </aside>
 
         <section className="panel actor-editor-panel">
           <div className="section-heading actor-editor-heading">
             <div>
               <h2>{selectedActor?.label || "New actor"}</h2>
-              <span>{selectedActor?.id || "Unsaved"}</span>
+              <span>{selectedActor?.actorId || selectedActor?.id || "Unsaved"}</span>
             </div>
             <div className="button-row">
               {selectedActor && (
@@ -281,13 +342,15 @@ export default function ActorManager() {
                   type="button"
                   disabled={!canRunSelected}
                   title={
-                    !selectedIds.length
-                      ? "Select one or more graph documents"
-                      : !builtin && !settings.actorsEnabled
-                        ? "Enable custom actor execution in Runtime"
-                        : builtin
-                          ? "Run trusted built-in actor against the current graph selection"
-                          : "Run custom actor in a disposable opaque-origin sandbox"
+                    serverManaged
+                      ? "Server-managed actors execute through StarIntel target dispatch, not the browser sandbox"
+                      : !selectedIds.length
+                        ? "Select one or more graph documents"
+                        : !builtin && !settings.actorsEnabled
+                          ? "Enable custom actor execution in Runtime"
+                          : builtin
+                            ? "Run trusted built-in actor against the current graph selection"
+                            : "Run custom actor in a disposable opaque-origin sandbox"
                   }
                   onClick={runSelectedActor}
                 >
@@ -297,7 +360,7 @@ export default function ActorManager() {
               <button
                 className="button danger small"
                 type="button"
-                disabled={!selectedActor || builtin}
+                disabled={!selectedActor || builtin || serverManaged}
                 onClick={deleteActor}
               >
                 <Trash2 size={14} /> Delete
@@ -308,6 +371,11 @@ export default function ActorManager() {
           {builtin && (
             <div className="actor-studio-banner">
               Built-in actors are read-only. Clone this actor to create an editable copy.
+            </div>
+          )}
+          {serverManaged && (
+            <div className="actor-studio-banner">
+              Server-managed actor: {selectedActor.origin} via {selectedActor.serviceId} · {selectedActor.language} · {selectedActor.runtime?.transport || "runtime"}. Deployment manifests are read-only in Quasar.
             </div>
           )}
 
@@ -327,30 +395,42 @@ export default function ActorManager() {
             ))}
           </nav>
 
-          {editorTab === "code" && (
-            <label className="actor-code-field">
-              <span>JavaScript actor function</span>
-              <textarea
-                className="actor-code-editor"
-                value={draft.source}
-                readOnly={!editable}
-                spellCheck="false"
-                onKeyDown={(event) =>
-                  insertIndent(event, draft.source, (source) =>
-                    setDraft((current) => ({ ...current, source }))
-                  )
-                }
-                onChange={(event) =>
-                  setDraft((current) => ({ ...current, source: event.target.value }))
-                }
-              />
-            </label>
-          )}
+          {editorTab === "code" &&
+            (serverManaged ? (
+              <div className="actor-security-note">
+                <Settings2 size={20} />
+                <div>
+                  <strong>No browser source</strong>
+                  <p>
+                    This actor is owned by the StarIntel runtime. Quasar discovers its deployment
+                    metadata but does not copy or execute its implementation in the browser.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <label className="actor-code-field">
+                <span>JavaScript actor function</span>
+                <textarea
+                  className="actor-code-editor"
+                  value={draft.source}
+                  readOnly={!editable}
+                  spellCheck="false"
+                  onKeyDown={(event) =>
+                    insertIndent(event, draft.source, (source) =>
+                      setDraft((current) => ({ ...current, source }))
+                    )
+                  }
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, source: event.target.value }))
+                  }
+                />
+              </label>
+            ))}
 
           {editorTab === "config" && (
             <div className="actor-config-editor">
               <div className="actor-config-toolbar">
-                <span>Manifest JSON</span>
+                <span>{serverManaged ? "Deployment manifest JSON" : "Manifest JSON"}</span>
                 <button className="button small" type="button" onClick={formatConfig}>
                   Format JSON
                 </button>
@@ -393,17 +473,31 @@ export default function ActorManager() {
                   <strong>Execution boundary</strong>
                   <p>
                     Custom code cannot access Quasar&apos;s origin, DOM, storage, or network
-                    directly. Declared capabilities are mediated by Quasar.
+                    directly. Server-managed actors stay outside this browser execution boundary.
                   </p>
                 </div>
               </div>
               <dl className="actor-runtime-details">
                 <dt>Selected documents</dt>
                 <dd>{selectedIds.length}</dd>
-                <dt>Loaded actors</dt>
+                <dt>Browser actors</dt>
                 <dd>{actors.length}</dd>
+                <dt>StarIntel server actors</dt>
+                <dd>{serverActors.length}</dd>
                 <dt>Custom definitions</dt>
                 <dd>{customActors.length}</dd>
+                {serverManaged && (
+                  <>
+                    <dt>Selected origin</dt>
+                    <dd>{selectedActor.origin}</dd>
+                    <dt>Selected service</dt>
+                    <dd>{selectedActor.serviceId}</dd>
+                    <dt>Selected language</dt>
+                    <dd>{selectedActor.language}</dd>
+                    <dt>Selected transport</dt>
+                    <dd>{selectedActor.runtime?.transport || "unknown"}</dd>
+                  </>
+                )}
                 <dt>Runtime state</dt>
                 <dd>
                   {settings.actorsEnabled
