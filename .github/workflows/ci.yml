@@ -35,6 +35,18 @@ jobs:
       - name: Format, lint, type, boundary, and static checks
         run: npm run check
 
+      - name: Emit exact Prettier rewrite on static-check failure
+        if: failure()
+        run: |
+          npm --prefix frontend exec -- prettier --write \
+            e2e/live-actor-discovery.spec.ts \
+            src/components/ActorManager.jsx \
+            src/lib/starintel-server.js
+          git diff -- \
+            frontend/e2e/live-actor-discovery.spec.ts \
+            frontend/src/components/ActorManager.jsx \
+            frontend/src/lib/starintel-server.js
+
       - name: Frontend unit and integration tests
         run: |
           npm --prefix frontend run test:unit
