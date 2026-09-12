@@ -3,7 +3,7 @@ name: UI overhaul formatter
 on:
   push:
     branches:
-      - feat/lisp-js-code-studio
+      - ui-core-shell-overhaul
 
 permissions:
   contents: write
@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: feat/lisp-js-code-studio
+          ref: ui-core-shell-overhaul
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -31,5 +31,5 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add frontend docs
-          git commit -m "Format Lisp and JavaScript Code Studio"
-          git push origin HEAD:feat/lisp-js-code-studio
+          git commit -m "Format UI overhaul"
+          git push origin HEAD:ui-core-shell-overhaul
