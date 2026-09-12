@@ -1,6 +1,7 @@
+import type { Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
 
-async function openCodeStudio(page: Parameters<Parameters<typeof test>[1]>[0]["page"]) {
+async function openCodeStudio(page: Page) {
   await page.goto("/code");
   await expect(page.getByRole("heading", { name: "Code studio" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Common Lisp" })).toHaveAttribute(
@@ -33,11 +34,21 @@ test.describe("Code Studio", () => {
 
     await editor.fill("globalThis.__editorProbe = (globalThis.__editorProbe || 0) + 1; const = ;");
     await expect(status).not.toContainText("Syntax valid");
-    expect(await page.evaluate(() => (globalThis as typeof globalThis & { __editorProbe?: number }).__editorProbe)).toBeUndefined();
+    expect(
+      await page.evaluate(
+        () => (globalThis as typeof globalThis & { __editorProbe?: number }).__editorProbe
+      )
+    ).toBeUndefined();
 
-    await editor.fill("globalThis.__editorProbe = (globalThis.__editorProbe || 0) + 1; const answer = 42; void answer;");
+    await editor.fill(
+      "globalThis.__editorProbe = (globalThis.__editorProbe || 0) + 1; const answer = 42; void answer;"
+    );
     await expect(status).toContainText("Syntax valid");
-    expect(await page.evaluate(() => (globalThis as typeof globalThis & { __editorProbe?: number }).__editorProbe)).toBeUndefined();
+    expect(
+      await page.evaluate(
+        () => (globalThis as typeof globalThis & { __editorProbe?: number }).__editorProbe
+      )
+    ).toBeUndefined();
   });
 
   test("persists independent Lisp and JavaScript buffers across reload", async ({ page }) => {
@@ -96,7 +107,9 @@ test.describe("Actor Studio editor integration", () => {
       "Invalid JavaScript actor source"
     );
 
-    await sourceEditor.fill('(context) => ({ documents: [], message: String(context.selection.length) })');
+    await sourceEditor.fill(
+      '(context) => ({ documents: [], message: String(context.selection.length) })'
+    );
     await expect(page.locator(".code-editor-status.valid")).toBeVisible();
     await page.getByRole("button", { name: "Save" }).click();
     await expect(page.locator(".actor-editor-status.success")).toContainText("Saved Custom actor");
@@ -113,9 +126,12 @@ test.describe("Actor Studio editor integration", () => {
     await page.getByRole("button", { name: "Format JSON" }).click();
     await expect(page.locator(".actor-editor-status.error")).toBeVisible();
 
-    await manifestEditor.fill('{"id":"quasar.actor.e2e","label":"E2E actor","description":"test","version":1,"accepts":["*"],"triggers":[],"capabilities":[],"limits":{},"minSelection":1,"maxSelection":1}');
+    await manifestEditor.fill(
+      '{"id":"quasar.actor.e2e","label":"E2E actor","description":"test","version":1,"accepts":["*"],"triggers":[],"capabilities":[],"limits":{},"minSelection":1,"maxSelection":1}'
+    );
     await expect(page.locator(".code-editor-status.valid")).toBeVisible();
     await page.getByRole("button", { name: "Format JSON" }).click();
-    await expect(manifestEditor).toContainText("quasar.actor.e2e");
+    await expect(manifestEditor).toHaveValue(/quasar\.actor\.e2e/);
+    await expect(manifestEditor).toHaveValue(/\n  "label": "E2E actor"/);
   });
 });
