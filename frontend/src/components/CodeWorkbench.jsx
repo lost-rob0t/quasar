@@ -10,7 +10,7 @@ const DEFAULT_BUFFERS = Object.freeze({
         when id
           collect id))
 `,
-  javascript: `export function selectedTargetIds(targets) {
+  javascript: `function selectedTargetIds(targets) {
   return targets
     .map((target) => target?.id)
     .filter(Boolean);
