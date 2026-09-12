@@ -160,10 +160,10 @@ function scanLispString(source, start, terminator = '"') {
     const character = source[index];
     if (escaped) escaped = false;
     else if (character === "\\") escaped = true;
-    else if (character === terminator) return index + 1;
+    else if (character === terminator) return { index: index + 1, closed: true };
     index += 1;
   }
-  return source.length;
+  return { index: source.length, closed: false };
 }
 
 function scanLispBlockComment(source, start) {
@@ -221,15 +221,15 @@ function highlightLisp(source) {
       continue;
     }
     if (character === '"') {
-      const end = scanLispString(source, index);
-      output += token("string", source.slice(index, end));
-      index = end;
+      const scanned = scanLispString(source, index);
+      output += token("string", source.slice(index, scanned.index));
+      index = scanned.index;
       continue;
     }
     if (character === "|") {
-      const end = scanLispString(source, index, "|");
-      output += token("symbol", source.slice(index, end));
-      index = end;
+      const scanned = scanLispString(source, index, "|");
+      output += token("symbol", source.slice(index, scanned.index));
+      index = scanned.index;
       continue;
     }
     if (/\s/.test(character)) {
@@ -415,8 +415,8 @@ function validateLisp(source) {
       continue;
     }
     if (character === '"' || character === "|") {
-      const end = scanLispString(source, index, character);
-      if (end === source.length && source.at(-1) !== character) {
+      const scanned = scanLispString(source, index, character);
+      if (!scanned.closed) {
         return result([
           diagnostic(
             source,
@@ -425,7 +425,7 @@ function validateLisp(source) {
           )
         ]);
       }
-      index = end;
+      index = scanned.index;
       continue;
     }
     if (character === "(") stack.push(index);
@@ -464,9 +464,7 @@ function validateJson(source) {
     const message = error?.message || "Invalid JSON";
     const explicit = message.match(/line\s+(\d+)\s+column\s+(\d+)/i);
     if (explicit) {
-      return result([
-        { line: Number(explicit[1]), column: Number(explicit[2]), message }
-      ]);
+      return result([{ line: Number(explicit[1]), column: Number(explicit[2]), message }]);
     }
     const position = message.match(/position\s+(\d+)/i);
     if (position) {
