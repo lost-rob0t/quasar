@@ -26,19 +26,11 @@ const VIEWPORTS = [
 const CORE_RESOURCE_TYPES = new Set(["document", "script", "stylesheet"]);
 
 function staticApplicationRoutes() {
-  const appPath = path.join(
-    path.dirname(fileURLToPath(import.meta.url)),
-    "..",
-    "src",
-    "App.jsx"
-  );
+  const appPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "App.jsx");
   const source = readFileSync(appPath, "utf8");
   return [...source.matchAll(/<Route path="([^"]+)"/g)]
     .map((match) => match[1])
-    .filter(
-      (routePath) =>
-        routePath !== "*" && !routePath.includes(":") && routePath !== "/stats"
-    )
+    .filter((routePath) => routePath !== "*" && !routePath.includes(":") && routePath !== "/stats")
     .sort();
 }
 
