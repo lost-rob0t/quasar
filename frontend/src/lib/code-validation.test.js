@@ -5,7 +5,7 @@ describe("code validation", () => {
   it("accepts balanced Common Lisp with reader forms and nested comments", () => {
     const source = `(defun demo (value)
   #| outer ( comment #| nested ) |# still comment |#
-  (list #\\( "text )" |escaped(symbol)| value))`;
+  (list #\\( #\\; "text )" |escaped(symbol)| value))`;
 
     expect(validateSource(source, "lisp")).toEqual({ valid: true, diagnostics: [] });
   });
