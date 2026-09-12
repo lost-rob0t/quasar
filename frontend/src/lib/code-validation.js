@@ -188,9 +188,11 @@ function scanLispBlockComment(source, start) {
 function scanLispCharacter(source, start) {
   let index = start + 2;
   if (index >= source.length) return index;
-  if (/\s/.test(source[index])) return index;
-  if ("()".includes(source[index])) return index + 1;
-  while (index < source.length && !/[\s()";]/.test(source[index])) index += 1;
+
+  const character = source[index];
+  if (/\s/.test(character) || "()\"';`,|".includes(character)) return index + 1;
+
+  while (index < source.length && !/[\s()";'`,|]/.test(source[index])) index += 1;
   return index;
 }
 
@@ -357,7 +359,9 @@ function highlightJson(source) {
       index += 1;
       continue;
     }
-    const numberMatch = source.slice(index).match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/);
+    const numberMatch = source
+      .slice(index)
+      .match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/);
     if (numberMatch) {
       output += token("number", numberMatch[0]);
       index += numberMatch[0].length;
@@ -399,7 +403,9 @@ function validateLisp(source) {
   while (index < source.length) {
     if (source.startsWith("#|", index)) {
       const scanned = scanLispBlockComment(source, index);
-      if (scanned.depth > 0) return result([diagnostic(source, index, "Unterminated block comment")]);
+      if (scanned.depth > 0) {
+        return result([diagnostic(source, index, "Unterminated block comment")]);
+      }
       index = scanned.index;
       continue;
     }
@@ -430,7 +436,9 @@ function validateLisp(source) {
     }
     if (character === "(") stack.push(index);
     else if (character === ")") {
-      if (!stack.length) return result([diagnostic(source, index, "Unexpected closing parenthesis")]);
+      if (!stack.length) {
+        return result([diagnostic(source, index, "Unexpected closing parenthesis")]);
+      }
       stack.pop();
     }
     index += 1;
