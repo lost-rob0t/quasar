@@ -8,6 +8,7 @@ const expectedLinks = [
   ["Add document", "/documents/new"],
   ["Agents", "/agents"],
   ["Actors", "/actors"],
+  ["Code", "/code"],
   ["Import", "/import"],
   ["Settings", "/settings"]
 ];
