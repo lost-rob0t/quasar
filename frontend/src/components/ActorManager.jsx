@@ -185,10 +185,8 @@ export default function ActorManager() {
 
   function formatConfig() {
     try {
-      setDraft((current) => ({
-        ...current,
-        config: JSON.stringify(JSON.parse(current.config), null, 2)
-      }));
+      const formatted = JSON.stringify(JSON.parse(draft.config), null, 2);
+      setDraft((current) => ({ ...current, config: formatted }));
       setStatus({ kind: "idle", message: "Manifest JSON formatted." });
     } catch (error) {
       setStatus({ kind: "error", message: error.message });
