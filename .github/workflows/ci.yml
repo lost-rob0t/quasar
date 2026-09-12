@@ -119,6 +119,7 @@ jobs:
             const outcome = process.env.E2E_OUTCOME || 'unknown';
             const captured = Boolean(artifactUrl);
             const icon = outcome === 'success' && captured ? '✅' : '⚠️';
+            const headSha = context.payload.pull_request?.head?.sha || context.sha;
             const routes = ['/', '/graph', '/datasets', '/documents', '/documents/new', '/agents', '/actors', '/code', '/import', '/settings'];
             const evidence = captured
               ? `CI captured **20 deterministic screenshots**: every primary Quasar route on both **1440×900 desktop** and **390×844 mobile**. This deliberately screenshots the full primary-route surface, which is a superset of pages touched by the PR, so shared shell/style changes cannot hide outside the directly edited component.\n\n${routes.map((route) => `- \`${route}\` — desktop + mobile`).join('\n')}\n\n**[Open screenshot artifact](${artifactUrl})**`
@@ -126,12 +127,12 @@ jobs:
             const body = `${marker}
             ## ${icon} Playwright UI evidence
 
-            **Exact head:** \`${context.sha}\`  
+            **Exact head:** \`${headSha}\`  
             **E2E outcome:** \`${outcome}\`
 
             ${evidence}
 
-            The same Playwright gate runs the existing real-stack mutation/reload suite plus dedicated Code Studio/Actor Studio validation tests. Failed tests retain trace, screenshot, and video diagnostics.
+            The Playwright gate adds **28 targeted coverage cases** on top of the existing real-stack suite: 20 route/device contracts, one static-route coverage guard, and seven Code Studio/Actor Studio behavior tests. Failed tests retain trace, screenshot, and video diagnostics.
             `;
 
             const { data: comments } = await github.rest.issues.listComments({
