@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
 
@@ -23,6 +25,15 @@ const VIEWPORTS = [
 
 const CORE_RESOURCE_TYPES = new Set(["document", "script", "stylesheet"]);
 
+function staticApplicationRoutes() {
+  const appPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "App.jsx");
+  const source = readFileSync(appPath, "utf8");
+  return [...source.matchAll(/<Route path="([^"]+)"/g)]
+    .map((match) => match[1])
+    .filter((routePath) => routePath !== "*" && !routePath.includes(":") && routePath !== "/stats")
+    .sort();
+}
+
 async function captureEvidence(page: Page, viewportName: string, routeSlug: string) {
   if (process.env.PR_VISUAL_EVIDENCE !== "1") return;
   const outputDir = process.env.PR_SCREENSHOT_DIR || "pr-screenshots";
@@ -33,6 +44,10 @@ async function captureEvidence(page: Page, viewportName: string, routeSlug: stri
     animations: "disabled"
   });
 }
+
+test("route-density matrix covers every static application page", () => {
+  expect(ROUTES.map((route) => route.path).sort()).toEqual(staticApplicationRoutes());
+});
 
 for (const viewport of VIEWPORTS) {
   test.describe(`${viewport.name} primary-route contract`, () => {
