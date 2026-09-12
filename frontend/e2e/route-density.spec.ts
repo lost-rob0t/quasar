@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
+import type { Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
 
 const ROUTES = [
@@ -22,11 +23,7 @@ const VIEWPORTS = [
 
 const CORE_RESOURCE_TYPES = new Set(["document", "script", "stylesheet"]);
 
-async function captureEvidence(
-  page: Parameters<typeof test>[0] extends never ? never : any,
-  viewportName: string,
-  routeSlug: string
-) {
+async function captureEvidence(page: Page, viewportName: string, routeSlug: string) {
   if (process.env.PR_VISUAL_EVIDENCE !== "1") return;
   const outputDir = process.env.PR_SCREENSHOT_DIR || "pr-screenshots";
   await mkdir(outputDir, { recursive: true });
@@ -70,8 +67,7 @@ for (const viewport of VIEWPORTS) {
 
         if (viewport.name === "desktop") {
           await expect(page.locator(".quasar-shell > .sidebar")).toBeVisible();
-          const activeHref = route.path === "/" ? "/" : route.path;
-          await expect(page.locator(`.sidebar a.nav-link.active[href="${activeHref}"]`)).toHaveCount(1);
+          await expect(page.locator(`.sidebar a.nav-link.active[href="${route.path}"]`)).toHaveCount(1);
         } else {
           await expect(page.locator(".quasar-shell > .sidebar")).toBeHidden();
           await expect(page.getByRole("button", { name: "Open menu" })).toBeVisible();
