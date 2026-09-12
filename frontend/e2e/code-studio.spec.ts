@@ -17,7 +17,7 @@ test.describe("Code Studio", () => {
     const status = page.locator(".code-editor-status").getByRole("status");
 
     await expect(status).toContainText("Syntax valid");
-    await editor.fill('(defun demo () (list #\\( "ok" |escaped(symbol)|))');
+    await editor.fill('(defun demo () (list #\\( "ok" |escaped(symbol)|)');
     await expect(status).toContainText("Unclosed parenthesis");
 
     await editor.fill(`(defun demo ()
@@ -105,7 +105,7 @@ test.describe("Actor Studio editor integration", () => {
 
     await sourceEditor.fill("const value = 1;");
     await expect(page.locator(".code-editor-status.invalid")).toBeVisible();
-    await page.getByRole("button", { name: "Save" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.locator(".actor-editor-status.error")).toContainText(
       "Invalid JavaScript actor source"
     );
@@ -114,7 +114,7 @@ test.describe("Actor Studio editor integration", () => {
       "(context) => ({ documents: [], message: String(context.selection.length) })"
     );
     await expect(page.locator(".code-editor-status.valid")).toBeVisible();
-    await page.getByRole("button", { name: "Save" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.locator(".actor-editor-status.success")).toContainText("Saved Custom actor");
   });
 
