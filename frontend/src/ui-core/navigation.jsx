@@ -1,5 +1,6 @@
 import {
   Bot,
+  Braces,
   Code2,
   FilePlus2,
   FolderInput,
@@ -48,6 +49,7 @@ export const navigation = Object.freeze([
     match: (path) => path === "/agents"
   },
   { to: "/actors", label: "Actors", Icon: Code2, match: (path) => path === "/actors" },
+  { to: "/code", label: "Code", Icon: Braces, match: (path) => path === "/code" },
   { to: "/import", label: "Import", Icon: FolderInput, match: (path) => path === "/import" },
   {
     to: "/settings",
