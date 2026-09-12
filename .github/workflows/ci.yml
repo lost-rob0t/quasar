@@ -96,6 +96,19 @@ jobs:
           PR_VISUAL_EVIDENCE: ${{ github.event_name == 'pull_request' && '1' || '0' }}
           PR_SCREENSHOT_DIR: pr-screenshots
 
+      - name: Verify PR screenshot completeness
+        id: visual-evidence
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        shell: bash
+        run: |
+          expected=20
+          actual=$(find frontend/pr-screenshots -type f -name '*.png' 2>/dev/null | wc -l | tr -d ' ')
+          echo "count=$actual" >> "$GITHUB_OUTPUT"
+          if [ "$actual" -ne "$expected" ]; then
+            echo "::error::Expected $expected PR route screenshots, found $actual"
+            exit 1
+          fi
+
       - name: Upload PR route screenshots
         id: pr-screenshots
         if: ${{ always() && github.event_name == 'pull_request' }}
@@ -112,23 +125,28 @@ jobs:
         env:
           ARTIFACT_URL: ${{ steps.pr-screenshots.outputs.artifact-url }}
           E2E_OUTCOME: ${{ steps.e2e.outcome }}
+          EVIDENCE_OUTCOME: ${{ steps.visual-evidence.outcome }}
+          SCREENSHOT_COUNT: ${{ steps.visual-evidence.outputs.count }}
         with:
           script: |
             const marker = '<!-- quasar-pr-visual-evidence -->';
             const artifactUrl = process.env.ARTIFACT_URL || '';
             const outcome = process.env.E2E_OUTCOME || 'unknown';
-            const captured = Boolean(artifactUrl);
+            const evidenceOutcome = process.env.EVIDENCE_OUTCOME || 'unknown';
+            const screenshotCount = Number(process.env.SCREENSHOT_COUNT || 0);
+            const captured = evidenceOutcome === 'success' && screenshotCount === 20 && Boolean(artifactUrl);
             const icon = outcome === 'success' && captured ? '✅' : '⚠️';
             const headSha = context.payload.pull_request?.head?.sha || context.sha;
             const routes = ['/', '/graph', '/datasets', '/documents', '/documents/new', '/agents', '/actors', '/code', '/import', '/settings'];
             const evidence = captured
-              ? `CI captured **20 deterministic screenshots**: every primary Quasar route on both **1440×900 desktop** and **390×844 mobile**. This deliberately screenshots the full primary-route surface, which is a superset of pages touched by the PR, so shared shell/style changes cannot hide outside the directly edited component.\n\n${routes.map((route) => `- \`${route}\` — desktop + mobile`).join('\n')}\n\n**[Open screenshot artifact](${artifactUrl})**`
-              : 'Screenshot capture did not run to completion because an earlier CI gate prevented the Playwright route matrix from completing. No screenshot artifact is being claimed for this head.';
+              ? `CI verified and captured **20 deterministic screenshots**: every primary Quasar route on both **1440×900 desktop** and **390×844 mobile**. This deliberately screenshots the full primary-route surface, which is a superset of pages touched by the PR, so shared shell/style changes cannot hide outside the directly edited component.\n\n${routes.map((route) => `- \`${route}\` — desktop + mobile`).join('\n')}\n\n**[Open screenshot artifact](${artifactUrl})**`
+              : `Visual evidence is incomplete for this head: CI verified **${screenshotCount}/20** required route screenshots. The PR does not claim complete screenshot coverage until all 20 files exist and the Playwright route matrix passes.${artifactUrl ? `\n\n**[Open partial screenshot artifact](${artifactUrl})**` : ''}`;
             const body = `${marker}
             ## ${icon} Playwright UI evidence
 
             **Exact head:** \`${headSha}\`  
-            **E2E outcome:** \`${outcome}\`
+            **E2E outcome:** \`${outcome}\`  
+            **Screenshot gate:** \`${evidenceOutcome}\` (${screenshotCount}/20)
 
             ${evidence}
 
