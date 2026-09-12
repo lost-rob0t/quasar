@@ -97,7 +97,10 @@ test.describe("Code Studio", () => {
 test.describe("Actor Studio editor integration", () => {
   test("blocks saving invalid JavaScript actor expressions", async ({ page }) => {
     await page.goto("/actors");
-    await page.getByRole("button", { name: /New actor/ }).first().click();
+    await page
+      .getByRole("button", { name: /New actor/ })
+      .first()
+      .click();
     const sourceEditor = page.getByLabel("JavaScript actor function");
 
     await sourceEditor.fill("const value = 1;");
@@ -108,7 +111,7 @@ test.describe("Actor Studio editor integration", () => {
     );
 
     await sourceEditor.fill(
-      '(context) => ({ documents: [], message: String(context.selection.length) })'
+      "(context) => ({ documents: [], message: String(context.selection.length) })"
     );
     await expect(page.locator(".code-editor-status.valid")).toBeVisible();
     await page.getByRole("button", { name: "Save" }).click();
@@ -117,7 +120,10 @@ test.describe("Actor Studio editor integration", () => {
 
   test("validates and formats actor manifest JSON", async ({ page }) => {
     await page.goto("/actors");
-    await page.getByRole("button", { name: /New actor/ }).first().click();
+    await page
+      .getByRole("button", { name: /New actor/ })
+      .first()
+      .click();
     await page.getByRole("button", { name: "config" }).click();
     const manifestEditor = page.getByLabel("Actor manifest JSON");
 

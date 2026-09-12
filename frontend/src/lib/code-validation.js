@@ -359,9 +359,7 @@ function highlightJson(source) {
       index += 1;
       continue;
     }
-    const numberMatch = source
-      .slice(index)
-      .match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/);
+    const numberMatch = source.slice(index).match(/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/);
     if (numberMatch) {
       output += token("number", numberMatch[0]);
       index += numberMatch[0].length;

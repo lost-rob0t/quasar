@@ -67,7 +67,9 @@ for (const viewport of VIEWPORTS) {
 
         if (viewport.name === "desktop") {
           await expect(page.locator(".quasar-shell > .sidebar")).toBeVisible();
-          await expect(page.locator(`.sidebar a.nav-link.active[href="${route.path}"]`)).toHaveCount(1);
+          await expect(
+            page.locator(`.sidebar a.nav-link.active[href="${route.path}"]`)
+          ).toHaveCount(1);
         } else {
           await expect(page.locator(".quasar-shell > .sidebar")).toBeHidden();
           await expect(page.getByRole("button", { name: "Open menu" })).toBeVisible();
