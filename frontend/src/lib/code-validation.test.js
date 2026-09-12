@@ -22,6 +22,10 @@ describe("code validation", () => {
     const unclosed = validateSource("(defun demo ()\n  (list 1 2)", "lisp");
     expect(unclosed.valid).toBe(false);
     expect(unclosed.diagnostics[0].message).toBe("Unclosed parenthesis");
+
+    const escapedTerminalQuote = validateSource('(list "hello\\")', "lisp");
+    expect(escapedTerminalQuote.valid).toBe(false);
+    expect(escapedTerminalQuote.diagnostics[0].message).toBe("Unterminated string");
   });
 
   it("validates JavaScript programs without executing them", () => {
