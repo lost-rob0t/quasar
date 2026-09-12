@@ -102,7 +102,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: quasar-pr-${{ github.event.pull_request.number }}-screenshots-attempt-${{ github.run_attempt }}
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
           path: frontend/pr-screenshots/
 
@@ -115,23 +115,23 @@ jobs:
         with:
           script: |
             const marker = '<!-- quasar-pr-visual-evidence -->';
-            const artifactUrl = process.env.ARTIFACT_URL || `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const artifactUrl = process.env.ARTIFACT_URL || '';
             const outcome = process.env.E2E_OUTCOME || 'unknown';
-            const icon = outcome === 'success' ? '✅' : '⚠️';
+            const captured = Boolean(artifactUrl);
+            const icon = outcome === 'success' && captured ? '✅' : '⚠️';
             const routes = ['/', '/graph', '/datasets', '/documents', '/documents/new', '/agents', '/actors', '/code', '/import', '/settings'];
+            const evidence = captured
+              ? `CI captured **20 deterministic screenshots**: every primary Quasar route on both **1440×900 desktop** and **390×844 mobile**. This deliberately screenshots the full primary-route surface, which is a superset of pages touched by the PR, so shared shell/style changes cannot hide outside the directly edited component.\n\n${routes.map((route) => `- \`${route}\` — desktop + mobile`).join('\n')}\n\n**[Open screenshot artifact](${artifactUrl})**`
+              : 'Screenshot capture did not run to completion because an earlier CI gate prevented the Playwright route matrix from completing. No screenshot artifact is being claimed for this head.';
             const body = `${marker}
             ## ${icon} Playwright UI evidence
 
             **Exact head:** \`${context.sha}\`  
             **E2E outcome:** \`${outcome}\`
 
-            CI captured **20 deterministic screenshots**: every primary Quasar route on both **1440×900 desktop** and **390×844 mobile**. This deliberately screenshots the full primary-route surface, which is a superset of pages touched by the PR, so shared shell/style changes cannot hide outside the directly edited component.
+            ${evidence}
 
-            ${routes.map((route) => `- \`${route}\` — desktop + mobile`).join('\n')}
-
-            **[Open screenshot artifact](${artifactUrl})**
-
-            The same Playwright gate also runs the existing real-stack mutation/reload suite plus dedicated Code Studio/Actor Studio validation tests. Failed tests retain trace, screenshot, and video diagnostics.
+            The same Playwright gate runs the existing real-stack mutation/reload suite plus dedicated Code Studio/Actor Studio validation tests. Failed tests retain trace, screenshot, and video diagnostics.
             `;
 
             const { data: comments } = await github.rest.issues.listComments({
