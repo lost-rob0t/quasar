@@ -50,7 +50,9 @@ jobs:
       - name: Frontend static checks
         run: npm --prefix frontend run check
       - name: Pro actor unit tests
-        run: npm --prefix frontend exec -- vitest run src/lib/pro-actors.test.js
+        run: |
+          cd frontend
+          npx vitest run src/lib/pro-actors.test.js
       - name: Production frontend build
         run: npm run build
 
