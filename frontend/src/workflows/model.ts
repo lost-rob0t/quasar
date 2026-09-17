@@ -107,16 +107,6 @@ export const builtInCatalog: NodeDescriptor[] = [
     outputs: [{ name: "object", schema: { type: "object" } }]
   },
   {
-    id: STARINTEL_OPERATION_NODE_TYPE,
-    label: "StarIntel API operation",
-    category: "StarIntel API",
-    inputs: [{ name: "request", required: true }],
-    outputs: [
-      { name: "result", schema: { type: "object" } },
-      { name: "error", schema: { type: "object" } }
-    ]
-  },
-  {
     id: "language/lisp",
     label: "Trusted Lisp component",
     category: "Languages",
@@ -310,6 +300,12 @@ export function validateWorkflow(workflow: Workflow, catalog: NodeDescriptor[]):
     if (!target || !input) {
       errors.push(`Invalid initial packet ${iip.id}`);
       continue;
+    }
+    if (
+      (input.schema?.writeOnly === true || input.schema?.["x-starintel-secret"] === true) &&
+      (typeof iip.value !== "string" || !/^credential:[A-Za-z0-9_.-]+$/.test(iip.value))
+    ) {
+      errors.push(`Initial packet ${iip.id} must be a credential reference`);
     }
     if (incoming.has(key)) errors.push(`Input ${key} has multiple producers`);
     incoming.set(key, "initial packet");

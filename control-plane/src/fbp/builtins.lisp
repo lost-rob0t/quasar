@@ -44,19 +44,6 @@
     (declare (ignore inputs))
     (list (cons "object" (list (copy-tree (getf context :config))))))
 
-  (define-node starintel/operation
-      (:label "StarIntel API operation" :category "StarIntel API"
-       :inputs ((request :schema (:type "object")))
-       :outputs ((result :schema (:type "object"))
-                 (error :schema (:type "object") :required nil))
-       :capabilities (:starintel-operation))
-      (inputs context)
-    (let ((invoke (required-service context :starintel-operation)))
-      (list (cons "result"
-                  (list (funcall invoke (getf (getf context :config) :operation)
-                                 (single-input inputs "request")
-                                 (getf context :config)))))))
-
   (define-node language/lisp
       (:label "Trusted Lisp component" :category "Languages"
        :inputs ((in :schema (:type "any")))

@@ -59,6 +59,8 @@
 (defun array-values (value)
   (if (and (consp value) (eq (first value) :array)) (rest value) value))
 
+(declaim (ftype (function (t) t) json-value))
+
 (defun request-object (value)
   (cond
     ((quasar.protocol:object-p value) value)
@@ -175,10 +177,16 @@
 (defun descriptor-port (value)
   (let* ((schema (operation-field value "schema" nil))
          (type (and (quasar.protocol:object-p schema)
-                    (operation-field schema "type" nil))))
+                    (operation-field schema "type" nil)))
+         (write-only (and (quasar.protocol:object-p schema)
+                          (operation-field schema "writeOnly" nil)))
+         (secret (and (quasar.protocol:object-p schema)
+                      (operation-field schema "x-starintel-secret" nil))))
     (quasar.fbp:make-port-spec
      :name (operation-field value "name")
-     :schema (and (stringp type) (list :type type))
+     :schema (append (and (stringp type) (list :type type))
+                     (and write-only (list :write-only t))
+                     (and secret (list :secret t)))
      :required-p (and (operation-field value "required" nil) t)
      :array-p (and (operation-field value "array" nil) t))))
 
@@ -261,17 +269,15 @@
                            status captured-operation-id))
                   (list (cons port (list body))))))))
          specs)))
+    (setf specs (nreverse specs))
     (bt:with-lock-held (*starintel-registry-lock*)
-      (dolist (id *starintel-node-ids*) (quasar.fbp:unregister-node-type id))
-      (setf *starintel-node-ids* nil)
-      (dolist (spec (nreverse specs))
-        (quasar.fbp:register-node-type spec)
-        (push (quasar.fbp:node-type-id spec) *starintel-node-ids*)))
+      (quasar.fbp:replace-node-types *starintel-node-ids* specs)
+      (setf *starintel-node-ids* (mapcar #'quasar.fbp:node-type-id specs)))
     (values (remove-duplicates grants :test #'equal) operations)))
 
 (defun clear-starintel-operation-nodes ()
   (bt:with-lock-held (*starintel-registry-lock*)
-    (dolist (id *starintel-node-ids*) (quasar.fbp:unregister-node-type id))
+    (quasar.fbp:replace-node-types *starintel-node-ids* nil)
     (setf *starintel-node-ids* nil))
   t)
 

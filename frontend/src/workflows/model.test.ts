@@ -139,4 +139,29 @@ describe("workflow model", () => {
     expect(errors).toContain("Duplicate initial packet seed");
     expect(errors).toContain("Input copy:in has multiple producers");
   });
+
+  it("rejects literal initial packets for secret-annotated ports", () => {
+    const workflow = emptyWorkflow("secret-input");
+    const catalog = [
+      ...builtInCatalog,
+      {
+        id: "test/secret",
+        label: "Secret",
+        category: "Test",
+        inputs: [
+          {
+            name: "secret",
+            required: true,
+            schema: { type: "string", writeOnly: true }
+          }
+        ],
+        outputs: []
+      }
+    ];
+    workflow.nodes = [{ id: "secret", type: "test/secret", x: 0, y: 0, config: {} }];
+    workflow.iips = [{ id: "literal", value: "password", to: "secret", in: "secret" }];
+    expect(validateWorkflow(workflow, catalog)).toContain(
+      "Initial packet literal must be a credential reference"
+    );
+  });
 });

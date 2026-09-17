@@ -26,6 +26,14 @@
     (list (cons "left" (list value))
           (cons "right" (list value value)))))
 
+(define-node test/secret-input
+    (:label "Secret input" :category "Tests"
+     :inputs ((secret :schema (:type "string" :secret t)))
+     :outputs ())
+    (inputs context)
+  (declare (ignore inputs context))
+  nil)
+
 (defun check (value format-control &rest arguments)
   (unless value
     (error (apply #'format nil format-control arguments))))
@@ -146,7 +154,15 @@
     (setf (component-spec-config (first (network-components network)))
           '(:token "star_sk_v1_forbidden"))
     (check (signals-p 'validation-error (lambda () (validate-network network)))
-           "A literal StarIntel key was accepted in component config.")))
+           "A literal StarIntel key was accepted in component config."))
+  (let ((network
+          (make-network
+           :id "secret-iip"
+           :components (list (make-component-spec :id "secret" :type "test/secret-input"))
+           :iips (list (make-iip-spec :value "raw-password"
+                                     :to "secret" :in "secret")))))
+    (check (signals-p 'validation-error (lambda () (validate-network network)))
+           "A literal value was accepted for a secret-annotated input.")))
 
 (defun test-profile-values-are-inert ()
   (check (signals-p 'validation-error
@@ -156,7 +172,11 @@
   (check (signals-p 'validation-error
                     (lambda ()
                       (profile-plan :credential-reference "star_sk_v1_raw")))
-         "A raw key was accepted as a credential reference."))
+         "A raw key was accepted as a credential reference.")
+  (check (signals-p 'validation-error
+                    (lambda ()
+                      (profile-plan :endpoint "http://starintel.example.test")))
+         "Plain HTTP was accepted for a non-loopback StarIntel endpoint."))
 
 (defun test-installer-no-secret ()
   (let* ((secret "star_sk_v1_must_not_appear")

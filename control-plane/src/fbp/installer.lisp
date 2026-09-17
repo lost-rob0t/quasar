@@ -74,6 +74,15 @@
                (member character '(#\/ #\: #\- #\. #\_ #\~ #\%))))
          value))
 
+(defun loopback-authority-p (authority)
+  (let ((host
+          (if (and (plusp (length authority))
+                   (char= (char authority 0) #\[))
+              (subseq authority 1 (position #\] authority))
+              (let ((colon (position #\: authority :from-end t)))
+                (if colon (subseq authority 0 colon) authority)))))
+    (member host '("localhost" "127.0.0.1" "::1") :test #'string-equal)))
+
 (defun validate-endpoint (value)
   (let* ((endpoint (ensure-clean-string value "endpoint"))
          (scheme-length
@@ -94,6 +103,10 @@
       (signal-installer-validation-error
        "fbp.invalid-endpoint"
        "Endpoint must be an HTTP(S) base URL without credentials, query, fragment, or unsafe characters."))
+    (when (and (= scheme-length 7) (not (loopback-authority-p authority)))
+      (signal-installer-validation-error
+       "fbp.insecure-endpoint"
+       "Plain HTTP endpoints are allowed only for explicit loopback hosts."))
     endpoint))
 
 (defun validate-credential-reference (value)
@@ -197,6 +210,14 @@
                         "starintel.operation/" (component-spec-type component))
                     collect (getf (component-spec-config component) :operation))
             :test #'string=))
+         (network-credential-references
+           (remove-duplicates
+            (loop for component in (network-components network)
+                  when (string-prefix-equal-p
+                        "starintel.operation/" (component-spec-type component))
+                    collect (getf (component-spec-config component)
+                                  :credential-reference))
+            :test #'equal))
          (approved-operations
            (loop for operation in network-operations
                  if (member operation allowed-operations :test #'string=)
@@ -230,6 +251,12 @@
                        environment-lines
                        (systemd-quote-argument runner)
                        (systemd-quote-argument (namestring source)))))
+    (dolist (reference network-credential-references)
+      (unless (and validated-reference (stringp reference)
+                   (string= reference validated-reference))
+        (signal-installer-validation-error
+         "fbp.credential-reference-denied"
+         "A StarIntel node uses a credential reference not approved by the host.")))
     (list :id id :unit-name unit-name :unit-path unit-path
           :graph-path source :graph-source (network-to-lisp network)
           :credential-path credential-path

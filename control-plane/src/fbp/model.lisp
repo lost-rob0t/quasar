@@ -85,6 +85,21 @@
 (defun unregister-node-type (id)
   (remhash (canonical-name id) *node-types*))
 
+(defun replace-node-types (remove-ids replacements)
+  "Atomically publish a complete node-registry replacement."
+  (let ((next (make-hash-table :test #'equal)))
+    (maphash (lambda (key value) (setf (gethash key next) value)) *node-types*)
+    (dolist (id remove-ids) (remhash (canonical-name id) next))
+    (dolist (node-type replacements)
+      (let ((id (canonical-name (node-type-id node-type))))
+        (when (gethash id next)
+          (error 'validation-error :code "fbp.duplicate-node-type"
+                 :message (format nil "Node type ~A is already registered." id)))
+        (setf (node-type-id node-type) id
+              (gethash id next) node-type)))
+    (setf *node-types* next)
+    replacements))
+
 (defun find-node-type (id &key (errorp t))
   (or (gethash (canonical-name id) *node-types*)
       (when errorp
@@ -242,12 +257,18 @@
           (claim-input (connection-spec-to connection)
                        (connection-spec-in connection) :connection)))
       (dolist (iip (network-iips network))
-        (let ((type (component-type-for (iip-spec-to iip))))
-          (unless (port-named (node-type-inputs type) (iip-spec-in iip))
+        (let* ((type (component-type-for (iip-spec-to iip)))
+               (port (port-named (node-type-inputs type) (iip-spec-in iip))))
+          (unless port
             (error 'validation-error :code "fbp.unknown-input"
                    :message (format nil "Unknown IIP input ~A.~A."
                                     (iip-spec-to iip) (iip-spec-in iip))))
-          (claim-input (iip-spec-to iip) (iip-spec-in iip) :iip)))
+          (when (and (or (getf (port-spec-schema port) :secret)
+                         (getf (port-spec-schema port) :write-only))
+                     (not (credential-reference-p (iip-spec-value iip))))
+            (error 'validation-error :code "fbp.literal-secret"
+                   :message "Secret inputs accept credential references, never literal values.")))
+          (claim-input (iip-spec-to iip) (iip-spec-in iip) :iip))
       (dolist (component (network-components network))
         (let ((type (find-node-type (component-spec-type component))))
           (dolist (port (node-type-inputs type))

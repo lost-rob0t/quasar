@@ -23,6 +23,7 @@
    #:sandbox-policy #:make-sandbox-policy #:sandbox-policy-capabilities
    #:sandbox-policy-limits
    #:register-node-type #:unregister-node-type #:find-node-type
+   #:replace-node-types
    #:all-node-types #:clear-node-registry
    #:define-node #:define-network #:network-from-form #:read-network
    #:network-to-form #:network-to-lisp
