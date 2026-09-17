@@ -7,6 +7,73 @@
 (defvar *browser-session-token* nil)
 (defvar *shutdown-semaphore* nil)
 
+(defparameter +fbp-browser-capabilities+
+  '("fbp.catalog.list"
+    "fbp.dsl.validate"
+    "fbp.run.start"
+    "fbp.run.stop"
+    "fbp.run.status"
+    "fbp.deployment.plan"
+    "fbp.profile.plan")
+  "Non-mutating and sandboxed-run commands available to the local browser.")
+
+(defparameter +fbp-local-operator-capabilities+
+  '("fbp.deployment.apply" "fbp.profile.apply")
+  "Host-mutating commands granted only to the loopback local operator session.")
+
+(defun packaged-automation-executable ()
+  (or (uiop:getenv "QUASAR_FBP_EXECUTABLE")
+      (let ((argv0 (uiop:argv0)))
+        (when (and argv0 (search "quasar-server" argv0 :test #'char-equal))
+          argv0))))
+
+(defun credential-environment-name (reference)
+  (let ((suffix (subseq reference (length "credential:"))))
+    (format nil "QUASAR_CREDENTIAL_~A"
+            (string-upcase
+             (substitute #\_ #\-
+                         (substitute #\_ #\. suffix))))))
+
+(defun resolve-environment-credential (reference)
+  (or (uiop:getenv (credential-environment-name reference))
+      (when (string= reference "credential:starintel-api")
+        (uiop:getenv "STARINTEL_API_KEY"))))
+
+(defun configure-default-fbp-runtime ()
+  (let ((endpoint (uiop:getenv "STARINTEL_ENDPOINT")))
+    (quasar.fbp.control:configure-fbp-runtime
+     :services
+     (when endpoint
+       (list :starintel-operation
+             (quasar.fbp.control:make-starintel-operation-service
+              :endpoint endpoint
+              :credential-resolver #'resolve-environment-credential
+              :authorization-header
+              (or (uiop:getenv "STARINTEL_AUTH_HEADER") "authorization")
+              :authorization-prefix
+              (or (uiop:getenv "STARINTEL_AUTH_PREFIX") "Bearer "))))
+     :grants (when endpoint '(:starintel-operation))
+     :automation-executable (packaged-automation-executable))))
+
+(defun fbp-run-argument ()
+  (let ((arguments (uiop:command-line-arguments)))
+    (when (and arguments (string= (first arguments) "fbp-run"))
+      (let ((position (position "--graph" arguments :test #'string=)))
+        (unless (and position (nth (1+ position) arguments))
+          (error "Usage: quasar-server fbp-run --graph PATH"))
+        (nth (1+ position) arguments)))))
+
+(defun run-fbp-automation (path)
+  "Run one installed FBP graph in the packaged Quasar process."
+  (configure-default-fbp-runtime)
+  (let* ((source (uiop:read-file-string path))
+         (network (quasar.fbp:read-network source))
+         (runtime (quasar.fbp:make-runtime
+                   network
+                   :services quasar.fbp.control::*runtime-services*
+                   :grants quasar.fbp.control::*runtime-grants*)))
+    (quasar.fbp:start-runtime runtime :background nil)))
+
 (defun new-session-token ()
   (format nil "~36R~36R~36R" (get-universal-time)
           (random most-positive-fixnum) (random most-positive-fixnum)))
@@ -44,6 +111,7 @@ STORAGE-PATH overrides the normal XDG data path when Quasar creates that store."
         (start-control-plane *control-plane*)
         (install-starlang-commands *control-plane*)
         (quasar.fbp.control:install-fbp-commands *control-plane*)
+        (configure-default-fbp-runtime)
         (quasar.actors.melissa.bridge:start-melissa-integration
          *control-plane*
          :config (or melissa-config
@@ -56,7 +124,11 @@ STORAGE-PATH overrides the normal XDG data path when Quasar creates that store."
                                      :insecure-development-p insecure-development-p))
         (setf *browser-session-token* (new-session-token))
         (quasar.ws:register-websocket-session
-         *websocket-server* *browser-session-token* "local-user" '("default"))
+         *websocket-server* *browser-session-token* "local-user" '("default")
+         :capabilities (append quasar.ws::+default-capabilities+
+                               +fbp-browser-capabilities+
+                               +fbp-local-operator-capabilities+)
+         :authority-kind :operator)
         (attach-subscriber *websocket-server*)
         (start-websocket-server *websocket-server*)
         (start-ui *control-plane*
@@ -88,6 +160,9 @@ STORAGE-PATH overrides the normal XDG data path when Quasar creates that store."
   t)
 
 (defun main (&key (insecure-development-p nil) (open-browser-p nil))
+  (let ((graph (fbp-run-argument)))
+    (when graph
+      (return-from main (run-fbp-automation graph))))
   (setf *shutdown-semaphore* (bt:make-semaphore :count 0))
   #+sbcl
   (progn

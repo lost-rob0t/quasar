@@ -15,6 +15,9 @@ export interface NodeDescriptor {
   outputs: PortDescriptor[];
   capabilities?: unknown[];
   configSchema?: JsonSchema | null;
+  config_schema?: JsonSchema | null;
+  scopes?: string[];
+  operation_id?: string;
   operation?: StarIntelOperation;
 }
 
@@ -74,6 +77,15 @@ export interface Workflow {
   iips: WorkflowIip[];
 }
 
+export const STARINTEL_OPERATION_NODE_TYPE = "starintel/operation";
+
+const STARINTEL_OPERATION_PALETTE_PREFIX = "starintel.operation/";
+
+const unavailableBuiltInNodeTypes = new Set([
+  "starintel/actor",
+  "starintel/domain-server",
+]);
+
 export const builtInCatalog: NodeDescriptor[] = [
   {
     id: "core/identity",
@@ -104,18 +116,14 @@ export const builtInCatalog: NodeDescriptor[] = [
     outputs: [{ name: "receipt", schema: { type: "object" } }],
   },
   {
-    id: "starintel/actor",
-    label: "Actor message",
-    category: "Actors",
-    inputs: [{ name: "message", required: true }],
-    outputs: [{ name: "result" }],
-  },
-  {
-    id: "starintel/domain-server",
-    label: "Domain server",
-    category: "Domain servers",
+    id: STARINTEL_OPERATION_NODE_TYPE,
+    label: "StarIntel API operation",
+    category: "StarIntel API",
     inputs: [{ name: "request", required: true }],
-    outputs: [{ name: "result" }],
+    outputs: [
+      { name: "result", schema: { type: "object" } },
+      { name: "error", schema: { type: "object" } },
+    ],
   },
   {
     id: "language/lisp",
@@ -158,18 +166,75 @@ export function emptyWorkflow(id = "new-workflow"): Workflow {
   };
 }
 
-function schemaPorts(schema: JsonSchema | null | undefined): PortDescriptor[] {
-  if (!schema || schema.type !== "object")
-    return [{ name: "request", required: Boolean(schema) }];
-  const properties = (schema.properties || {}) as Record<string, JsonSchema>;
-  const required = new Set(
-    Array.isArray(schema.required) ? (schema.required as string[]) : [],
+export function operationIdForDescriptor(
+  descriptor: NodeDescriptor,
+): string | null {
+  if (descriptor.operation?.operation_id)
+    return descriptor.operation.operation_id;
+  if (descriptor.id.startsWith(STARINTEL_OPERATION_PALETTE_PREFIX))
+    return descriptor.id.slice(STARINTEL_OPERATION_PALETTE_PREFIX.length);
+  if (descriptor.operation_id) return descriptor.operation_id;
+  const properties = (descriptor.configSchema || descriptor.config_schema)
+    ?.properties;
+  if (
+    !properties ||
+    typeof properties !== "object" ||
+    Array.isArray(properties)
+  )
+    return null;
+  const operation = (properties as Record<string, unknown>).operation;
+  if (!operation || typeof operation !== "object" || Array.isArray(operation))
+    return null;
+  const value = (operation as Record<string, unknown>).const;
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+export function workflowNodeFromDescriptor(
+  descriptor: NodeDescriptor,
+  id: string,
+  x: number,
+  y: number,
+): WorkflowNode {
+  const operation = operationIdForDescriptor(descriptor);
+  return {
+    id,
+    type: operation ? STARINTEL_OPERATION_NODE_TYPE : descriptor.id,
+    x,
+    y,
+    config: operation ? { operation } : {},
+  };
+}
+
+export function descriptorForWorkflowNode(
+  node: WorkflowNode,
+  descriptors: ReadonlyMap<string, NodeDescriptor>,
+): NodeDescriptor | undefined {
+  if (node.type === STARINTEL_OPERATION_NODE_TYPE) {
+    const operation = node.config.operation;
+    if (typeof operation === "string") {
+      const remote = descriptors.get(
+        `${STARINTEL_OPERATION_PALETTE_PREFIX}${operation}`,
+      );
+      if (remote) {
+        return {
+          ...remote,
+          id: STARINTEL_OPERATION_NODE_TYPE,
+          inputs: [{ name: "request", required: true }],
+          outputs: [
+            { name: "result", schema: { type: "object" } },
+            { name: "error", schema: { type: "object" } },
+          ],
+        };
+      }
+    }
+  }
+  return descriptors.get(node.type);
+}
+
+export function advertisedCatalog(catalog: NodeDescriptor[]): NodeDescriptor[] {
+  return catalog.filter(
+    (descriptor) => !unavailableBuiltInNodeTypes.has(descriptor.id),
   );
-  return Object.entries(properties).map(([name, value]) => ({
-    name,
-    schema: value,
-    required: required.has(name),
-  }));
 }
 
 export function operationsToNodes(
@@ -181,24 +246,11 @@ export function operationsToNodes(
     category: operation.tags?.[0]
       ? `StarIntel · ${operation.tags[0]}`
       : "StarIntel API",
-    inputs: [
-      ...schemaPorts(operation.request_schema),
-      ...(operation.path_parameters || []).map((name) => ({
-        name,
-        required: true,
-      })),
-      ...(operation.query_parameters || []).map((parameter) => ({
-        name: parameter.name,
-        required: Boolean(parameter.required),
-        schema: parameter.schema,
-      })),
+    inputs: [{ name: "request", required: true, schema: { type: "object" } }],
+    outputs: [
+      { name: "result", schema: { type: "object" } },
+      { name: "error", schema: { type: "object" } },
     ],
-    outputs: (operation.responses || [])
-      .filter((response) => response.status >= 200 && response.status < 300)
-      .map((response) => ({
-        name: `status-${response.status}`,
-        schema: response.schema,
-      })),
     capabilities: operation.scopes || [],
     configSchema: {
       type: "object",
@@ -240,6 +292,11 @@ export function validateWorkflow(
     ids.add(node.id);
     if (!descriptor.has(node.type))
       errors.push(`Unknown node type ${node.type}`);
+    if (
+      node.type === STARINTEL_OPERATION_NODE_TYPE &&
+      (typeof node.config.operation !== "string" || !node.config.operation)
+    )
+      errors.push(`StarIntel operation node ${node.id} has no operation id`);
   }
   for (const edge of workflow.connections) {
     const from = workflow.nodes.find((node) => node.id === edge.from);

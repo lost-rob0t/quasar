@@ -15,6 +15,17 @@
   (push (cdr (assoc "in" inputs :test #'string=)) *captured*)
   nil)
 
+(define-node test/two-outputs
+    (:label "Two outputs" :category "Tests"
+     :inputs ((in :schema (:type "any")))
+     :outputs ((left :schema (:type "any"))
+               (right :schema (:type "any"))))
+    (inputs context)
+  (declare (ignore context))
+  (let ((value (cdr (assoc "in" inputs :test #'string=))))
+    (list (cons "left" (list value))
+          (cons "right" (list value value)))))
+
 (defun check (value format-control &rest arguments)
   (unless value
     (error (apply #'format nil format-control arguments))))
@@ -60,28 +71,66 @@
            :id "denied"
            :components (list (make-component-spec :id "exec" :type "process/exec"))
            :iips (list (make-iip-spec :value "x" :to "exec" :in "stdin")))))
-    (check (signals-p 'sandbox-denied (lambda () (validate-network network)))
+    (check (signals-p 'sandbox-denied (lambda () (make-runtime network)))
            "A denied process capability passed validation.")))
 
-(defun test-bounded-backpressure ()
-  (let* ((runtime (make-runtime (basic-network :capacity 1)))
-         (channel (find "copy" (quasar.fbp::runtime-channels runtime)
-                        :key (lambda (value)
-                               (connection-spec-from
-                                (quasar.fbp::channel-spec value)))
-                        :test #'string=)))
-    (quasar.fbp::channel-push channel
-                              (quasar.fbp::make-packet :value "occupied"))
-    (check (signals-p 'backpressure
-                      (lambda ()
-                        (quasar.fbp::channel-push
-                         channel (quasar.fbp::make-packet :value "overflow"))))
-           "A bounded connection accepted overflow.")))
+(defun test-lossless-atomic-backpressure ()
+  (let* ((network
+           (make-network
+            :id "atomic"
+            :components
+            (list (make-component-spec :id "source" :type "test/two-outputs")
+                  (make-component-spec :id "left" :type "test/capture")
+                  (make-component-spec :id "right" :type "test/capture"))
+            :connections
+            (list (make-connection-spec :from "source" :out "left"
+                                        :to "left" :in "in" :capacity 1)
+                  (make-connection-spec :from "source" :out "right"
+                                        :to "right" :in "in" :capacity 1))
+            :iips (list (make-iip-spec :value "held" :to "source" :in "in"))))
+         (runtime (make-runtime network))
+         (input (quasar.fbp::input-channel runtime "source" "in"))
+         (left (first (gethash '("source" "left")
+                               (quasar.fbp::runtime-outputs runtime))))
+         (right (first (gethash '("source" "right")
+                                (quasar.fbp::runtime-outputs runtime)))))
+    (check (zerop (step-runtime runtime))
+           "A multi-output activation committed without full capacity.")
+    (check (= 1 (quasar.fbp::channel-size input))
+           "Backpressure consumed the claimed input packet.")
+    (check (and (zerop (quasar.fbp::channel-size left))
+                (zerop (quasar.fbp::channel-size right)))
+           "Backpressure partially committed a multi-port emission.")))
+
+(defun test-self-trust-is-rejected ()
+  (check (signals-p 'sandbox-denied
+                    (lambda ()
+                      (read-network
+                       "(define-network bad (:trusted-code t) (:component x core/identity) (:iip 1 x in))")))
+         "A graph granted trust to itself."))
+
+(defun test-literal-secret-is-rejected ()
+  (let ((network (basic-network)))
+    (setf (component-spec-config (first (network-components network)))
+          '(:token "star_sk_v1_forbidden"))
+    (check (signals-p 'validation-error (lambda () (validate-network network)))
+           "A literal StarIntel key was accepted in component config.")))
+
+(defun test-profile-values-are-inert ()
+  (check (signals-p 'validation-error
+                    (lambda ()
+                      (profile-plan :endpoint "http://127.0.0.1/$(touch-pwned)")))
+         "A shell substitution was accepted in the endpoint.")
+  (check (signals-p 'validation-error
+                    (lambda ()
+                      (profile-plan :credential-reference "star_sk_v1_raw")))
+         "A raw key was accepted as a credential reference."))
 
 (defun test-installer-no-secret ()
   (let* ((secret "star_sk_v1_must_not_appear")
          (network (basic-network :enabled t))
-         (plan (automation-plan network :graph-path #P"/tmp/basic.lisp"))
+         (plan (automation-plan network :graph-path #P"/tmp/basic.lisp"
+                                        :executable "/bin/true"))
          (rendered (with-output-to-string (stream) (prin1 plan stream))))
     (check (not (search secret rendered)) "Installer plan leaked a secret.")
     (check (getf plan :enable) "Enabled automation did not request systemd enable.")))
@@ -91,8 +140,11 @@
                   test-round-trip
                   test-invalid-port
                   test-sandbox-denial
-                  test-bounded-backpressure
+                  test-lossless-atomic-backpressure
+                  test-self-trust-is-rejected
+                  test-literal-secret-is-rejected
+                  test-profile-values-are-inert
                   test-installer-no-secret))
     (funcall test))
-  (format t "~&Quasar FBP: 6 tests passed.~%")
+  (format t "~&Quasar FBP: 9 tests passed.~%")
   t)

@@ -130,11 +130,13 @@
             ];
             nativeLibs = runtimeLibs;
             systems = [
+              "quasar-fbp"
               "quasar-control"
               "quasar-starlang"
               "quasar-web"
             ];
             asdFilesToKeep = [
+              "quasar-fbp.asd"
               "quasar-control.asd"
               "quasar-starlang.asd"
               "quasar-web.asd"

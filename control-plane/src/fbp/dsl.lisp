@@ -82,8 +82,7 @@ Body forms are (:component ID TYPE :config PLIST),
         :iips (list ,@(mapcar #'dsl-iip iips))
         :policy (make-sandbox-policy
                  :capabilities ',(getf options :capabilities)
-                 :limits ',(getf options :limits)
-                 :trusted-code-p ,(getf options :trusted-code))
+                 :limits ',(getf options :limits))
         :metadata ',(getf options :metadata)))))
 
 (defun network-to-form (network)
@@ -95,7 +94,6 @@ Body forms are (:component ID TYPE :config PLIST),
                :enabled-at-login (network-enabled-at-login-p network)
                :capabilities (sandbox-policy-capabilities (network-policy network))
                :limits (sandbox-policy-limits (network-policy network))
-               :trusted-code (sandbox-policy-trusted-code-p (network-policy network))
                :metadata (network-metadata network)))
    (mapcar (lambda (component)
              (list :component
@@ -132,6 +130,9 @@ Body forms are (:component ID TYPE :config PLIST),
            :message "Expected a DEFINE-NETWORK form."))
   (destructuring-bind (operator id options &rest body) form
     (declare (ignore operator))
+    (when (member :trusted-code options)
+      (error 'sandbox-denied :code "fbp.graph-trust-forbidden"
+             :message "A workflow cannot grant trust to itself."))
     (unless (and (listp options)
                  (every (lambda (entry)
                           (member (first entry) '(:component :connect :iip)))
@@ -173,8 +174,7 @@ Body forms are (:component ID TYPE :config PLIST),
        :iips (nreverse iips)
        :policy (make-sandbox-policy
                 :capabilities (copy-list (getf options :capabilities))
-                :limits (copy-list (getf options :limits))
-                :trusted-code-p (getf options :trusted-code))
+                :limits (copy-list (getf options :limits)))
        :metadata (copy-list (getf options :metadata))))))
 
 (defun read-network (source)
@@ -183,7 +183,8 @@ Body forms are (:component ID TYPE :config PLIST),
         (read-from-string source nil :eof)
       (when (eq form :eof)
         (error 'validation-error :code "fbp.invalid-dsl" :message "Empty FBP source."))
-      (unless (every (lambda (character) (find character " \t\r\n"))
+      (unless (every (lambda (character)
+                       (member character '(#\Space #\Tab #\Return #\Newline)))
                      (subseq source position))
         (error 'validation-error :code "fbp.invalid-dsl"
                :message "Trailing forms are not allowed."))

@@ -20,7 +20,7 @@
    #:network-enabled-at-login-p #:network-components #:network-connections
    #:network-iips #:network-policy #:network-metadata
    #:sandbox-policy #:make-sandbox-policy #:sandbox-policy-capabilities
-   #:sandbox-policy-limits #:sandbox-policy-trusted-code-p
+   #:sandbox-policy-limits
    #:register-node-type #:unregister-node-type #:find-node-type
    #:all-node-types #:clear-node-registry
    #:define-node #:define-network #:network-from-form #:read-network
@@ -43,5 +43,5 @@
                 #:runtime-status #:runtime-trace #:node-catalog
                 #:automation-plan #:apply-automation-plan
                 #:profile-plan #:apply-profile-plan)
-  (:export #:install-fbp-commands #:stop-all-workflows))
-
+  (:export #:install-fbp-commands #:stop-all-workflows
+           #:configure-fbp-runtime #:make-starintel-operation-service))

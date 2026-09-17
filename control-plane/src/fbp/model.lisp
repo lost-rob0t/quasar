@@ -1,6 +1,6 @@
 (in-package #:quasar.fbp)
 
-(defconstant +model-version+ "quasar.fbp.v1")
+(defparameter +model-version+ "quasar.fbp.v1")
 
 (define-condition fbp-error (error)
   ((code :initarg :code :reader fbp-error-code)
@@ -50,8 +50,7 @@
 
 (defstruct sandbox-policy
   (capabilities nil :type list)
-  (limits nil :type list)
-  (trusted-code-p nil))
+  (limits nil :type list))
 
 (defstruct network
   (id "" :type string)
@@ -110,10 +109,47 @@
                :message (format nil "Duplicate ~A ~A." label value)))
       (setf (gethash value seen) t))))
 
-(defun policy-allows-p (policy capability)
-  (or (null capability)
-      (member :all (sandbox-policy-capabilities policy))
-      (member capability (sandbox-policy-capabilities policy) :test #'equal)))
+
+(defun schema-type (schema)
+  (and (listp schema) (getf schema :type)))
+
+(defun schemas-compatible-p (output input)
+  (let ((from (schema-type (port-spec-schema output)))
+        (to (schema-type (port-spec-schema input))))
+    (or (null from) (null to) (string= from "any") (string= to "any")
+        (string= from to))))
+
+(defun secret-like-p (value)
+  (cond
+    ((stringp value)
+     (or (search "star_sk_" value :test #'char-equal)
+         (search "rabbit_password" value :test #'char-equal)
+         (search "couchdb_password" value :test #'char-equal)))
+    ((consp value) (or (secret-like-p (car value)) (secret-like-p (cdr value))))
+    ((vectorp value) (some #'secret-like-p value))
+    (t nil)))
+
+(defun credential-reference-p (value)
+  (and (stringp value)
+       (> (length value) (length "credential:"))
+       (string-equal "credential:" value :end2 (length "credential:"))
+       (every (lambda (character)
+                (or (alphanumericp character) (find character "_.-")))
+              (subseq value (length "credential:")))))
+
+(defun validate-component-config (component)
+  (when (string= (component-spec-type component) "starintel/operation")
+    (let* ((config (component-spec-config component))
+           (operation (getf config :operation))
+           (reference (getf config :credential-reference)))
+      (unless (and (stringp operation) (plusp (length operation)))
+        (error 'validation-error :code "fbp.invalid-operation"
+               :message "A StarIntel operation node requires an immutable operation id."))
+      (when reference
+        (unless (credential-reference-p reference)
+          (error 'validation-error :code "fbp.invalid-credential-reference"
+                 :message "Credential reference must match credential:[A-Za-z0-9_.-]+.")))))
+  component)
 
 (defun validate-network (network)
   "Validate a network without evaluating component source or performing I/O."
@@ -126,14 +162,16 @@
         (incoming (make-hash-table :test #'equal)))
     (dolist (component (network-components network))
       (let ((type (find-node-type (component-spec-type component))))
-        (setf (gethash (component-spec-id component) components) component)
-        (dolist (capability (node-type-capabilities type))
-          (unless (policy-allows-p (network-policy network) capability)
-            (error 'sandbox-denied :code "fbp.capability-denied"
-                   :message (format nil "Component ~A requires denied capability ~A."
-                                    (component-spec-id component) capability)
-                   :details (list :component (component-spec-id component)
-                                  :capability capability))))))
+        (declare (ignore type))
+        (when (secret-like-p (component-spec-config component))
+          (error 'validation-error :code "fbp.literal-secret"
+                 :message "Workflow configuration must contain credential references, never secret values."))
+        (validate-component-config component)
+        (setf (gethash (component-spec-id component) components) component)))
+    (dolist (iip (network-iips network))
+      (when (secret-like-p (iip-spec-value iip))
+        (error 'validation-error :code "fbp.literal-secret"
+               :message "Initial packets must not contain secret values.")))
     (labels ((component-type-for (id)
                (let ((component (gethash id components)))
                  (unless component
@@ -151,16 +189,27 @@
         (unless (plusp (connection-spec-capacity connection))
           (error 'validation-error :code "fbp.invalid-capacity"
                  :message "Connection capacity must be positive."))
-        (let ((from-type (component-type-for (connection-spec-from connection)))
-              (to-type (component-type-for (connection-spec-to connection))))
-          (unless (port-named (node-type-outputs from-type) (connection-spec-out connection))
+        (let* ((from-type (component-type-for (connection-spec-from connection)))
+               (to-type (component-type-for (connection-spec-to connection)))
+               (from-port (port-named (node-type-outputs from-type)
+                                      (connection-spec-out connection)))
+               (to-port (port-named (node-type-inputs to-type)
+                                    (connection-spec-in connection))))
+          (unless from-port
             (error 'validation-error :code "fbp.unknown-output"
                    :message (format nil "Unknown output ~A.~A."
                                     (connection-spec-from connection)
                                     (connection-spec-out connection))))
-          (unless (port-named (node-type-inputs to-type) (connection-spec-in connection))
+          (unless to-port
             (error 'validation-error :code "fbp.unknown-input"
                    :message (format nil "Unknown input ~A.~A."
+                                    (connection-spec-to connection)
+                                    (connection-spec-in connection))))
+          (unless (schemas-compatible-p from-port to-port)
+            (error 'validation-error :code "fbp.incompatible-ports"
+                   :message (format nil "Incompatible port schemas on ~A.~A -> ~A.~A."
+                                    (connection-spec-from connection)
+                                    (connection-spec-out connection)
                                     (connection-spec-to connection)
                                     (connection-spec-in connection))))
           (claim-input (connection-spec-to connection)

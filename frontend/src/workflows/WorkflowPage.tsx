@@ -23,8 +23,12 @@ import {
   validateRemote,
 } from "./client";
 import {
+  advertisedCatalog,
+  descriptorForWorkflowNode,
   emptyWorkflow,
+  STARINTEL_OPERATION_NODE_TYPE,
   validateWorkflow,
+  workflowNodeFromDescriptor,
   workflowToLisp,
   type NodeDescriptor,
   type Workflow,
@@ -32,6 +36,58 @@ import {
 } from "./model";
 
 type PendingPort = { node: string; port: string } | null;
+
+function defaultPacketValue(port: NodeDescriptor["inputs"][number]): unknown {
+  switch (port.schema?.type) {
+    case "object":
+      return {};
+    case "array":
+      return [];
+    case "string":
+      return "";
+    case "integer":
+    case "number":
+      return 0;
+    case "boolean":
+      return false;
+    default:
+      return null;
+  }
+}
+
+function JsonValueEditor({
+  label,
+  value,
+  onCommit,
+}: {
+  label: string;
+  value: unknown;
+  onCommit: (value: unknown) => void;
+}) {
+  const canonical = JSON.stringify(value, null, 2);
+  const [draft, setDraft] = useState(canonical);
+  const [valid, setValid] = useState(true);
+
+  useEffect(() => setDraft(canonical), [canonical]);
+
+  return (
+    <textarea
+      aria-label={label}
+      aria-invalid={!valid}
+      value={draft}
+      onChange={(event) => {
+        const next = event.target.value;
+        setDraft(next);
+        try {
+          onCommit(JSON.parse(next));
+          setValid(true);
+        } catch {
+          setValid(false);
+        }
+      }}
+    />
+  );
+}
 
 function download(name: string, content: string, type: string) {
   const link = document.createElement("a");
@@ -124,10 +180,8 @@ function NodeCard({
 }
 
 export default function WorkflowPage() {
-  const [workflows, setWorkflows] = useState<Workflow[]>(() => loadWorkflows());
-  const [workflow, setWorkflow] = useState<Workflow>(
-    () => loadWorkflows()[0] || emptyWorkflow(),
-  );
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [workflow, setWorkflow] = useState<Workflow>(() => emptyWorkflow());
   const [catalog, setCatalog] = useState<NodeDescriptor[]>([]);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
@@ -137,7 +191,24 @@ export default function WorkflowPage() {
   const [plan, setPlan] = useState<Record<string, unknown> | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => void loadCatalog().then(setCatalog), []);
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([loadWorkflows(), loadCatalog()])
+      .then(([saved, items]) => {
+        if (cancelled) return;
+        setWorkflows(saved);
+        setWorkflow(saved[0] || emptyWorkflow());
+        setCatalog(advertisedCatalog(items));
+        setMessage(saved.length ? "Loaded from workspace" : "Ready");
+      })
+      .catch((error: unknown) => {
+        if (!cancelled)
+          setMessage(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const descriptors = useMemo(
     () => new Map(catalog.map((item) => [item.id, item])),
     [catalog],
@@ -157,15 +228,18 @@ export default function WorkflowPage() {
   );
   const selectedNode =
     workflow.nodes.find((node) => node.id === selected) || null;
+  const selectedDescriptor = selectedNode
+    ? descriptorForWorkflowNode(selectedNode, descriptors)
+    : undefined;
 
   function update(recipe: (current: Workflow) => Workflow) {
     setWorkflow((current) => recipe(structuredClone(current)));
   }
 
-  function addNode(type: string) {
+  function addNode(descriptor: NodeDescriptor) {
     update((next) => {
       const base =
-        type
+        descriptor.id
           .split("/")
           .at(-1)
           ?.replaceAll(/[^a-z0-9-]/gi, "-") || "node";
@@ -173,13 +247,14 @@ export default function WorkflowPage() {
       let number = 2;
       while (next.nodes.some((node) => node.id === id))
         id = `${base}-${number++}`;
-      next.nodes.push({
-        id,
-        type,
-        x: 80 + (next.nodes.length % 4) * 230,
-        y: 80 + Math.floor(next.nodes.length / 4) * 190,
-        config: {},
-      });
+      next.nodes.push(
+        workflowNodeFromDescriptor(
+          descriptor,
+          id,
+          80 + (next.nodes.length % 4) * 230,
+          80 + Math.floor(next.nodes.length / 4) * 190,
+        ),
+      );
       setSelected(id);
       return next;
     });
@@ -204,14 +279,19 @@ export default function WorkflowPage() {
     setPending(null);
   }
 
-  function save() {
+  async function save() {
     const next = [
       ...workflows.filter((item) => item.id !== workflow.id),
       workflow,
     ];
-    setWorkflows(next);
-    saveWorkflows(next);
-    setMessage("Saved canonical workflow locally");
+    try {
+      setMessage("Saving to workspace…");
+      await saveWorkflows(next);
+      setWorkflows(next);
+      setMessage("Saved to canonical workspace");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
   }
 
   async function action(
@@ -273,7 +353,7 @@ export default function WorkflowPage() {
           />
           start at login
         </label>
-        <button className="button" onClick={save}>
+        <button className="button" onClick={() => void save()}>
           <Save size={15} /> Save
         </button>
         <button
@@ -323,7 +403,7 @@ export default function WorkflowPage() {
                   .map((item) => (
                     <button
                       key={item.id}
-                      onClick={() => addNode(item.id)}
+                      onClick={() => addNode(item)}
                       title={item.id}
                     >
                       <Plus size={13} />
@@ -365,7 +445,7 @@ export default function WorkflowPage() {
             <NodeCard
               key={node.id}
               node={node}
-              descriptor={descriptors.get(node.type)}
+              descriptor={descriptorForWorkflowNode(node, descriptors)}
               selected={node.id === selected}
               pending={pending}
               onSelect={() => setSelected(node.id)}
@@ -422,7 +502,15 @@ export default function WorkflowPage() {
                         const target = next.nodes.find(
                           (node) => node.id === selectedNode.id,
                         );
-                        if (target) target.config = value;
+                        if (target) {
+                          if (
+                            target.type === STARINTEL_OPERATION_NODE_TYPE &&
+                            typeof target.config.operation === "string"
+                          ) {
+                            value.operation = target.config.operation;
+                          }
+                          target.config = value;
+                        }
                         return next;
                       });
                     } catch {
@@ -431,6 +519,82 @@ export default function WorkflowPage() {
                   }}
                 />
               </label>
+              <h2>Initial packets</h2>
+              {(selectedDescriptor?.inputs || []).map((port) => {
+                const packet = workflow.iips.find(
+                  (iip) => iip.to === selectedNode.id && iip.in === port.name,
+                );
+                return (
+                  <div className="workflow-iip" key={port.name}>
+                    <label>
+                      {port.name}
+                      {packet ? (
+                        <JsonValueEditor
+                          label={`Initial packet for ${port.name}`}
+                          value={packet.value}
+                          onCommit={(value) =>
+                            update((next) => {
+                              const target = next.iips.find(
+                                (iip) => iip.id === packet.id,
+                              );
+                              if (target) target.value = value;
+                              return next;
+                            })
+                          }
+                        />
+                      ) : (
+                        <small>No initial packet</small>
+                      )}
+                    </label>
+                    {packet ? (
+                      <button
+                        className="button"
+                        onClick={() =>
+                          update((next) => {
+                            next.iips = next.iips.filter(
+                              (iip) => iip.id !== packet.id,
+                            );
+                            return next;
+                          })
+                        }
+                      >
+                        Remove
+                      </button>
+                    ) : (
+                      <button
+                        className="button"
+                        onClick={() =>
+                          update((next) => {
+                            next.connections = next.connections.filter(
+                              (edge) =>
+                                !(
+                                  edge.to === selectedNode.id &&
+                                  edge.in === port.name
+                                ),
+                            );
+                            next.iips = next.iips.filter(
+                              (iip) =>
+                                !(
+                                  iip.to === selectedNode.id &&
+                                  iip.in === port.name
+                                ),
+                            );
+                            next.iips.push({
+                              id: `${selectedNode.id}:${port.name}:iip`,
+                              value: defaultPacketValue(port),
+                              to: selectedNode.id,
+                              in: port.name,
+                            });
+                            return next;
+                          })
+                        }
+                      >
+                        Set packet
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
               <button
                 className="button danger"
                 onClick={() =>

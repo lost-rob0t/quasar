@@ -3,8 +3,9 @@ import {
   builtInCatalog,
   emptyWorkflow,
   operationsToNodes,
+  workflowNodeFromDescriptor,
   validateWorkflow,
-  workflowToLisp
+  workflowToLisp,
 } from "./model";
 
 describe("workflow model", () => {
@@ -20,26 +21,37 @@ describe("workflow model", () => {
         request_schema: {
           type: "object",
           required: ["actor", "target"],
-          properties: { actor: { type: "string" }, target: { type: "string" } }
+          properties: { actor: { type: "string" }, target: { type: "string" } },
         },
-        responses: [{ status: 201, schema: { type: "object" } }]
-      }
+        responses: [{ status: 201, schema: { type: "object" } }],
+      },
     ]);
     expect(nodes).toHaveLength(1);
     expect(nodes[0].id).toBe("starintel.operation/targets.create");
-    expect(nodes[0].inputs.map((port) => port.name)).toEqual(["actor", "target"]);
+    expect(nodes[0].inputs.map((port) => port.name)).toEqual(["request"]);
     expect(nodes[0].capabilities).toEqual(["targets:dispatch"]);
+    expect(workflowNodeFromDescriptor(nodes[0], "target", 0, 0)).toMatchObject({
+      type: "starintel/operation",
+      config: { operation: "targets.create" },
+    });
   });
 
   it("validates named ports and emits ordinary Lisp without reader evaluation", () => {
     const workflow = emptyWorkflow("hello");
     workflow.nodes = [
       { id: "copy", type: "core/identity", x: 0, y: 0, config: {} },
-      { id: "split", type: "core/split", x: 220, y: 0, config: {} }
+      { id: "split", type: "core/split", x: 220, y: 0, config: {} },
     ];
     workflow.iips = [{ id: "seed", value: ["a", "b"], to: "copy", in: "in" }];
     workflow.connections = [
-      { id: "edge", from: "copy", out: "out", to: "split", in: "in", capacity: 4 }
+      {
+        id: "edge",
+        from: "copy",
+        out: "out",
+        to: "split",
+        in: "in",
+        capacity: 4,
+      },
     ];
     expect(validateWorkflow(workflow, builtInCatalog)).toEqual([]);
     const source = workflowToLisp(workflow);
@@ -50,9 +62,11 @@ describe("workflow model", () => {
 
   it("rejects multiple producers and missing required inputs", () => {
     const workflow = emptyWorkflow("invalid");
-    workflow.nodes = [{ id: "copy", type: "core/identity", x: 0, y: 0, config: {} }];
+    workflow.nodes = [
+      { id: "copy", type: "core/identity", x: 0, y: 0, config: {} },
+    ];
     expect(validateWorkflow(workflow, builtInCatalog)).toContain(
-      "Required input copy.in is not connected"
+      "Required input copy.in is not connected",
     );
   });
 });

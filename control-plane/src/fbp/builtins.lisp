@@ -49,7 +49,7 @@
        :inputs ((request :schema (:type "object")))
        :outputs ((result :schema (:type "object"))
                  (error :schema (:type "object") :required nil))
-       :capabilities ((:starintel-operation :configured)))
+       :capabilities (:starintel-operation))
       (inputs context)
     (let ((invoke (required-service context :starintel-operation)))
       (list (cons "result"
@@ -61,35 +61,13 @@
       (:label "Submit target" :category "Targets"
        :inputs ((target :schema (:type "object")))
        :outputs ((receipt :schema (:type "object")))
-       :capabilities ((:starintel-operation "targets.create")))
+       :capabilities (:starintel-operation))
       (inputs context)
     (let ((invoke (required-service context :starintel-operation)))
       (list (cons "receipt"
                   (list (funcall invoke "targets.create"
                                  (single-input inputs "target")
                                  (getf context :config)))))))
-
-  (define-node starintel/actor
-      (:label "Actor message" :category "Actors"
-       :inputs ((message :schema (:type "object")))
-       :outputs ((result :schema (:type "object")))
-       :capabilities ((:actor :configured)))
-      (inputs context)
-    (list (cons "result"
-                (list (funcall (required-service context :actor-message)
-                               (getf (getf context :config) :actor)
-                               (single-input inputs "message"))))))
-
-  (define-node starintel/domain-server
-      (:label "Domain server" :category "Domain servers"
-       :inputs ((request :schema (:type "object")))
-       :outputs ((result :schema (:type "object")))
-       :capabilities ((:domain-server :configured)))
-      (inputs context)
-    (list (cons "result"
-                (list (funcall (required-service context :domain-server)
-                               (getf (getf context :config) :server)
-                               (single-input inputs "request"))))))
 
   (define-node language/lisp
       (:label "Trusted Lisp component" :category "Languages"
@@ -130,4 +108,3 @@
   t)
 
 (register-builtins)
-
