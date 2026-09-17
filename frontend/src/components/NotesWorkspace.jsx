@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BookMarked, CalendarDays, Link2, Network, Plus, Trash2 } from "lucide-react";
+import {
+  BookMarked,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Link2,
+  Network,
+  Plus,
+  Trash2
+} from "lucide-react";
 import ExecutableCodeBlock from "./ExecutableCodeBlock";
 import {
   addNoteBlock,
@@ -10,7 +20,8 @@ import {
   listNoteBlocks,
   listNotePages,
   noteGraph,
-  updateNoteBlock
+  updateNoteBlock,
+  updateNoteBlockParent
 } from "../lib/notes-store";
 
 function blockCode(content) {
@@ -25,6 +36,19 @@ function referencedPages(content) {
   return [...String(content || "").matchAll(/\[\[([^\]]+)\]\]/g)].map((match) => match[1].trim());
 }
 
+function blockDepth(block, byId) {
+  let depth = 0;
+  let current = block;
+  const seen = new Set();
+  while (current?.parentId && depth < 12 && !seen.has(current.parentId)) {
+    seen.add(current.parentId);
+    current = byId.get(current.parentId);
+    if (!current) break;
+    depth += 1;
+  }
+  return depth;
+}
+
 export default function NotesWorkspace() {
   const [pages, setPages] = useState([]);
   const [selectedPageId, setSelectedPageId] = useState("");
@@ -35,6 +59,7 @@ export default function NotesWorkspace() {
   const [error, setError] = useState("");
 
   const selectedPage = pages.find((page) => page._id === selectedPageId) || null;
+  const blocksById = useMemo(() => new Map(blocks.map((block) => [block._id, block])), [blocks]);
 
   const refreshPages = useCallback(async (selectId) => {
     const nextPages = await listNotePages();
@@ -84,10 +109,10 @@ export default function NotesWorkspace() {
     }
   }
 
-  async function addBlock(afterOrder = null) {
+  async function addBlock(afterOrder = null, parentId = null) {
     if (!selectedPage) return;
     try {
-      await addNoteBlock(selectedPage._id, "", afterOrder);
+      await addNoteBlock(selectedPage._id, "", afterOrder, parentId);
       await refreshPage();
     } catch (cause) {
       setError(cause.message || String(cause));
@@ -101,6 +126,38 @@ export default function NotesWorkspace() {
       await refreshPages(selectedPageId);
     } catch (cause) {
       setError(cause.message || String(cause));
+    }
+  }
+
+  async function setBlockParent(block, parentId) {
+    try {
+      await updateNoteBlockParent(block, parentId);
+      await refreshPage();
+    } catch (cause) {
+      setError(cause.message || String(cause));
+    }
+  }
+
+  async function indentBlock(block) {
+    const index = blocks.findIndex((candidate) => candidate._id === block._id);
+    if (index <= 0) return;
+    const previous = blocks[index - 1];
+    if (previous._id === block.parentId) return;
+    await setBlockParent(block, previous._id);
+  }
+
+  async function outdentBlock(block) {
+    if (!block.parentId) return;
+    const parent = blocksById.get(block.parentId);
+    await setBlockParent(block, parent?.parentId || null);
+  }
+
+  async function copyBlockReference(block) {
+    const blockUuid = block.uuid || String(block._id || "").replace(/^note-block:/, "");
+    try {
+      await navigator.clipboard.writeText(`((${blockUuid}))`);
+    } catch {
+      setError("Clipboard access is unavailable in this browser context.");
     }
   }
 
@@ -183,9 +240,14 @@ export default function NotesWorkspace() {
             <section className="notes-blocks" aria-label="Page blocks">
               {blocks.map((block) => {
                 const code = blockCode(block.content);
+                const depth = blockDepth(block, blocksById);
                 return (
-                  <article className="note-block" key={block._id}>
-                    <div className="note-block-bullet" title={block._id} />
+                  <article
+                    className="note-block"
+                    key={block._id}
+                    style={{ marginInlineStart: `${depth * 18}px` }}
+                  >
+                    <div className="note-block-bullet" title={`((${block.uuid || block._id.replace(/^note-block:/, "")}))`} />
                     <div className="note-block-body">
                       <textarea
                         defaultValue={block.content}
@@ -195,9 +257,18 @@ export default function NotesWorkspace() {
                           if (event.target.value !== block.content) saveBlock(block, event.target.value);
                         }}
                         onKeyDown={(event) => {
+                          if (event.key === "Tab") {
+                            event.preventDefault();
+                            saveBlock(block, event.currentTarget.value).then(() =>
+                              event.shiftKey ? outdentBlock(block) : indentBlock(block)
+                            );
+                            return;
+                          }
                           if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                             event.preventDefault();
-                            saveBlock(block, event.currentTarget.value).then(() => addBlock(block.order));
+                            saveBlock(block, event.currentTarget.value).then(() =>
+                              addBlock(block.order, block.parentId || null)
+                            );
                           }
                         }}
                       />
@@ -212,9 +283,20 @@ export default function NotesWorkspace() {
                         </div>
                       ) : null}
                     </div>
-                    <button type="button" className="icon-button" title="Delete block" onClick={() => removeBlock(block)}>
-                      <Trash2 size={14} />
-                    </button>
+                    <div className="note-block-actions">
+                      <button type="button" className="icon-button" title="Outdent block" disabled={!block.parentId} onClick={() => outdentBlock(block)}>
+                        <ChevronLeft size={13} />
+                      </button>
+                      <button type="button" className="icon-button" title="Indent block" onClick={() => indentBlock(block)}>
+                        <ChevronRight size={13} />
+                      </button>
+                      <button type="button" className="icon-button" title="Copy block reference" onClick={() => copyBlockReference(block)}>
+                        <Copy size={13} />
+                      </button>
+                      <button type="button" className="icon-button" title="Delete block" onClick={() => removeBlock(block)}>
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </article>
                 );
               })}
@@ -255,6 +337,7 @@ export default function NotesWorkspace() {
               <div>
                 <h2>Knowledge graph</h2>
                 <p>{graph.pages.length} pages · {graph.edges.length} page-reference edges</p>
+                <p>Use Tab/Shift+Tab to nest blocks and copy `((block-id))` references from block actions.</p>
               </div>
             </section>
           </>
@@ -262,7 +345,7 @@ export default function NotesWorkspace() {
           <div className="empty-state">
             <BookMarked size={28} />
             <h2>Create your first page</h2>
-            <p>Pages contain addressable blocks, journals, links, tags, code blocks, and backlinks.</p>
+            <p>Pages contain nested addressable blocks, journals, links, tags, code blocks, and backlinks.</p>
           </div>
         )}
       </main>
