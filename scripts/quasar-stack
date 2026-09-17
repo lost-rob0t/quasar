@@ -13,6 +13,7 @@ QUASAR_PID="$STATE_HOME/quasar.pid"
 UNIT_HOME="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 BUNDLE_ASSET_DIR="${QUASAR_BUNDLE_ASSET_DIR:-}"
 QUASAR_SERVER_BIN="${QUASAR_SERVER_BIN:-quasar-server}"
+CODE_RUNNER_BIN="${QUASAR_CODE_RUNNER_BIN:-}"
 SELF="$(command -v quasar 2>/dev/null || command -v quasar-stack 2>/dev/null || realpath "$0")"
 
 if [[ -z "$BUNDLE_ASSET_DIR" ]]; then
@@ -272,6 +273,7 @@ After=quasar-starintel.service
 [Service]
 Type=simple
 Environment=QUASAR_INIT_FILE=$QUASAR_INIT
+Environment=QUASAR_CODE_RUNNER_BIN=$CODE_RUNNER_BIN
 ExecStart=$QUASAR_SERVER_BIN --init $QUASAR_INIT
 Restart=on-failure
 RestartSec=2
@@ -289,7 +291,8 @@ start_quasar_fallback() {
     return
   fi
   require "$QUASAR_SERVER_BIN"
-  nohup "$QUASAR_SERVER_BIN" --init "$QUASAR_INIT" >>"$QUASAR_LOG" 2>&1 &
+  QUASAR_CODE_RUNNER_BIN="$CODE_RUNNER_BIN" \
+    nohup "$QUASAR_SERVER_BIN" --init "$QUASAR_INIT" >>"$QUASAR_LOG" 2>&1 &
   printf '%s\n' "$!" >"$QUASAR_PID"
 }
 
@@ -328,6 +331,7 @@ install_stack() {
   else
     say "user systemd unavailable; quasar will use foreground-safe WSL/Linux fallback management"
   fi
+  [[ -n "$CODE_RUNNER_BIN" ]] && say "sandboxed Lisp/Prolog code blocks enabled"
 }
 
 up_stack() {
@@ -415,6 +419,12 @@ doctor() {
     failed=1
   fi
 
+  if [[ -n "$CODE_RUNNER_BIN" && -x "$CODE_RUNNER_BIN" ]]; then
+    say "ok   sandboxed Lisp/Prolog code runner"
+  else
+    say "info sandboxed Lisp/Prolog code runner disabled"
+  fi
+
   say "info secret backend: $(secret_backend)"
   say "info StarIntel revision: $STARINTEL_REV"
   say "info assets: $BUNDLE_ASSET_DIR"
@@ -479,6 +489,7 @@ Usage: quasar <command>
 Environment:
   QUASAR_STARINTEL_REV   Override the pinned starintel-server revision
   QUASAR_SERVER_BIN      Override quasar-server executable
+  QUASAR_CODE_RUNNER_BIN Optional sandbox runner; packaged end-user build sets it
 EOF
 }
 
