@@ -2,7 +2,7 @@
   :description "Quasar Common Lisp control plane: protocol, workspace, Tek9 store, commands, actors."
   :author "lost-rob0t"
   :license "AGPL-3.0-only"
-  :version "0.2.0"
+  :version "0.3.0"
   :serial t
   :pathname "../control-plane/src/"
   :depends-on ("babel"
@@ -27,6 +27,7 @@
                (:file "phase2-stage-cleanup")
                (:file "phase2-store-reads")
                (:file "control-plane")
+               (:file "code-runner")
                (:file "command-authority-context")
                (:file "autodig-store")
                (:file "autodig-control")
