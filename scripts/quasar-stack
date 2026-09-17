@@ -1,0 +1,502 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+STARINTEL_REV="${QUASAR_STARINTEL_REV:-e49c67d88d60dbcc0fcba1b4ba76c1a0a6d6655c}"
+CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}/quasar"
+DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/quasar"
+STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}/quasar"
+RUNTIME_SECRETS="$STATE_HOME/runtime-secrets"
+STACK_CONFIG="$CONFIG_HOME/stack.conf"
+QUASAR_INIT="$CONFIG_HOME/init.lisp"
+QUASAR_LOG="$STATE_HOME/quasar.log"
+QUASAR_PID="$STATE_HOME/quasar.pid"
+UNIT_HOME="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+BUNDLE_ASSET_DIR="${QUASAR_BUNDLE_ASSET_DIR:-}"
+QUASAR_SERVER_BIN="${QUASAR_SERVER_BIN:-quasar-server}"
+SELF="$(command -v quasar 2>/dev/null || command -v quasar-stack 2>/dev/null || realpath "$0")"
+
+if [[ -z "$BUNDLE_ASSET_DIR" ]]; then
+  BUNDLE_ASSET_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../bundle" && pwd)"
+fi
+
+COMPOSE_FILE="$BUNDLE_ASSET_DIR/docker-compose.yml"
+STAR_SERVER_INIT="$BUNDLE_ASSET_DIR/star-server-init.lisp"
+SECRETS=(
+  couchdb_password
+  couchdb_secret
+  erlang_cookie
+  rabbitmq_password
+  valkey_password
+  auth_pepper
+  auth_bootstrap_secret
+  quasar_admin_password
+)
+
+say() { printf '%s\n' "$*"; }
+die() { printf 'quasar: %s\n' "$*" >&2; exit 1; }
+have() { command -v "$1" >/dev/null 2>&1; }
+is_wsl() { grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null; }
+
+require() {
+  local command_name="$1"
+  have "$command_name" || die "required command not found: $command_name"
+}
+
+systemd_user_available() {
+  have systemctl && systemctl --user show-environment >/dev/null 2>&1
+}
+
+secret_backend() {
+  if [[ -f "$STACK_CONFIG" ]]; then
+    # shellcheck disable=SC1090
+    source "$STACK_CONFIG"
+    printf '%s' "${SECRET_BACKEND:-file}"
+    return
+  fi
+
+  if is_wsl && have powershell.exe && have wslpath; then
+    printf '%s' dpapi
+  elif have secret-tool && [[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
+    printf '%s' secret-service
+  else
+    printf '%s' file
+  fi
+}
+
+write_stack_config() {
+  local backend="$1"
+  install -d -m 0700 "$CONFIG_HOME"
+  umask 077
+  printf 'SECRET_BACKEND=%q\n' "$backend" >"$STACK_CONFIG"
+  chmod 0600 "$STACK_CONFIG"
+}
+
+file_secret_path() {
+  printf '%s/secrets-store/%s' "$CONFIG_HOME" "$1"
+}
+
+dpapi_secret_path() {
+  printf '%s/dpapi/%s.txt' "$CONFIG_HOME" "$1"
+}
+
+secret_put() {
+  local name="$1"
+  local value="$2"
+  local backend
+  backend="$(secret_backend)"
+
+  case "$backend" in
+    secret-service)
+      printf '%s' "$value" | secret-tool store \
+        --label="Quasar / StarIntel: $name" \
+        application quasar key "$name" >/dev/null
+      ;;
+    dpapi)
+      install -d -m 0700 "$CONFIG_HOME/dpapi"
+      local windows_path
+      windows_path="$(wslpath -w "$(dpapi_secret_path "$name")")"
+      printf '%s' "$value" | powershell.exe -NoProfile -NonInteractive -Command \
+        '$plain=[Console]::In.ReadToEnd(); $secure=ConvertTo-SecureString $plain -AsPlainText -Force; ConvertFrom-SecureString $secure | Set-Content -NoNewline -Encoding ascii -LiteralPath $args[0]' \
+        "$windows_path" >/dev/null
+      ;;
+    file)
+      local path
+      path="$(file_secret_path "$name")"
+      install -d -m 0700 "$(dirname "$path")"
+      umask 077
+      printf '%s' "$value" >"$path"
+      chmod 0600 "$path"
+      ;;
+    *)
+      die "unsupported secret backend: $backend"
+      ;;
+  esac
+}
+
+secret_get() {
+  local name="$1"
+  local backend
+  backend="$(secret_backend)"
+
+  case "$backend" in
+    secret-service)
+      secret-tool lookup application quasar key "$name"
+      ;;
+    dpapi)
+      local encrypted windows_path
+      encrypted="$(dpapi_secret_path "$name")"
+      [[ -f "$encrypted" ]] || return 1
+      windows_path="$(wslpath -w "$encrypted")"
+      powershell.exe -NoProfile -NonInteractive -Command \
+        '$secure=Get-Content -Raw -LiteralPath $args[0] | ConvertTo-SecureString; $ptr=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure); try {[Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)} finally {[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)}' \
+        "$windows_path" | tr -d '\r\n'
+      ;;
+    file)
+      cat "$(file_secret_path "$name")"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+secret_delete() {
+  local name="$1"
+  local backend
+  backend="$(secret_backend)"
+
+  case "$backend" in
+    secret-service)
+      secret-tool clear application quasar key "$name" >/dev/null 2>&1 || true
+      ;;
+    dpapi)
+      rm -f "$(dpapi_secret_path "$name")"
+      ;;
+    file)
+      rm -f "$(file_secret_path "$name")"
+      ;;
+  esac
+}
+
+random_secret() {
+  local name="$1"
+  if [[ "$name" == erlang_cookie ]]; then
+    openssl rand -hex 24 | tr '[:lower:]' '[:upper:]'
+  else
+    openssl rand -base64 36 | tr -d '\n'
+  fi
+}
+
+ensure_secret() {
+  local name="$1"
+  if ! secret_get "$name" >/dev/null 2>&1; then
+    secret_put "$name" "$(random_secret "$name")"
+  fi
+}
+
+ensure_init_file() {
+  if [[ ! -f "$QUASAR_INIT" ]]; then
+    install -d -m 0700 "$CONFIG_HOME"
+    cat >"$QUASAR_INIT" <<'LISP'
+(in-package #:quasar.config)
+
+(setf *autodig-persistence-backend* :tek9
+      *autodig-filesystem-path* nil)
+LISP
+    chmod 0600 "$QUASAR_INIT"
+  fi
+}
+
+init_stack() {
+  require openssl
+  install -d -m 0700 "$CONFIG_HOME" "$DATA_HOME" "$STATE_HOME"
+  if [[ ! -f "$STACK_CONFIG" ]]; then
+    write_stack_config "$(secret_backend)"
+  fi
+  local name
+  for name in "${SECRETS[@]}"; do
+    ensure_secret "$name"
+  done
+  ensure_init_file
+  say "initialized Quasar + StarIntel"
+  say "secret backend: $(secret_backend)"
+}
+
+materialize_secrets() {
+  init_stack >/dev/null
+  rm -rf "$RUNTIME_SECRETS"
+  install -d -m 0700 "$RUNTIME_SECRETS"
+  local name
+  for name in "${SECRETS[@]}"; do
+    umask 077
+    secret_get "$name" >"$RUNTIME_SECRETS/$name"
+    chmod 0600 "$RUNTIME_SECRETS/$name"
+  done
+}
+
+compose() {
+  require docker
+  [[ -f "$COMPOSE_FILE" ]] || die "missing bundle compose file: $COMPOSE_FILE"
+  [[ -f "$STAR_SERVER_INIT" ]] || die "missing StarIntel init file: $STAR_SERVER_INIT"
+  CREDENTIALS_DIR="$RUNTIME_SECRETS" \
+  STAR_SERVER_INIT_HOST_FILE="$STAR_SERVER_INIT" \
+  STAR_AUTH_ALLOWED_ORIGINS="${STAR_AUTH_ALLOWED_ORIGINS:-http://127.0.0.1:8080,http://localhost:8080}" \
+    docker compose -f "$COMPOSE_FILE" "$@"
+}
+
+images_present() {
+  docker image inspect \
+    starintel/server:0.1.0 \
+    starintel/couchdb:3.5.2 \
+    starintel/clouseau:3.3.0 \
+    rabbitmq:4.3.4-management \
+    starintel/valkey:9.0.1 >/dev/null 2>&1
+}
+
+load_images() {
+  require nix
+  require docker
+  if images_present; then
+    say "StarIntel images already loaded"
+    return
+  fi
+  say "building and loading pinned StarIntel images ($STARINTEL_REV)"
+  nix run "github:lost-rob0t/starintel-server/${STARINTEL_REV}#load-images"
+}
+
+write_units() {
+  systemd_user_available || return 0
+  install -d -m 0700 "$UNIT_HOME"
+  cat >"$UNIT_HOME/quasar-starintel.service" <<EOF
+[Unit]
+Description=Quasar StarIntel local stack
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=$SELF _compose-up
+ExecStop=$SELF _compose-down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=default.target
+EOF
+
+  cat >"$UNIT_HOME/quasar.service" <<EOF
+[Unit]
+Description=Quasar Common Lisp control plane
+Wants=quasar-starintel.service
+After=quasar-starintel.service
+
+[Service]
+Type=simple
+Environment=QUASAR_INIT_FILE=$QUASAR_INIT
+ExecStart=$QUASAR_SERVER_BIN --init $QUASAR_INIT
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+EOF
+
+  systemctl --user daemon-reload
+  systemctl --user enable quasar-starintel.service quasar.service >/dev/null
+}
+
+start_quasar_fallback() {
+  if [[ -f "$QUASAR_PID" ]] && kill -0 "$(cat "$QUASAR_PID")" 2>/dev/null; then
+    return
+  fi
+  require "$QUASAR_SERVER_BIN"
+  nohup "$QUASAR_SERVER_BIN" --init "$QUASAR_INIT" >>"$QUASAR_LOG" 2>&1 &
+  printf '%s\n' "$!" >"$QUASAR_PID"
+}
+
+stop_quasar_fallback() {
+  if [[ -f "$QUASAR_PID" ]]; then
+    local pid
+    pid="$(cat "$QUASAR_PID")"
+    if kill -0 "$pid" 2>/dev/null; then
+      kill "$pid"
+      wait "$pid" 2>/dev/null || true
+    fi
+    rm -f "$QUASAR_PID"
+  fi
+}
+
+compose_up() {
+  materialize_secrets
+  load_images
+  compose up --detach --wait
+}
+
+compose_down() {
+  if [[ -d "$RUNTIME_SECRETS" ]]; then
+    compose down || true
+  fi
+  rm -rf "$RUNTIME_SECRETS"
+}
+
+install_stack() {
+  init_stack
+  load_images
+  write_units
+  say "installed Quasar + StarIntel end-user stack"
+  if systemd_user_available; then
+    say "user services enabled; run: quasar up"
+  else
+    say "user systemd unavailable; quasar will use foreground-safe WSL/Linux fallback management"
+  fi
+}
+
+up_stack() {
+  init_stack >/dev/null
+  if systemd_user_available && [[ -f "$UNIT_HOME/quasar-starintel.service" ]]; then
+    systemctl --user start quasar-starintel.service
+    systemctl --user start quasar.service
+  else
+    compose_up
+    start_quasar_fallback
+  fi
+  say "Quasar:   http://127.0.0.1:8080"
+  say "StarIntel: http://127.0.0.1:5000"
+}
+
+down_stack() {
+  if systemd_user_available && [[ -f "$UNIT_HOME/quasar-starintel.service" ]]; then
+    systemctl --user stop quasar.service 2>/dev/null || true
+    systemctl --user stop quasar-starintel.service 2>/dev/null || true
+  else
+    stop_quasar_fallback
+    compose_down
+  fi
+}
+
+status_stack() {
+  if [[ -d "$RUNTIME_SECRETS" ]]; then
+    compose ps || true
+  else
+    say "StarIntel stack: stopped or secrets not materialized"
+  fi
+
+  if systemd_user_available && [[ -f "$UNIT_HOME/quasar.service" ]]; then
+    systemctl --user --no-pager --full status quasar.service || true
+  elif [[ -f "$QUASAR_PID" ]] && kill -0 "$(cat "$QUASAR_PID")" 2>/dev/null; then
+    say "Quasar: running (pid $(cat "$QUASAR_PID"))"
+  else
+    say "Quasar: stopped"
+  fi
+}
+
+show_logs() {
+  local target="${1:-all}"
+  case "$target" in
+    quasar)
+      if systemd_user_available && [[ -f "$UNIT_HOME/quasar.service" ]]; then
+        journalctl --user -u quasar.service -f
+      else
+        touch "$QUASAR_LOG"
+        tail -f "$QUASAR_LOG"
+      fi
+      ;;
+    starintel|all)
+      materialize_secrets
+      compose logs --follow
+      ;;
+    *)
+      die "unknown log target: $target"
+      ;;
+  esac
+}
+
+doctor() {
+  local failed=0
+  for command_name in nix docker openssl curl; do
+    if have "$command_name"; then
+      say "ok   $command_name"
+    else
+      say "FAIL $command_name"
+      failed=1
+    fi
+  done
+
+  if docker compose version >/dev/null 2>&1; then
+    say "ok   docker compose"
+  else
+    say "FAIL docker compose"
+    failed=1
+  fi
+
+  if docker info >/dev/null 2>&1; then
+    say "ok   docker daemon"
+  else
+    say "FAIL docker daemon"
+    failed=1
+  fi
+
+  say "info secret backend: $(secret_backend)"
+  say "info StarIntel revision: $STARINTEL_REV"
+  say "info assets: $BUNDLE_ASSET_DIR"
+  return "$failed"
+}
+
+show_admin_password() {
+  init_stack >/dev/null
+  secret_get quasar_admin_password
+  printf '\n'
+}
+
+uninstall_stack() {
+  down_stack || true
+  if systemd_user_available; then
+    systemctl --user disable quasar.service quasar-starintel.service >/dev/null 2>&1 || true
+    rm -f "$UNIT_HOME/quasar.service" "$UNIT_HOME/quasar-starintel.service"
+    systemctl --user daemon-reload
+  fi
+  say "uninstalled services; data and credentials were preserved"
+}
+
+purge_stack() {
+  [[ "${1:-}" == --yes ]] || die "purge is destructive; rerun exactly: quasar purge --yes"
+  down_stack || true
+  materialize_secrets
+  compose down --volumes --remove-orphans || true
+  rm -rf "$RUNTIME_SECRETS"
+
+  local name
+  for name in "${SECRETS[@]}"; do
+    secret_delete "$name"
+  done
+
+  if systemd_user_available; then
+    systemctl --user disable quasar.service quasar-starintel.service >/dev/null 2>&1 || true
+    rm -f "$UNIT_HOME/quasar.service" "$UNIT_HOME/quasar-starintel.service"
+    systemctl --user daemon-reload
+  fi
+
+  rm -rf "$DATA_HOME" "$STATE_HOME" "$CONFIG_HOME"
+  say "purged Quasar + StarIntel local data, volumes, units, and credentials"
+}
+
+usage() {
+  cat <<'EOF'
+Quasar + StarIntel end-user stack
+
+Usage: quasar <command>
+
+  install              Initialize secrets, load pinned images, install user services
+  init                 Initialize config and credentials only
+  up                    Start StarIntel and Quasar
+  down                  Stop StarIntel and Quasar, preserving data
+  status                Show stack and Quasar status
+  logs [all|starintel|quasar]
+  doctor                Validate host prerequisites
+  admin-password        Print the generated first-run StarIntel admin password
+  uninstall             Remove user services, preserving data and credentials
+  purge --yes           Delete services, credentials, Docker volumes, and local data
+
+Environment:
+  QUASAR_STARINTEL_REV   Override the pinned starintel-server revision
+  QUASAR_SERVER_BIN      Override quasar-server executable
+EOF
+}
+
+command="${1:-help}"
+shift || true
+case "$command" in
+  install) install_stack "$@" ;;
+  init) init_stack "$@" ;;
+  up) up_stack "$@" ;;
+  down) down_stack "$@" ;;
+  status) status_stack "$@" ;;
+  logs) show_logs "$@" ;;
+  doctor) doctor "$@" ;;
+  admin-password) show_admin_password "$@" ;;
+  uninstall) uninstall_stack "$@" ;;
+  purge) purge_stack "$@" ;;
+  _compose-up) compose_up "$@" ;;
+  _compose-down) compose_down "$@" ;;
+  help|-h|--help) usage ;;
+  *) usage >&2; die "unknown command: $command" ;;
+esac
