@@ -183,7 +183,11 @@
            "The user unit omitted its systemd credential reference.")))
 
 (defun test-manifest-node-dispatch-when-control-loaded ()
-  (when (find-package "QUASAR.FBP.CONTROL")
+  (let ((register
+          (and (find-package "QUASAR.FBP.CONTROL")
+               (find-symbol "REGISTER-STARINTEL-OPERATION-NODES"
+                            "QUASAR.FBP.CONTROL"))))
+  (when (and register (fboundp register))
     (let* ((manifest
              (jsown:parse
               "{\"schema\":\"starintel-client-manifest-v1\",\"operations\":[{\"operation_id\":\"documents.get\",\"method\":\"get\",\"path\":\"/documents/:id\",\"openapi_path\":\"/documents/{id}\",\"authority\":\"api-key\",\"scopes\":[\"documents:read\"],\"path_parameters\":[\"id\"],\"query_parameters\":[],\"request_schema\":null,\"responses\":[{\"status\":200,\"schema\":{\"type\":\"object\"}}]}],\"fbp_nodes\":[{\"id\":\"starintel.operation/documents.get\",\"component\":\"starintel.operation\",\"operation_id\":\"documents.get\",\"label\":\"Get document\",\"category\":\"StarIntel API\",\"inputs\":[{\"name\":\"id\",\"source\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}}],\"outputs\":[{\"name\":\"status-200\",\"status\":200,\"schema\":{\"type\":\"object\"}}],\"config_schema\":{\"type\":\"object\",\"properties\":{\"operation\":{\"const\":\"documents.get\"},\"credential_reference\":{\"type\":\"string\"}}}}]}"))
@@ -194,7 +198,7 @@
                                  :register-starintel-operation-nodes
                                  :manifest manifest
                                  :allowed-operations '("documents.get"))
-             (let ((resolver-called nil)
+             (let* ((resolver-called nil)
                    (service
                      (uiop:symbol-call
                       :quasar.fbp.control :make-starintel-operation-service
@@ -241,7 +245,7 @@
                       "Typed manifest operation did not execute.")
                (check (string= called "documents.get")
                       "Dynamic operation processor lost its immutable operation id.")))
-        (uiop:symbol-call :quasar.fbp.control :clear-starintel-operation-nodes)))))
+        (uiop:symbol-call :quasar.fbp.control :clear-starintel-operation-nodes))))))
 
 (defun run-fbp-tests ()
   (dolist (test '(test-validation-and-iip
