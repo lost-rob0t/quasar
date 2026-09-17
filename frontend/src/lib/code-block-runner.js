@@ -1,5 +1,8 @@
+import { getControlPlane } from "../control-plane";
+
 const JS_LANGUAGES = new Set(["js", "javascript"]);
 const JSON_LANGUAGES = new Set(["json"]);
+const HOST_LANGUAGES = new Set(["lisp", "cl", "common-lisp", "prolog", "pl", "swi-prolog"]);
 
 function normalizeLanguage(language) {
   return String(language || "text").trim().toLowerCase();
@@ -18,6 +21,7 @@ export function codeRuntime(language) {
   const normalized = normalizeLanguage(language);
   if (JS_LANGUAGES.has(normalized)) return "browser-worker";
   if (JSON_LANGUAGES.has(normalized)) return "json";
+  if (HOST_LANGUAGES.has(normalized)) return "host-sandbox";
   return null;
 }
 
@@ -129,6 +133,39 @@ function runJavaScript(source, timeoutMs) {
   });
 }
 
+async function runHostSandbox(language, source, timeoutMs) {
+  const client = getControlPlane();
+  if (!client?.getConnected()) {
+    return {
+      ok: false,
+      runtime: "host-sandbox",
+      stdout: "",
+      stderr: "The Quasar control plane is not connected; host sandbox execution is unavailable.",
+      result: ""
+    };
+  }
+
+  try {
+    const response = await client.send("code.run", { language, source, timeoutMs });
+    return {
+      ok: Boolean(response?.ok),
+      runtime: response?.runtime || "host-sandbox",
+      stdout: String(response?.stdout || ""),
+      stderr: String(response?.stderr || ""),
+      result: String(response?.result || ""),
+      exitCode: response?.exitCode
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      runtime: "host-sandbox",
+      stdout: "",
+      stderr: text(error?.message || error),
+      result: ""
+    };
+  }
+}
+
 export async function runCodeBlock({ language, source, timeoutMs = 2000 }) {
   const normalized = normalizeLanguage(language);
   const boundedTimeout = Math.max(100, Math.min(Number(timeoutMs) || 2000, 10000));
@@ -142,6 +179,7 @@ export async function runCodeBlock({ language, source, timeoutMs = 2000 }) {
   }
 
   if (JS_LANGUAGES.has(normalized)) return runJavaScript(source, boundedTimeout);
+  if (HOST_LANGUAGES.has(normalized)) return runHostSandbox(normalized, source, boundedTimeout);
 
   return {
     ok: false,
