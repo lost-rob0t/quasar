@@ -1,0 +1,147 @@
+#!/data/data/com.termux/files/usr/bin/bash
+set -euo pipefail
+
+AIO_HOME="${QUASAR_AIO_HOME:-$HOME/.local/share/quasar-aio}"
+DISTRO="${QUASAR_AIO_DISTRO:-quasar-aio-debian}"
+SUPERVISOR_CONF=/opt/quasar-aio/runtime/supervisord.conf
+SUPERVISOR_SOCKET=/opt/quasar-aio/state/supervisor.sock
+
+fail() {
+  printf 'quasar-aio: %s\n' "$*" >&2
+  exit 1
+}
+
+require_runtime() {
+  command -v proot-distro >/dev/null 2>&1 || fail "proot-distro is not installed"
+  test -d "$AIO_HOME/runtime" || fail "runtime payload not found at $AIO_HOME; run install-termux.sh"
+}
+
+guest() {
+  proot-distro login "$DISTRO" \
+    --bind "$AIO_HOME:/opt/quasar-aio" \
+    --shared-tmp \
+    -- "$@"
+}
+
+guest_shell() {
+  proot-distro login "$DISTRO" \
+    --bind "$AIO_HOME:/opt/quasar-aio" \
+    --shared-tmp
+}
+
+supervisor_status() {
+  guest /usr/bin/supervisorctl -c "$SUPERVISOR_CONF" status
+}
+
+start_appliance() {
+  require_runtime
+  mkdir -p "$AIO_HOME/state/logs"
+
+  if supervisor_status >/dev/null 2>&1; then
+    printf 'Quasar appliance is already running.\n'
+  else
+    rm -f "$AIO_HOME/state/supervisor.sock" "$AIO_HOME/state/supervisord.pid"
+    proot-distro login "$DISTRO" \
+      --bind "$AIO_HOME:/opt/quasar-aio" \
+      --shared-tmp \
+      --detach \
+      -- /usr/bin/supervisord -n -c "$SUPERVISOR_CONF"
+  fi
+
+  for _ in $(seq 1 120); do
+    if guest /opt/quasar-aio/runtime/doctor.sh --quiet >/dev/null 2>&1; then
+      printf 'Quasar appliance is ready: http://127.0.0.1:8080\n'
+      return 0
+    fi
+    sleep 1
+  done
+
+  printf 'Quasar appliance started but did not become ready.\n' >&2
+  supervisor_status || true
+  printf 'Inspect: quasar-aio logs\n' >&2
+  return 1
+}
+
+stop_appliance() {
+  require_runtime
+  if ! supervisor_status >/dev/null 2>&1; then
+    printf 'Quasar appliance is not running.\n'
+    return 0
+  fi
+  guest /usr/bin/supervisorctl -c "$SUPERVISOR_CONF" shutdown >/dev/null
+  for _ in $(seq 1 30); do
+    if ! supervisor_status >/dev/null 2>&1; then
+      printf 'Quasar appliance stopped.\n'
+      return 0
+    fi
+    sleep 1
+  done
+  fail "supervisord did not stop cleanly"
+}
+
+show_logs() {
+  require_runtime
+  local service="${1:-supervisord}"
+  local file="$AIO_HOME/state/logs/${service}.log"
+  if [[ ! -f "$file" ]]; then
+    printf 'Known logs:\n' >&2
+    find "$AIO_HOME/state/logs" -maxdepth 1 -type f -printf '  %f\n' 2>/dev/null || true
+    fail "log not found: $service"
+  fi
+  tail -n 200 -f "$file"
+}
+
+case "${1:-help}" in
+  bootstrap)
+    require_runtime
+    guest /bin/bash /opt/quasar-aio/runtime/bootstrap-debian.sh
+    ;;
+  start)
+    start_appliance
+    ;;
+  stop)
+    stop_appliance
+    ;;
+  restart)
+    stop_appliance
+    start_appliance
+    ;;
+  status)
+    require_runtime
+    supervisor_status
+    ;;
+  doctor)
+    require_runtime
+    guest /opt/quasar-aio/runtime/doctor.sh
+    ;;
+  logs)
+    shift || true
+    show_logs "${1:-supervisord}"
+    ;;
+  shell)
+    require_runtime
+    guest_shell
+    ;;
+  url)
+    printf 'http://127.0.0.1:8080\n'
+    ;;
+  help|-h|--help)
+    cat <<'EOF'
+Usage: quasar-aio COMMAND
+
+Commands:
+  bootstrap        install/update Debian runtime dependencies and build Lisp images
+  start            start CouchDB, RabbitMQ, Valkey, gserver, and Quasar
+  stop             stop the complete appliance
+  restart          restart the complete appliance
+  status           show supervisor service state
+  doctor           test every local service and Quasar
+  logs [SERVICE]   follow a log (default: supervisord)
+  shell            open an interactive shell in the appliance
+  url              print the Quasar URL
+EOF
+    ;;
+  *)
+    fail "unknown command: $1"
+    ;;
+esac
