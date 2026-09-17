@@ -33,6 +33,14 @@ function references(content) {
   return [...refs];
 }
 
+function blockReferences(content) {
+  const refs = new Set();
+  const pattern = /\(\(([a-zA-Z0-9_-]{8,})\)\)/g;
+  let match;
+  while ((match = pattern.exec(String(content || "")))) refs.add(match[1]);
+  return [...refs];
+}
+
 function tags(content) {
   const values = new Set();
   const pattern = /(^|\s)#([\p{L}\p{N}_/-]+)/gu;
@@ -71,18 +79,21 @@ export async function listNoteBlocks(targetPageId) {
     .sort((a, b) => (a.order || 0) - (b.order || 0) || a._id.localeCompare(b._id));
 }
 
-export async function addNoteBlock(targetPageId, content = "", afterOrder = null) {
+export async function addNoteBlock(targetPageId, content = "", afterOrder = null, parentId = null) {
   const blocks = await listNoteBlocks(targetPageId);
   const order = afterOrder == null ? (blocks.at(-1)?.order || 0) + 1024 : Number(afterOrder) + 512;
   const timestamp = now();
+  const blockUuid = uuid();
   const document = {
-    _id: `${BLOCK_PREFIX}${uuid()}`,
+    _id: `${BLOCK_PREFIX}${blockUuid}`,
+    uuid: blockUuid,
     type: "note-block",
     pageId: targetPageId,
-    parentId: null,
+    parentId,
     order,
     content: String(content),
     refs: references(content),
+    blockRefs: blockReferences(content),
     tags: tags(content),
     createdAt: timestamp,
     updatedAt: timestamp
@@ -94,8 +105,10 @@ export async function addNoteBlock(targetPageId, content = "", afterOrder = null
 export async function updateNoteBlock(block, content) {
   const next = {
     ...block,
+    uuid: block.uuid || String(block._id || "").replace(BLOCK_PREFIX, ""),
     content: String(content),
     refs: references(content),
+    blockRefs: blockReferences(content),
     tags: tags(content),
     updatedAt: now()
   };
@@ -103,8 +116,21 @@ export async function updateNoteBlock(block, content) {
   return { ...next, _rev: response.rev };
 }
 
+export async function updateNoteBlockParent(block, parentId) {
+  if (!block?._id) throw new Error("A note block is required");
+  if (parentId === block._id) throw new Error("A block cannot be its own parent");
+  const next = { ...block, parentId: parentId || null, updatedAt: now() };
+  const response = await db.put(next);
+  return { ...next, _rev: response.rev };
+}
+
 export async function deleteNoteBlock(block) {
   if (!block?._id || !block?._rev) return;
+  const blocks = await listNoteBlocks(block.pageId);
+  const children = blocks.filter((candidate) => candidate.parentId === block._id);
+  if (children.length) {
+    await db.bulkDocs(children.map((child) => ({ ...child, parentId: block.parentId || null, updatedAt: now() })));
+  }
   await db.remove(block);
 }
 
@@ -115,6 +141,15 @@ export async function findBacklinks(title) {
   return response.rows
     .map((row) => row.doc)
     .filter((doc) => doc?.refs?.some((ref) => normalizePageTitle(ref).toLowerCase() === target));
+}
+
+export async function findBlockBacklinks(blockUuid) {
+  const target = String(blockUuid || "");
+  if (!target) return [];
+  const response = await db.allDocs({ include_docs: true, startkey: BLOCK_PREFIX, endkey: `${BLOCK_PREFIX}\ufff0` });
+  return response.rows
+    .map((row) => row.doc)
+    .filter((doc) => doc?.blockRefs?.includes(target));
 }
 
 export function todayJournalTitle(date = new Date()) {
