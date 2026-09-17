@@ -43,22 +43,23 @@
 
 (defun run-code-subprocess (runner language source timeout-ms)
   (handler-case
-      (multiple-value-bind (stdout stderr exit-code)
-          (uiop:run-program
-           (list runner language (write-to-string timeout-ms))
-           :input source
-           :output :string
-           :error-output :string
-           :ignore-error-status t)
-        (values (or stdout "")
-                (or stderr "")
-                (if (integerp exit-code) exit-code 1)))
+      (with-input-from-string (input source)
+        (multiple-value-bind (stdout stderr exit-code)
+            (uiop:run-program
+             (list runner language (write-to-string timeout-ms))
+             :input input
+             :output :string
+             :error-output :string
+             :ignore-error-status t)
+          (values (or stdout "")
+                  (or stderr "")
+                  (if (integerp exit-code) exit-code 1))))
     (error (condition)
       (error 'quasar.protocol:quasar-error
              :code "code.runner-failed"
              :message "The sandbox runner could not be started."
              :details (quasar.protocol:json-object
-                       (cons "condition" (type-of condition)))))))
+                       (cons "condition" (princ-to-string (type-of condition))))))))
 
 (defun handle-code-run (payload envelope)
   (declare (ignore envelope))
