@@ -2,7 +2,7 @@
   :description "Quasar CLOG host and WebSocket bridge."
   :author "lost-rob0t"
   :license "AGPL-3.0-only"
-  :version "0.2.0"
+  :version "0.3.0"
   :depends-on ("quasar-control"
                "quasar-starlang"
                "bordeaux-threads"
@@ -12,6 +12,7 @@
   :serial t
   :pathname "../control-plane/src/"
   :components ((:file "websocket-server")
+               (:file "code-runner-web-capabilities")
                (:file "autodig-websocket-session")
                (:file "actors/melissa/web-capabilities")
                (:file "clog-host")

@@ -1,13 +1,19 @@
-export const CACHE_NAME = "quasar-runtime-v4";
-export const APP_SHELL = ["./", "./index.html", "./manifest.webmanifest"];
+export const CACHE_NAME = "quasar-runtime-v5";
+export const APP_SHELL = [
+  "./",
+  "./index.html",
+  "./manifest.webmanifest",
+  "./quasar-docs/index.json"
+];
 
 const IMMUTABLE_ASSET =
   /\/assets\/[^/]+-[a-zA-Z0-9_-]{6,}\.(?:css|js|mjs|png|jpe?g|gif|svg|webp|avif|woff2?)$/;
+const DOCUMENT_ASSET = /\/quasar-docs\/(?:index\.json|source\/[^/]+\.txt)$/;
 const STATIC_DESTINATIONS = new Set(["script", "style", "image", "font"]);
 
 export function isStaticAssetRequest(request) {
   const url = new URL(request.url);
-  if (IMMUTABLE_ASSET.test(url.pathname)) return true;
+  if (IMMUTABLE_ASSET.test(url.pathname) || DOCUMENT_ASSET.test(url.pathname)) return true;
   if (STATIC_DESTINATIONS.has(request.destination) && url.pathname.includes("/assets/"))
     return true;
   return /\/(?:manifest\.webmanifest|favicon\.(?:ico|svg)|apple-touch-icon\.png)$/.test(

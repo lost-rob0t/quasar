@@ -3,7 +3,10 @@ name: CI
 on:
   push:
     branches:
-      - gpu-graph-renderer
+      - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -21,6 +24,8 @@ jobs:
           test -f frontend/package.json
           test -f frontend/src/app/main.tsx
           test -f frontend/src/control-plane/client.ts
+          test -f scripts/build-docs-bundle.mjs
+          test -f vendor-docs/starintel-server/MANIFEST.json
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -41,6 +46,11 @@ jobs:
 
       - name: Production frontend build
         run: npm run build
+
+      - name: Verify packaged documentation index
+        run: |
+          test -f frontend/dist/quasar-docs/index.json
+          node -e 'const fs=require("fs"); const x=JSON.parse(fs.readFileSync("frontend/dist/quasar-docs/index.json","utf8")); if (!x.documents?.some((d)=>d.section==="starintel-server")) process.exit(1); if (!x.documents?.some((d)=>d.section==="quasar-learn")) process.exit(1);'
 
       - name: Install Common Lisp runtime dependencies
         run: |
@@ -104,6 +114,9 @@ jobs:
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v22
+
+      - name: Build end-user package
+        run: nix build .#end-user --no-link
 
       - name: Bootstrap and smoke test inside the repository flake
         run: |

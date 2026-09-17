@@ -46,7 +46,7 @@
 
           webDist = pkgs.buildNpmPackage {
             pname = "quasar-web-dist";
-            version = "0.2.0";
+            version = "0.3.0";
             src = self;
 
             npmDepsHash = "sha256-wx77iw2aDWs2m/F6h4K9HQkI5E1l8wo1ULf2u7Dy6NM=";
@@ -60,6 +60,7 @@
               runHook preInstall
               test -f frontend/dist/index.html
               test -f frontend/dist/404.html
+              test -f frontend/dist/quasar-docs/index.json
               mkdir -p "$out/share/quasar-web"
               cp -r frontend/dist "$out/share/quasar-web/dist"
               runHook postInstall
@@ -68,7 +69,7 @@
             passthru.distRoot = "share/quasar-web/dist";
 
             meta = with pkgs.lib; {
-              description = "Quasar standalone web edition (Vite production bundle)";
+              description = "Quasar standalone web edition with packaged Quasar and StarIntel documentation";
               license = licenses.agpl3Only;
               platforms = platforms.linux;
             };
@@ -114,7 +115,7 @@
 
           quasarLib = pkgs.sbcl.buildASDFSystem {
             pname = "quasar";
-            version = "0.2.0";
+            version = "0.3.0";
             src = self;
             lispLibs = with pkgs.sbcl.pkgs; [
               babel
@@ -178,7 +179,7 @@
 
           quasarServer = pkgs.stdenv.mkDerivation {
             pname = "quasar-server";
-            version = "0.2.0";
+            version = "0.3.0";
             dontUnpack = true;
             dontStrip = true;
             nativeBuildInputs = [ pkgs.makeWrapper ];
@@ -209,16 +210,60 @@
               platforms = platforms.linux;
             };
           };
+
+          endUser = pkgs.stdenvNoCC.mkDerivation {
+            pname = "quasar-end-user";
+            version = "0.3.0";
+            src = self;
+            nativeBuildInputs = [ pkgs.makeWrapper ];
+            dontBuild = true;
+
+            installPhase = ''
+              runHook preInstall
+              mkdir -p "$out/bin" "$out/libexec" "$out/share/quasar/bundle"
+              cp scripts/quasar-stack "$out/libexec/quasar-stack"
+              cp scripts/quasar-code-runner "$out/libexec/quasar-code-runner"
+              chmod +x "$out/libexec/quasar-stack" "$out/libexec/quasar-code-runner"
+              wrapProgram "$out/libexec/quasar-code-runner" \
+                --prefix PATH : "${pkgs.lib.makeBinPath [
+                  pkgs.bubblewrap
+                  pkgs.coreutils
+                  pkgs.sbcl
+                  pkgs.swi-prolog
+                ]}"
+              cp bundle/docker-compose.yml "$out/share/quasar/bundle/docker-compose.yml"
+              cp bundle/star-server-init.lisp "$out/share/quasar/bundle/star-server-init.lisp"
+              makeWrapper "$out/libexec/quasar-stack" "$out/bin/quasar" \
+                --set QUASAR_BUNDLE_ASSET_DIR "$out/share/quasar/bundle" \
+                --set QUASAR_SERVER_BIN "${quasarServer}/bin/quasar-server" \
+                --set QUASAR_CODE_RUNNER_BIN "$out/libexec/quasar-code-runner" \
+                --prefix PATH : "${pkgs.lib.makeBinPath [
+                  pkgs.bash
+                  pkgs.coreutils
+                  pkgs.curl
+                  pkgs.gnugrep
+                  pkgs.libsecret
+                  pkgs.nix
+                  pkgs.openssl
+                ]}"
+              ln -s quasar "$out/bin/quasar-stack"
+              runHook postInstall
+            '';
+
+            meta = with pkgs.lib; {
+              description = "Single-machine Quasar + StarIntel end-user bundle manager";
+              license = licenses.agpl3Only;
+              mainProgram = "quasar";
+              platforms = platforms.linux;
+            };
+          };
         in
         {
-          # The standalone web edition bundle: the Vite production build of
-          # frontend/ served as a root-hosted static SPA. This is the same
-          # artifact CLOG serves locally (frontend/dist); the hosted edition
-          # omits the Common Lisp control plane, per the capability boundary.
           web-dist = webDist;
           quasar-server = quasarServer;
           quasar = quasarLib;
           quasar-auth-host = quasarAuthLib;
+          end-user = endUser;
 
           default = webDist;
         }
@@ -248,6 +293,8 @@
                 gnumake
                 curl
                 git
+                bubblewrap
+                swi-prolog
               ]
               ++ runtimeLibs;
 
@@ -256,6 +303,7 @@
               export QUASAR_PRODUCTION_NIX_READY=1
               export QUASAR_PRODUCTION_SMOKE_NIX_READY=1
               export QUASAR_TEK9_PATH="''${QUASAR_TEK9_PATH:-$HOME/starintel/tek9}"
+              export QUASAR_CODE_RUNNER_BIN="$PWD/scripts/quasar-code-runner"
               export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeLibs}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
               export TMPDIR="/tmp"
               export TMP="/tmp"

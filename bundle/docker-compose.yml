@@ -1,0 +1,192 @@
+name: quasar-starintel
+
+services:
+  clouseau:
+    image: starintel/clouseau:3.3.0
+    hostname: clouseau
+    domainname: starintel.internal
+    restart: unless-stopped
+    environment:
+      CLOUSEAU_COOKIE_FILE: /run/secrets/erlang_cookie
+      JAVA_TOOL_OPTIONS: ${CLOUSEAU_JAVA_OPTS:--Xms256m -Xmx1g}
+    secrets:
+      - erlang_cookie
+    volumes:
+      - clouseau_index:/var/lib/clouseau
+    networks:
+      backend:
+        aliases:
+          - clouseau.starintel.internal
+    healthcheck:
+      test: ["CMD-SHELL", "epmd -names | grep -q 'name clouseau at port'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  couchdb:
+    image: starintel/couchdb:3.5.2
+    hostname: couchdb
+    domainname: starintel.internal
+    restart: unless-stopped
+    environment:
+      COUCHDB_USER: ${COUCHDB_USER:-admin}
+      COUCHDB_PASSWORD_FILE: /run/secrets/couchdb_password
+      COUCHDB_SECRET_FILE: /run/secrets/couchdb_secret
+      COUCHDB_ERLANG_COOKIE_FILE: /run/secrets/erlang_cookie
+      NODENAME: couchdb.starintel.internal
+    secrets:
+      - couchdb_password
+      - couchdb_secret
+      - erlang_cookie
+    volumes:
+      - couchdb_data:/opt/couchdb/data
+    ports:
+      - "${COUCHDB_BIND_ADDRESS:-127.0.0.1}:${COUCHDB_PORT:-5984}:5984"
+    networks:
+      backend:
+        aliases:
+          - couchdb.starintel.internal
+    depends_on:
+      clouseau:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:5984/_up"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  rabbitmq:
+    image: rabbitmq:4.3.4-management
+    hostname: rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-starintel}
+    entrypoint: ["/bin/bash", "-ec"]
+    command:
+      - |
+        export RABBITMQ_DEFAULT_PASS="$$(< /run/secrets/rabbitmq_password)"
+        exec /usr/local/bin/docker-entrypoint.sh rabbitmq-server
+    secrets:
+      - rabbitmq_password
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    ports:
+      - "${RABBITMQ_BIND_ADDRESS:-127.0.0.1}:${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_BIND_ADDRESS:-127.0.0.1}:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  valkey:
+    image: starintel/valkey:9.0.1
+    hostname: valkey
+    restart: unless-stopped
+    environment:
+      VALKEY_PASSWORD_FILE: /run/secrets/valkey_password
+    secrets:
+      - valkey_password
+    volumes:
+      - valkey_data:/data
+    ports:
+      - "${VALKEY_BIND_ADDRESS:-127.0.0.1}:${VALKEY_PORT:-6379}:6379"
+    networks:
+      - backend
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - VALKEYCLI_AUTH="$$(cat /run/secrets/valkey_password)" valkey-cli ping | grep -q PONG
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  star-server:
+    image: starintel/server:0.1.0
+    hostname: star-server
+    restart: unless-stopped
+    environment:
+      COUCHDB_HOST: couchdb
+      COUCHDB_DATABASE: ${COUCHDB_DATABASE:-starintel}
+      COUCHDB_USER: ${COUCHDB_USER:-admin}
+      COUCHDB_PASSWORD_FILE: /run/secrets/couchdb_password
+      RABBITMQ_ADDRESS: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER:-starintel}
+      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
+      VALKEY_HOST: valkey
+      VALKEY_PORT: 6379
+      VALKEY_PASSWORD_FILE: /run/secrets/valkey_password
+      HTTP_API_LISTEN_ADDRESS: 0.0.0.0
+      STAR_AUTH_MODE: api-key
+      STAR_AUTH_DATABASE: ${STAR_AUTH_DATABASE:-starintel-gserver-auth}
+      STAR_AUTH_PEPPER_FILE: /run/secrets/auth_pepper
+      STAR_AUTH_BOOTSTRAP_SECRET_FILE: /run/secrets/auth_bootstrap_secret
+      STAR_AUTH_INITIAL_USERNAME: ${STAR_AUTH_INITIAL_USERNAME:-quasar}
+      STAR_AUTH_INITIAL_PASSWORD_FILE: /run/secrets/quasar_admin_password
+      STAR_AUTH_ALLOWED_ORIGINS: ${STAR_AUTH_ALLOWED_ORIGINS:-http://127.0.0.1:8080,http://localhost:8080}
+      STAR_AUTH_PASSWORD_ITERATIONS: ${STAR_AUTH_PASSWORD_ITERATIONS:-600000}
+      STAR_SERVER_INIT_FILE: /etc/starintel/init.lisp
+      STAR_OBSERVABILITY_ENABLED: "false"
+    secrets:
+      - couchdb_password
+      - rabbitmq_password
+      - valkey_password
+      - auth_pepper
+      - auth_bootstrap_secret
+      - quasar_admin_password
+    volumes:
+      - type: bind
+        source: ${STAR_SERVER_INIT_HOST_FILE}
+        target: /etc/starintel/init.lisp
+        read_only: true
+    ports:
+      - "${STAR_SERVER_BIND_ADDRESS:-127.0.0.1}:${STAR_SERVER_PORT:-5000}:5000"
+    networks:
+      - backend
+    depends_on:
+      couchdb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+secrets:
+  couchdb_password:
+    file: ${CREDENTIALS_DIR}/couchdb_password
+  couchdb_secret:
+    file: ${CREDENTIALS_DIR}/couchdb_secret
+  erlang_cookie:
+    file: ${CREDENTIALS_DIR}/erlang_cookie
+  rabbitmq_password:
+    file: ${CREDENTIALS_DIR}/rabbitmq_password
+  valkey_password:
+    file: ${CREDENTIALS_DIR}/valkey_password
+  auth_pepper:
+    file: ${CREDENTIALS_DIR}/auth_pepper
+  auth_bootstrap_secret:
+    file: ${CREDENTIALS_DIR}/auth_bootstrap_secret
+  quasar_admin_password:
+    file: ${CREDENTIALS_DIR}/quasar_admin_password
+
+volumes:
+  couchdb_data:
+  clouseau_index:
+  rabbitmq_data:
+  valkey_data:
+
+networks:
+  backend:
+    internal: true
