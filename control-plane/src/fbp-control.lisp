@@ -94,19 +94,22 @@
 (defun query-pairs (operation request)
   (loop for parameter in (array-values (operation-field operation "query_parameters" nil))
         for name = (operation-field parameter "name")
-        for value = (quasar.protocol:json-value request name)
-        when value collect (cons name (princ-to-string value))))
+        for value = (quasar.protocol:json-value request name :missing)
+        unless (eq value :missing) collect (cons name (princ-to-string value))))
 
 (defun operation-body (operation request)
   (let ((schema (operation-field operation "request_schema" nil)))
     (unless (or (null schema) (eq schema :null))
       (let* ((properties (quasar.protocol:json-value schema "properties"
                                                      (quasar.protocol:empty-object)))
-             (body (quasar.protocol:empty-object)))
-        (dolist (name (quasar.protocol:object-keys properties) body)
-          (let ((value (quasar.protocol:json-value request name :missing)))
-            (unless (eq value :missing)
-              (quasar.protocol:object-set body name value))))))))
+             (names (quasar.protocol:object-keys properties)))
+        (if names
+            (let ((body (quasar.protocol:empty-object)))
+              (dolist (name names body)
+                (let ((value (quasar.protocol:json-value request name :missing)))
+                  (unless (eq value :missing)
+                    (quasar.protocol:object-set body name value)))))
+            (quasar.protocol:json-value request "request" request))))))
 
 (defun make-starintel-operation-service (&key endpoint credential-resolver
                                               allowed-operations operations
