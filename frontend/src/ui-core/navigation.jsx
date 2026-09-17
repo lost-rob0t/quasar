@@ -7,7 +7,8 @@ import {
   Layers3,
   Network,
   Search,
-  Settings
+  Settings,
+  Workflow
 } from "lucide-react";
 
 export const navigation = Object.freeze([
@@ -48,6 +49,13 @@ export const navigation = Object.freeze([
     match: (path) => path === "/agents"
   },
   { to: "/actors", label: "Actors", Icon: Code2, match: (path) => path === "/actors" },
+  {
+    to: "/workflows",
+    label: "Workflows",
+    mobileLabel: "Flows",
+    Icon: Workflow,
+    match: (path) => path === "/workflows" || path.startsWith("/workflows/")
+  },
   { to: "/import", label: "Import", Icon: FolderInput, match: (path) => path === "/import" },
   {
     to: "/settings",

@@ -43,6 +43,7 @@ STORAGE-PATH overrides the normal XDG data path when Quasar creates that store."
       (progn
         (start-control-plane *control-plane*)
         (install-starlang-commands *control-plane*)
+        (quasar.fbp.control:install-fbp-commands *control-plane*)
         (quasar.actors.melissa.bridge:start-melissa-integration
          *control-plane*
          :config (or melissa-config
@@ -74,6 +75,7 @@ STORAGE-PATH overrides the normal XDG data path when Quasar creates that store."
     (setf *websocket-server* nil))
   (stop-ui)
   (when *control-plane*
+    (quasar.fbp.control:stop-all-workflows)
     (quasar.actors.melissa.bridge:stop-melissa-integration *control-plane*)
     (stop-control-plane *control-plane*)
     (setf *control-plane* nil))

@@ -12,6 +12,7 @@ import GraphWorkspaceChrome from "./components/GraphWorkspaceChrome";
 import { ImportPage } from "./components/ImportSettings";
 import SettingsWorkspace from "./components/SettingsWorkspace";
 import StatsPage from "./components/StatsPage";
+import WorkflowPage from "./workflows/WorkflowPage";
 import QuasarShell from "./ui-core/QuasarShell";
 
 function DocumentsRoute() {
@@ -58,6 +59,7 @@ export default function App() {
           <Route path="/import" element={<ImportPage />} />
           <Route path="/agents" element={<AgentHub />} />
           <Route path="/actors" element={<ActorManager />} />
+          <Route path="/workflows" element={<WorkflowPage />} />
           <Route path="/stats" element={<Navigate to="/" replace />} />
           <Route path="/settings" element={<SettingsWorkspace />} />
           <Route path="*" element={<NotFound />} />
