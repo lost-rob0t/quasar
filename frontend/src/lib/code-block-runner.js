@@ -63,7 +63,7 @@ self.onmessage = async (event) => {
   };
 
   try {
-    if (/\bimport\s*\(/.test(source) || /\bimport\s+[^('"`]/.test(source)) {
+    if (/\bimport\s*\(/.test(source) || /\bimport\s+[^('"]/.test(source)) {
       throw new Error("Module imports are disabled in Quasar code blocks");
     }
     const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
