@@ -1,6 +1,15 @@
 name: Beast A2A workflows
 
 on:
+  push:
+    branches:
+      - feature/81-beast-a2a-workflows
+    paths:
+      - 'control-plane/src/fbp/**'
+      - 'control-plane/tests/beast-a2a-tests.lisp'
+      - 'example_configs/beast-*.lisp'
+      - 'systems/quasar-fbp-tests.asd'
+      - '.github/workflows/beast-a2a.yml'
   pull_request:
     paths:
       - 'control-plane/src/fbp/**'
