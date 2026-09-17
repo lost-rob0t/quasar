@@ -84,3 +84,25 @@
          (cons "result" "")
          (cons "exitCode" exit-code)
          (cons "timeoutMs" timeout-ms))))))
+
+(defvar *core-command-installer-without-code-runner* nil)
+
+(defun install-code-runner-hook ()
+  "Extend the core command installer without making code execution implicit.
+The command exists only when QUASAR_CODE_RUNNER_BIN is configured by the host."
+  (unless *core-command-installer-without-code-runner*
+    (setf *core-command-installer-without-code-runner*
+          (symbol-function 'install-core-commands)))
+  (let ((base-installer *core-command-installer-without-code-runner*))
+    (setf (symbol-function 'install-core-commands)
+          (lambda (plane)
+            (funcall base-installer plane)
+            (when (code-runner-configured-p)
+              (register-command
+               plane "code.run"
+               (lambda (payload envelope)
+                 (handle-code-run payload envelope))))
+            plane))))
+
+(eval-when (:load-toplevel :execute)
+  (install-code-runner-hook))
