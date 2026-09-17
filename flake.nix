@@ -11,10 +11,6 @@
       url = "git+https://git.starintel.actor/starintel-labs/starintel-biz?rev=c25f9e8972c2392c9c43f30c2254654012d26d38";
       flake = false;
     };
-    starintel-server = {
-      url = "github:lost-rob0t/starintel-server/e49c67d88d60dbcc0fcba1b4ba76c1a0a6d6655c";
-      flake = false;
-    };
   };
 
   outputs =
@@ -23,7 +19,6 @@
       nixpkgs,
       tek9,
       starintel-biz,
-      starintel-server,
     }:
     let
       systems = [ "x86_64-linux" ];
@@ -58,7 +53,6 @@
             makeCacheWritable = true;
             forceGitDeps = true;
             nativeBuildInputs = [ pkgs.git ];
-            STARINTEL_DOCS_ROOT = "${starintel-server}";
 
             npmBuild = "npm --prefix frontend run build";
 
@@ -298,7 +292,6 @@
               export QUASAR_PRODUCTION_NIX_READY=1
               export QUASAR_PRODUCTION_SMOKE_NIX_READY=1
               export QUASAR_TEK9_PATH="''${QUASAR_TEK9_PATH:-$HOME/starintel/tek9}"
-              export STARINTEL_DOCS_ROOT="${starintel-server}"
               export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeLibs}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
               export TMPDIR="/tmp"
               export TMP="/tmp"
