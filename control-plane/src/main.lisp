@@ -25,7 +25,8 @@
   (or (uiop:getenv "QUASAR_FBP_EXECUTABLE")
       (let ((argv0 (uiop:argv0)))
         (when (and argv0 (search "quasar-server" argv0 :test #'char-equal))
-          argv0))))
+          (let ((resolved (probe-file argv0)))
+            (and resolved (namestring (truename resolved))))))))
 
 (defun credential-environment-name (reference)
   (let ((suffix (subseq reference (length "credential:"))))

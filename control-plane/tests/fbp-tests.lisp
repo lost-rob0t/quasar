@@ -176,6 +176,8 @@
            "The user unit does not invoke the packaged fbp-run entry point.")
     (check (search "STARINTEL_ENDPOINT=http://127.0.0.1:5000" unit)
            "The user unit omitted its StarIntel endpoint.")
+    (check (search "QUASAR_STARINTEL_ALLOWED_OPERATIONS=" unit)
+           "The user unit omitted its host-owned operation allowlist.")
     (check (search "LoadCredential=\"starintel-api:" unit)
            "The user unit omitted its systemd credential reference.")))
 
