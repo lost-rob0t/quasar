@@ -44,6 +44,8 @@ jobs:
             --eval '(quicklisp-quickstart:install :path #p"/home/runner/quicklisp/")'
           printf '%s\n' '(load #p"/home/runner/quicklisp/setup.lisp")' > /home/runner/.sbclrc
           bash scripts/bootstrap-lisp-deps
+          sbcl --non-interactive \
+            --eval '(ql:quickload (list "bordeaux-threads" "jsown"))'
 
       - name: Run FBP and Beast A2A tests
         env:
