@@ -30,7 +30,8 @@ jobs:
       - run: npm ci
       - name: Format touched frontend files deterministically
         run: |
-          npm --prefix frontend exec -- prettier --write \
+          cd frontend
+          npx prettier --write \
             src/components/ProActorManager.jsx \
             src/control-plane/mutations.ts \
             src/lib/pro-actors.js \
