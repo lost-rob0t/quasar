@@ -229,7 +229,7 @@
                   pkgs.bubblewrap
                   pkgs.coreutils
                   pkgs.sbcl
-                  pkgs.swiProlog
+                  pkgs.swi-prolog
                 ]}"
               cp bundle/docker-compose.yml "$out/share/quasar/bundle/docker-compose.yml"
               cp bundle/star-server-init.lisp "$out/share/quasar/bundle/star-server-init.lisp"
@@ -294,7 +294,7 @@
                 curl
                 git
                 bubblewrap
-                swiProlog
+                swi-prolog
               ]
               ++ runtimeLibs;
 
