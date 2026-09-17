@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+language="${1:-}"
+timeout_ms="${2:-2000}"
+max_bytes="${QUASAR_CODE_MAX_BYTES:-65536}"
+
+case "$timeout_ms" in
+  ''|*[!0-9]*) printf 'invalid timeout\n' >&2; exit 64 ;;
+esac
+(( timeout_ms >= 100 && timeout_ms <= 10000 )) || { printf 'timeout out of range\n' >&2; exit 64; }
+
+for command_name in bwrap timeout; do
+  command -v "$command_name" >/dev/null 2>&1 || { printf 'missing sandbox dependency: %s\n' "$command_name" >&2; exit 69; }
+done
+
+tmpdir="$(mktemp -d)"
+trap 'rm -rf "$tmpdir"' EXIT INT TERM
+source_file="$tmpdir/source"
+cat >"$source_file"
+size="$(wc -c <"$source_file")"
+(( size <= max_bytes )) || { printf 'source exceeds %s bytes\n' "$max_bytes" >&2; exit 65; }
+chmod 0400 "$source_file"
+
+seconds="$(( (timeout_ms + 999) / 1000 ))"
+ulimit -f 2048
+ulimit -n 64
+ulimit -u 64 2>/dev/null || true
+ulimit -v 524288 2>/dev/null || true
+
+bwrap_bin="$(command -v bwrap)"
+timeout_bin="$(command -v timeout)"
+
+run_isolated() {
+  "$bwrap_bin" \
+    --die-with-parent \
+    --new-session \
+    --unshare-all \
+    --ro-bind /nix/store /nix/store \
+    --ro-bind "$tmpdir" /work \
+    --tmpfs /tmp \
+    --proc /proc \
+    --dev /dev \
+    --dir /home \
+    --chdir /work \
+    --clearenv \
+    --setenv HOME /home \
+    --setenv TMPDIR /tmp \
+    --setenv LANG C.UTF-8 \
+    -- "$@"
+}
+
+case "${language,,}" in
+  lisp|cl|common-lisp)
+    sbcl_bin="$(command -v sbcl || true)"
+    [[ -n "$sbcl_bin" ]] || { printf 'Common Lisp runtime unavailable\n' >&2; exit 69; }
+    run_isolated "$timeout_bin" --signal=KILL "${seconds}s" \
+      "$sbcl_bin" --noinform --no-userinit --no-sysinit --disable-debugger --non-interactive --load /work/source
+    ;;
+  prolog|pl|swi-prolog)
+    swipl_bin="$(command -v swipl || true)"
+    [[ -n "$swipl_bin" ]] || { printf 'SWI-Prolog runtime unavailable\n' >&2; exit 69; }
+    run_isolated "$timeout_bin" --signal=KILL "${seconds}s" \
+      "$swipl_bin" --quiet --no-signals --traditional -f /work/source -t halt
+    ;;
+  *)
+    printf 'unsupported sandbox language: %s\n' "$language" >&2
+    exit 64
+    ;;
+esac
