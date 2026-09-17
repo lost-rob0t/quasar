@@ -60,7 +60,7 @@
   (or (uiop:getenv "QUASAR_REPOSITORY_ROOT")
       (namestring
        (truename
-        (merge-pathnames "../../"
+        (merge-pathnames "../"
                          (asdf:system-source-directory "quasar-fbp-tests"))))))
 
 (defun starter-path (name)
