@@ -222,12 +222,21 @@
               runHook preInstall
               mkdir -p "$out/bin" "$out/libexec" "$out/share/quasar/bundle"
               cp scripts/quasar-stack "$out/libexec/quasar-stack"
-              chmod +x "$out/libexec/quasar-stack"
+              cp scripts/quasar-code-runner "$out/libexec/quasar-code-runner"
+              chmod +x "$out/libexec/quasar-stack" "$out/libexec/quasar-code-runner"
+              wrapProgram "$out/libexec/quasar-code-runner" \
+                --prefix PATH : "${pkgs.lib.makeBinPath [
+                  pkgs.bubblewrap
+                  pkgs.coreutils
+                  pkgs.sbcl
+                  pkgs.swiProlog
+                ]}"
               cp bundle/docker-compose.yml "$out/share/quasar/bundle/docker-compose.yml"
               cp bundle/star-server-init.lisp "$out/share/quasar/bundle/star-server-init.lisp"
               makeWrapper "$out/libexec/quasar-stack" "$out/bin/quasar" \
                 --set QUASAR_BUNDLE_ASSET_DIR "$out/share/quasar/bundle" \
                 --set QUASAR_SERVER_BIN "${quasarServer}/bin/quasar-server" \
+                --set QUASAR_CODE_RUNNER_BIN "$out/libexec/quasar-code-runner" \
                 --prefix PATH : "${pkgs.lib.makeBinPath [
                   pkgs.bash
                   pkgs.coreutils
@@ -284,6 +293,8 @@
                 gnumake
                 curl
                 git
+                bubblewrap
+                swiProlog
               ]
               ++ runtimeLibs;
 
@@ -292,6 +303,7 @@
               export QUASAR_PRODUCTION_NIX_READY=1
               export QUASAR_PRODUCTION_SMOKE_NIX_READY=1
               export QUASAR_TEK9_PATH="''${QUASAR_TEK9_PATH:-$HOME/starintel/tek9}"
+              export QUASAR_CODE_RUNNER_BIN="$PWD/scripts/quasar-code-runner"
               export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeLibs}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
               export TMPDIR="/tmp"
               export TMP="/tmp"
