@@ -5,7 +5,9 @@ const JSON_LANGUAGES = new Set(["json"]);
 const HOST_LANGUAGES = new Set(["lisp", "cl", "common-lisp", "prolog", "pl", "swi-prolog"]);
 
 function normalizeLanguage(language) {
-  return String(language || "text").trim().toLowerCase();
+  return String(language || "text")
+    .trim()
+    .toLowerCase();
 }
 
 function text(value) {
@@ -122,13 +124,24 @@ function runJavaScript(source, timeoutMs) {
     };
 
     const timer = setTimeout(
-      () => finish({ ok: false, stdout: "", stderr: `Execution timed out after ${timeoutMs}ms`, result: "" }),
+      () =>
+        finish({
+          ok: false,
+          stdout: "",
+          stderr: `Execution timed out after ${timeoutMs}ms`,
+          result: ""
+        }),
       timeoutMs
     );
 
     worker.onmessage = (event) => finish(event.data);
     worker.onerror = (event) =>
-      finish({ ok: false, stdout: "", stderr: event.message || "Worker execution failed", result: "" });
+      finish({
+        ok: false,
+        stdout: "",
+        stderr: event.message || "Worker execution failed",
+        result: ""
+      });
     worker.postMessage({ source });
   });
 }
@@ -174,7 +187,13 @@ export async function runCodeBlock({ language, source, timeoutMs = 2000 }) {
     try {
       return await runJson(source);
     } catch (error) {
-      return { ok: false, runtime: "json", stdout: "", stderr: text(error?.message || error), result: "" };
+      return {
+        ok: false,
+        runtime: "json",
+        stdout: "",
+        stderr: text(error?.message || error),
+        result: ""
+      };
     }
   }
 

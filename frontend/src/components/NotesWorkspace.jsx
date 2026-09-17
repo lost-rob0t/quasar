@@ -27,7 +27,9 @@ import {
 function blockCode(content) {
   const fenced = String(content || "").match(/^```([^\s`]*)\s*\n([\s\S]*?)\n```\s*$/);
   if (fenced) return { language: fenced[1] || "text", source: fenced[2] };
-  const org = String(content || "").match(/^#\+begin_src\s+([^\s]+).*\n([\s\S]*?)\n#\+end_src\s*$/i);
+  const org = String(content || "").match(
+    /^#\+begin_src\s+([^\s]+).*\n([\s\S]*?)\n#\+end_src\s*$/i
+  );
   if (org) return { language: org[1], source: org[2] };
   return null;
 }
@@ -233,7 +235,8 @@ export default function NotesWorkspace() {
               <div className="eyebrow">{selectedPage.kind === "journal" ? "Journal" : "Page"}</div>
               <h1>{selectedPage.title}</h1>
               <p>
-                <Network size={14} /> {blocks.length} blocks · {outgoing.length} outgoing refs · {backlinks.length} backlinks
+                <Network size={14} /> {blocks.length} blocks · {outgoing.length} outgoing refs ·{" "}
+                {backlinks.length} backlinks
               </p>
             </header>
 
@@ -247,14 +250,18 @@ export default function NotesWorkspace() {
                     key={block._id}
                     style={{ marginInlineStart: `${depth * 18}px` }}
                   >
-                    <div className="note-block-bullet" title={`((${block.uuid || block._id.replace(/^note-block:/, "")}))`} />
+                    <div
+                      className="note-block-bullet"
+                      title={`((${block.uuid || block._id.replace(/^note-block:/, "")}))`}
+                    />
                     <div className="note-block-body">
                       <textarea
                         defaultValue={block.content}
                         aria-label="Note block"
                         rows={Math.max(1, block.content.split("\n").length)}
                         onBlur={(event) => {
-                          if (event.target.value !== block.content) saveBlock(block, event.target.value);
+                          if (event.target.value !== block.content)
+                            saveBlock(block, event.target.value);
                         }}
                         onKeyDown={(event) => {
                           if (event.key === "Tab") {
@@ -264,7 +271,11 @@ export default function NotesWorkspace() {
                             );
                             return;
                           }
-                          if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                          if (
+                            event.key === "Enter" &&
+                            !event.shiftKey &&
+                            !event.nativeEvent.isComposing
+                          ) {
                             event.preventDefault();
                             saveBlock(block, event.currentTarget.value).then(() =>
                               addBlock(block.order, block.parentId || null)
@@ -272,11 +283,17 @@ export default function NotesWorkspace() {
                           }
                         }}
                       />
-                      {code ? <ExecutableCodeBlock language={code.language} source={code.source} /> : null}
+                      {code ? (
+                        <ExecutableCodeBlock language={code.language} source={code.source} />
+                      ) : null}
                       {referencedPages(block.content).length ? (
                         <div className="note-block-refs">
                           {referencedPages(block.content).map((title) => (
-                            <button type="button" key={title} onClick={() => openPageByTitle(title)}>
+                            <button
+                              type="button"
+                              key={title}
+                              onClick={() => openPageByTitle(title)}
+                            >
                               <Link2 size={12} /> {title}
                             </button>
                           ))}
@@ -284,16 +301,37 @@ export default function NotesWorkspace() {
                       ) : null}
                     </div>
                     <div className="note-block-actions">
-                      <button type="button" className="icon-button" title="Outdent block" disabled={!block.parentId} onClick={() => outdentBlock(block)}>
+                      <button
+                        type="button"
+                        className="icon-button"
+                        title="Outdent block"
+                        disabled={!block.parentId}
+                        onClick={() => outdentBlock(block)}
+                      >
                         <ChevronLeft size={13} />
                       </button>
-                      <button type="button" className="icon-button" title="Indent block" onClick={() => indentBlock(block)}>
+                      <button
+                        type="button"
+                        className="icon-button"
+                        title="Indent block"
+                        onClick={() => indentBlock(block)}
+                      >
                         <ChevronRight size={13} />
                       </button>
-                      <button type="button" className="icon-button" title="Copy block reference" onClick={() => copyBlockReference(block)}>
+                      <button
+                        type="button"
+                        className="icon-button"
+                        title="Copy block reference"
+                        onClick={() => copyBlockReference(block)}
+                      >
                         <Copy size={13} />
                       </button>
-                      <button type="button" className="icon-button" title="Delete block" onClick={() => removeBlock(block)}>
+                      <button
+                        type="button"
+                        className="icon-button"
+                        title="Delete block"
+                        onClick={() => removeBlock(block)}
+                      >
                         <Trash2 size={13} />
                       </button>
                     </div>
@@ -324,7 +362,11 @@ export default function NotesWorkspace() {
                   backlinks.map((block) => {
                     const sourcePage = pages.find((page) => page._id === block.pageId);
                     return (
-                      <button type="button" key={block._id} onClick={() => sourcePage && setSelectedPageId(sourcePage._id)}>
+                      <button
+                        type="button"
+                        key={block._id}
+                        onClick={() => sourcePage && setSelectedPageId(sourcePage._id)}
+                      >
                         <strong>{sourcePage?.title || "Unknown page"}</strong>
                         <span>{block.content.slice(0, 140)}</span>
                       </button>
@@ -336,8 +378,13 @@ export default function NotesWorkspace() {
               </div>
               <div>
                 <h2>Knowledge graph</h2>
-                <p>{graph.pages.length} pages · {graph.edges.length} page-reference edges</p>
-                <p>Use Tab/Shift+Tab to nest blocks and copy `((block-id))` references from block actions.</p>
+                <p>
+                  {graph.pages.length} pages · {graph.edges.length} page-reference edges
+                </p>
+                <p>
+                  Use Tab/Shift+Tab to nest blocks and copy `((block-id))` references from block
+                  actions.
+                </p>
               </div>
             </section>
           </>
@@ -345,7 +392,10 @@ export default function NotesWorkspace() {
           <div className="empty-state">
             <BookMarked size={28} />
             <h2>Create your first page</h2>
-            <p>Pages contain nested addressable blocks, journals, links, tags, code blocks, and backlinks.</p>
+            <p>
+              Pages contain nested addressable blocks, journals, links, tags, code blocks, and
+              backlinks.
+            </p>
           </div>
         )}
       </main>

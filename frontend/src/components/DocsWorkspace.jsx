@@ -69,7 +69,9 @@ export default function DocsWorkspace() {
         if (cancelled) return;
         setSource(value.source);
         setSourceCached(value.cached);
-        documentationCacheStats().then(setCacheStats).catch(() => {});
+        documentationCacheStats()
+          .then(setCacheStats)
+          .catch(() => {});
       })
       .catch((cause) => !cancelled && setError(cause.message || String(cause)));
     return () => {
@@ -85,7 +87,9 @@ export default function DocsWorkspace() {
       const report = await cacheDocumentationSet(index.documents, setCacheProgress);
       setCacheStats(await documentationCacheStats());
       if (report.failures.length) {
-        setError(`${report.failures.length} documentation files could not be cached. Retry while online.`);
+        setError(
+          `${report.failures.length} documentation files could not be cached. Retry while online.`
+        );
       }
     } catch (cause) {
       setError(cause.message || String(cause));

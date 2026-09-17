@@ -9,7 +9,10 @@ function now() {
 }
 
 function uuid() {
-  return globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return (
+    globalThis.crypto?.randomUUID?.() ||
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  );
 }
 
 export function normalizePageTitle(value) {
@@ -58,13 +61,24 @@ export async function ensureNotePage(title, kind = "page") {
   } catch (error) {
     if (error?.status !== 404) throw error;
   }
-  const document = { _id, type: "note-page", title: normalized, kind, createdAt: now(), updatedAt: now() };
+  const document = {
+    _id,
+    type: "note-page",
+    title: normalized,
+    kind,
+    createdAt: now(),
+    updatedAt: now()
+  };
   const response = await db.put(document);
   return { ...document, _rev: response.rev };
 }
 
 export async function listNotePages() {
-  const response = await db.allDocs({ include_docs: true, startkey: PAGE_PREFIX, endkey: `${PAGE_PREFIX}\ufff0` });
+  const response = await db.allDocs({
+    include_docs: true,
+    startkey: PAGE_PREFIX,
+    endkey: `${PAGE_PREFIX}\ufff0`
+  });
   return response.rows
     .map((row) => row.doc)
     .filter(Boolean)
@@ -72,7 +86,11 @@ export async function listNotePages() {
 }
 
 export async function listNoteBlocks(targetPageId) {
-  const response = await db.allDocs({ include_docs: true, startkey: BLOCK_PREFIX, endkey: `${BLOCK_PREFIX}\ufff0` });
+  const response = await db.allDocs({
+    include_docs: true,
+    startkey: BLOCK_PREFIX,
+    endkey: `${BLOCK_PREFIX}\ufff0`
+  });
   return response.rows
     .map((row) => row.doc)
     .filter((doc) => doc?.pageId === targetPageId)
@@ -129,7 +147,9 @@ export async function deleteNoteBlock(block) {
   const blocks = await listNoteBlocks(block.pageId);
   const children = blocks.filter((candidate) => candidate.parentId === block._id);
   if (children.length) {
-    await db.bulkDocs(children.map((child) => ({ ...child, parentId: block.parentId || null, updatedAt: now() })));
+    await db.bulkDocs(
+      children.map((child) => ({ ...child, parentId: block.parentId || null, updatedAt: now() }))
+    );
   }
   await db.remove(block);
 }
@@ -137,7 +157,11 @@ export async function deleteNoteBlock(block) {
 export async function findBacklinks(title) {
   const target = normalizePageTitle(title).toLowerCase();
   if (!target) return [];
-  const response = await db.allDocs({ include_docs: true, startkey: BLOCK_PREFIX, endkey: `${BLOCK_PREFIX}\ufff0` });
+  const response = await db.allDocs({
+    include_docs: true,
+    startkey: BLOCK_PREFIX,
+    endkey: `${BLOCK_PREFIX}\ufff0`
+  });
   return response.rows
     .map((row) => row.doc)
     .filter((doc) => doc?.refs?.some((ref) => normalizePageTitle(ref).toLowerCase() === target));
@@ -146,10 +170,12 @@ export async function findBacklinks(title) {
 export async function findBlockBacklinks(blockUuid) {
   const target = String(blockUuid || "");
   if (!target) return [];
-  const response = await db.allDocs({ include_docs: true, startkey: BLOCK_PREFIX, endkey: `${BLOCK_PREFIX}\ufff0` });
-  return response.rows
-    .map((row) => row.doc)
-    .filter((doc) => doc?.blockRefs?.includes(target));
+  const response = await db.allDocs({
+    include_docs: true,
+    startkey: BLOCK_PREFIX,
+    endkey: `${BLOCK_PREFIX}\ufff0`
+  });
+  return response.rows.map((row) => row.doc).filter((doc) => doc?.blockRefs?.includes(target));
 }
 
 export function todayJournalTitle(date = new Date()) {
@@ -163,7 +189,11 @@ export async function ensureTodayJournal() {
 export async function noteGraph() {
   const pages = await listNotePages();
   const pageByTitle = new Map(pages.map((page) => [page.title.toLowerCase(), page]));
-  const response = await db.allDocs({ include_docs: true, startkey: BLOCK_PREFIX, endkey: `${BLOCK_PREFIX}\ufff0` });
+  const response = await db.allDocs({
+    include_docs: true,
+    startkey: BLOCK_PREFIX,
+    endkey: `${BLOCK_PREFIX}\ufff0`
+  });
   const edges = [];
   for (const block of response.rows.map((row) => row.doc).filter(Boolean)) {
     const source = pages.find((page) => page._id === block.pageId);

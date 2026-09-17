@@ -33,7 +33,9 @@ function inlineParts(text, keyPrefix) {
         )
       );
     } else {
-      parts.push(<code key={`${keyPrefix}-${match.index}`}>{match[4] || match[5] || match[6]}</code>);
+      parts.push(
+        <code key={`${keyPrefix}-${match.index}`}>{match[4] || match[5] || match[6]}</code>
+      );
     }
     cursor = pattern.lastIndex;
   }
@@ -55,7 +57,9 @@ function tableSeparator(line) {
 }
 
 function parseDocument(source) {
-  const lines = String(source || "").replace(/\r\n?/g, "\n").split("\n");
+  const lines = String(source || "")
+    .replace(/\r\n?/g, "\n")
+    .split("\n");
   const blocks = [];
   let paragraph = [];
   let list = [];
@@ -84,7 +88,9 @@ function parseDocument(source) {
     const orgExample = /^#\+begin_example\s*$/i.test(line);
     if (orgSource || markdownFence || orgExample) {
       flushText();
-      const language = orgExample ? "text" : (orgSource?.[1] || markdownFence?.[1] || "text").trim();
+      const language = orgExample
+        ? "text"
+        : (orgSource?.[1] || markdownFence?.[1] || "text").trim();
       const endPattern = orgExample
         ? /^#\+end_example\s*$/i
         : orgSource
@@ -145,7 +151,8 @@ function parseDocument(source) {
       continue;
     }
 
-    if (/^#\+(title|author|date|options|startup|property|results|name|caption):/i.test(line)) continue;
+    if (/^#\+(title|author|date|options|startup|property|results|name|caption):/i.test(line))
+      continue;
     if (/^#(?!\+)/.test(line)) continue;
 
     const item = line.match(/^\s*[-+]\s+(.+)$/);
@@ -184,7 +191,8 @@ export default function OrgDocument({ source }) {
           return <Tag key={key}>{inlineParts(block.text, key)}</Tag>;
         }
         if (block.type === "paragraph") return <p key={key}>{inlineParts(block.text, key)}</p>;
-        if (block.type === "quote") return <blockquote key={key}>{inlineParts(block.text, key)}</blockquote>;
+        if (block.type === "quote")
+          return <blockquote key={key}>{inlineParts(block.text, key)}</blockquote>;
         if (block.type === "list") {
           return (
             <ul key={key}>
@@ -204,7 +212,9 @@ export default function OrgDocument({ source }) {
                   <thead>
                     <tr>
                       {first.map((cell, cellIndex) => (
-                        <th key={`${key}-head-${cellIndex}`}>{inlineParts(cell, `${key}-head-${cellIndex}`)}</th>
+                        <th key={`${key}-head-${cellIndex}`}>
+                          {inlineParts(cell, `${key}-head-${cellIndex}`)}
+                        </th>
                       ))}
                     </tr>
                   </thead>

@@ -1,5 +1,10 @@
 export const CACHE_NAME = "quasar-runtime-v5";
-export const APP_SHELL = ["./", "./index.html", "./manifest.webmanifest", "./quasar-docs/index.json"];
+export const APP_SHELL = [
+  "./",
+  "./index.html",
+  "./manifest.webmanifest",
+  "./quasar-docs/index.json"
+];
 
 const IMMUTABLE_ASSET =
   /\/assets\/[^/]+-[a-zA-Z0-9_-]{6,}\.(?:css|js|mjs|png|jpe?g|gif|svg|webp|avif|woff2?)$/;
