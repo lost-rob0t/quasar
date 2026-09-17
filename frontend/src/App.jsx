@@ -4,12 +4,14 @@ import ActorManager from "./components/ActorManager";
 import AgentHub from "./components/AgentHub";
 import { AgentBubble, AgentSystemProvider } from "./components/AgentSystem";
 import DatasetsPage from "./components/DatasetsPage";
+import DocsWorkspace from "./components/DocsWorkspace";
 import DocumentEditor from "./components/DocumentEditor";
 import { DocumentPage, DocumentsPage } from "./components/Documents";
 import GraphLayoutControl from "./components/GraphLayoutControl";
 import GraphPage from "./components/GraphPage";
 import GraphWorkspaceChrome from "./components/GraphWorkspaceChrome";
 import { ImportPage } from "./components/ImportSettings";
+import NotesWorkspace from "./components/NotesWorkspace";
 import SettingsWorkspace from "./components/SettingsWorkspace";
 import StatsPage from "./components/StatsPage";
 import QuasarShell from "./ui-core/QuasarShell";
@@ -55,6 +57,8 @@ export default function App() {
           <Route path="/documents/new" element={<DocumentEditor mode="create" />} />
           <Route path="/documents/:id" element={<DocumentPage />} />
           <Route path="/documents/:id/edit" element={<DocumentEditor mode="edit" />} />
+          <Route path="/docs" element={<DocsWorkspace />} />
+          <Route path="/notes" element={<NotesWorkspace />} />
           <Route path="/import" element={<ImportPage />} />
           <Route path="/agents" element={<AgentHub />} />
           <Route path="/actors" element={<ActorManager />} />
