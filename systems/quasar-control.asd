@@ -5,7 +5,8 @@
   :version "0.2.0"
   :serial t
   :pathname "../control-plane/src/"
-  :depends-on ("babel"
+  :depends-on ("quasar-fbp"
+               "babel"
                "bordeaux-threads"
                "dexador"
                "jsown"
@@ -28,6 +29,7 @@
                (:file "phase2-store-reads")
                (:file "control-plane")
                (:file "command-authority-context")
+               (:file "fbp-control")
                (:file "autodig-store")
                (:file "autodig-control")
                (:file "autodig-persistence-bridge")

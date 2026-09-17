@@ -36,6 +36,7 @@ import "../graph-editors-extra.css";
 import "../settings-runtime-log.css";
 import "../agent-tab-icons.css";
 import "../kinpaku-shell.css";
+import "../workflows/workflows.css";
 import "../ui-core/shell.css";
 import "../ui-core/surfaces.css";
 import "../ui-core/graph.css";

@@ -122,6 +122,7 @@ export default function QuasarShell({ children }) {
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(loadSidebarCollapsed);
   const graphRoute = location.pathname === "/graph" || location.pathname.startsWith("/graph/");
+  const canvasRoute = graphRoute || location.pathname.startsWith("/workflows");
 
   function submitSearch(event) {
     event.preventDefault();
@@ -267,7 +268,7 @@ export default function QuasarShell({ children }) {
 
         <Notice notice={notice} onDismiss={() => setNotice(null)} />
 
-        <main className={graphRoute ? "content content-graph" : "content"}>
+        <main className={canvasRoute ? "content content-graph" : "content"}>
           {loading ? <div className="loading-panel">Opening workspace…</div> : children}
         </main>
       </section>
