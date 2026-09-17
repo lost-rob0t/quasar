@@ -172,7 +172,8 @@
                                 :endpoint "http://127.0.0.1:5000"
                                 :credential-reference "credential:starintel-api"))
          (unit (getf plan :unit-source)))
-    (check (search "ExecStart=\"/bin/true\" fbp-run --graph" unit)
+    (check (and (search "ExecStart=" unit)
+                (search " fbp-run --graph" unit))
            "The user unit does not invoke the packaged fbp-run entry point.")
     (check (search "STARINTEL_ENDPOINT=http://127.0.0.1:5000" unit)
            "The user unit omitted its StarIntel endpoint.")

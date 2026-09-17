@@ -151,8 +151,9 @@
                (url (endpoint-url validated-endpoint path))
                (body (operation-body operation request))
                (headers (list (cons "accept" "application/json")
+                              (cons "content-type" "application/json")
                               (cons authorization-header
-                                    (concatenate 'string authorization-prefix credential))))
+                                    (concatenate 'string authorization-prefix credential)))))
           (multiple-value-bind (response status)
               (dex:request url
                            :method (intern (string-upcase
@@ -166,7 +167,7 @@
                            :max-redirects 0)
             (values (handler-case (jsown:parse response)
                       (error () response))
-                    status))))))))
+                    status)))))))
 
 (defun descriptor-port (value)
   (let* ((schema (operation-field value "schema" nil))
@@ -255,7 +256,7 @@
                             (quasar.fbp:find-node-type captured-node-id)) port)
                     (error "StarIntel returned undeclared status ~D for ~A."
                            status captured-operation-id))
-                  (list (cons port (list body)))))))
+                  (list (cons port (list body))))))))
          specs)))
     (bt:with-lock-held (*starintel-registry-lock*)
       (dolist (id *starintel-node-ids*) (quasar.fbp:unregister-node-type id))
@@ -263,7 +264,7 @@
       (dolist (spec (nreverse specs))
         (quasar.fbp:register-node-type spec)
         (push (quasar.fbp:node-type-id spec) *starintel-node-ids*)))
-    (values (remove-duplicates grants :test #'equal) operations))))
+    (values (remove-duplicates grants :test #'equal) operations)))
 
 (defun clear-starintel-operation-nodes ()
   (bt:with-lock-held (*starintel-registry-lock*)

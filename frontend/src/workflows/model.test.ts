@@ -38,7 +38,7 @@ describe("workflow model", () => {
       type: "starintel.operation/targets.create",
       config: {
         operation: "targets.create",
-        credential_reference: "credential:starintel-api"
+        credentialReference: "credential:starintel-api"
       }
     });
   });

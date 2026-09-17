@@ -185,7 +185,7 @@ export function workflowNodeFromDescriptor(
     config: operation
       ? {
           operation,
-          credential_reference: "credential:starintel-api"
+          credentialReference: "credential:starintel-api"
         }
       : {}
   };
@@ -249,7 +249,7 @@ export function operationsToNodes(operations: StarIntelOperation[]): NodeDescrip
         type: "object",
         properties: {
           operation: { const: operation.operation_id },
-          credential_reference: {
+          credentialReference: {
             type: "string",
             pattern: "^credential:[A-Za-z0-9_.-]+$"
           }
