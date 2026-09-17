@@ -105,6 +105,7 @@ describe("workflow model", () => {
     removeWorkflowNode(workflow, "renamed");
     expect(workflow.iips).toEqual([]);
 
+    workflow.nodes = [{ id: "renamed", type: "core/identity", x: 0, y: 0, config: {} }];
     workflow.iips = [{ id: "orphan", value: 1, to: "missing", in: "in" }];
     expect(validateWorkflow(workflow, builtInCatalog)).toContain("Invalid initial packet orphan");
     expect(validateWorkflow(workflow, builtInCatalog)).toContain(
