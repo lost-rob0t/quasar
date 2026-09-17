@@ -27,7 +27,11 @@ export interface StarIntelOperation {
   authority?: string;
   scopes?: string[];
   path_parameters?: string[];
-  query_parameters?: Array<{ name: string; required?: boolean; schema?: JsonSchema }>;
+  query_parameters?: Array<{
+    name: string;
+    required?: boolean;
+    schema?: JsonSchema;
+  }>;
   request_schema?: JsonSchema | null;
   responses?: Array<{ status: number; schema?: JsonSchema | null }>;
   idempotency?: string | null;
@@ -76,56 +80,56 @@ export const builtInCatalog: NodeDescriptor[] = [
     label: "Identity",
     category: "Core",
     inputs: [{ name: "in", required: true }],
-    outputs: [{ name: "out" }]
+    outputs: [{ name: "out" }],
   },
   {
     id: "core/split",
     label: "Split array",
     category: "Core",
     inputs: [{ name: "in", required: true, schema: { type: "array" } }],
-    outputs: [{ name: "out", array: true }]
+    outputs: [{ name: "out", array: true }],
   },
   {
     id: "object/build",
     label: "Build object",
     category: "Objects",
     inputs: [{ name: "trigger", required: true }],
-    outputs: [{ name: "object", schema: { type: "object" } }]
+    outputs: [{ name: "object", schema: { type: "object" } }],
   },
   {
     id: "starintel/target",
     label: "Submit target",
     category: "Targets",
     inputs: [{ name: "target", required: true, schema: { type: "object" } }],
-    outputs: [{ name: "receipt", schema: { type: "object" } }]
+    outputs: [{ name: "receipt", schema: { type: "object" } }],
   },
   {
     id: "starintel/actor",
     label: "Actor message",
     category: "Actors",
     inputs: [{ name: "message", required: true }],
-    outputs: [{ name: "result" }]
+    outputs: [{ name: "result" }],
   },
   {
     id: "starintel/domain-server",
     label: "Domain server",
     category: "Domain servers",
     inputs: [{ name: "request", required: true }],
-    outputs: [{ name: "result" }]
+    outputs: [{ name: "result" }],
   },
   {
     id: "language/lisp",
     label: "Trusted Lisp component",
     category: "Languages",
     inputs: [{ name: "in", required: true }],
-    outputs: [{ name: "out" }]
+    outputs: [{ name: "out" }],
   },
   {
     id: "language/star",
     label: "Star Language",
     category: "Languages",
     inputs: [{ name: "in", required: true }],
-    outputs: [{ name: "out" }]
+    outputs: [{ name: "out" }],
   },
   {
     id: "process/exec",
@@ -134,9 +138,9 @@ export const builtInCatalog: NodeDescriptor[] = [
     inputs: [{ name: "stdin", required: true, schema: { type: "string" } }],
     outputs: [
       { name: "stdout", schema: { type: "string" } },
-      { name: "status", schema: { type: "integer" } }
-    ]
-  }
+      { name: "status", schema: { type: "integer" } },
+    ],
+  },
 ];
 
 export function emptyWorkflow(id = "new-workflow"): Workflow {
@@ -150,47 +154,63 @@ export function emptyWorkflow(id = "new-workflow"): Workflow {
     limits: { packets: 100000, bytes: 67108864, seconds: 3600, concurrency: 4 },
     nodes: [],
     connections: [],
-    iips: []
+    iips: [],
   };
 }
 
 function schemaPorts(schema: JsonSchema | null | undefined): PortDescriptor[] {
-  if (!schema || schema.type !== "object") return [{ name: "request", required: Boolean(schema) }];
+  if (!schema || schema.type !== "object")
+    return [{ name: "request", required: Boolean(schema) }];
   const properties = (schema.properties || {}) as Record<string, JsonSchema>;
-  const required = new Set(Array.isArray(schema.required) ? (schema.required as string[]) : []);
+  const required = new Set(
+    Array.isArray(schema.required) ? (schema.required as string[]) : [],
+  );
   return Object.entries(properties).map(([name, value]) => ({
     name,
     schema: value,
-    required: required.has(name)
+    required: required.has(name),
   }));
 }
 
-export function operationsToNodes(operations: StarIntelOperation[]): NodeDescriptor[] {
+export function operationsToNodes(
+  operations: StarIntelOperation[],
+): NodeDescriptor[] {
   return operations.map((operation) => ({
     id: `starintel.operation/${operation.operation_id}`,
     label: operation.summary || operation.operation_id,
-    category: operation.tags?.[0] ? `StarIntel · ${operation.tags[0]}` : "StarIntel API",
+    category: operation.tags?.[0]
+      ? `StarIntel · ${operation.tags[0]}`
+      : "StarIntel API",
     inputs: [
       ...schemaPorts(operation.request_schema),
-      ...(operation.path_parameters || []).map((name) => ({ name, required: true })),
+      ...(operation.path_parameters || []).map((name) => ({
+        name,
+        required: true,
+      })),
       ...(operation.query_parameters || []).map((parameter) => ({
         name: parameter.name,
         required: Boolean(parameter.required),
-        schema: parameter.schema
-      }))
+        schema: parameter.schema,
+      })),
     ],
     outputs: (operation.responses || [])
       .filter((response) => response.status >= 200 && response.status < 300)
-      .map((response) => ({ name: `status-${response.status}`, schema: response.schema })),
+      .map((response) => ({
+        name: `status-${response.status}`,
+        schema: response.schema,
+      })),
     capabilities: operation.scopes || [],
     configSchema: {
       type: "object",
       properties: {
         operation: { const: operation.operation_id },
-        credentialReference: { type: "string", pattern: "^credential:[A-Za-z0-9_.-]+$" }
-      }
+        credentialReference: {
+          type: "string",
+          pattern: "^credential:[A-Za-z0-9_.-]+$",
+        },
+      },
     },
-    operation
+    operation,
   }));
 }
 
@@ -198,13 +218,19 @@ function schemaType(port?: PortDescriptor): string {
   return String(port?.schema?.type || "any");
 }
 
-export function portsCompatible(output?: PortDescriptor, input?: PortDescriptor): boolean {
+export function portsCompatible(
+  output?: PortDescriptor,
+  input?: PortDescriptor,
+): boolean {
   const from = schemaType(output);
   const to = schemaType(input);
   return from === "any" || to === "any" || from === to;
 }
 
-export function validateWorkflow(workflow: Workflow, catalog: NodeDescriptor[]): string[] {
+export function validateWorkflow(
+  workflow: Workflow,
+  catalog: NodeDescriptor[],
+): string[] {
   const errors: string[] = [];
   const ids = new Set<string>();
   const descriptor = new Map(catalog.map((entry) => [entry.id, entry]));
@@ -212,23 +238,32 @@ export function validateWorkflow(workflow: Workflow, catalog: NodeDescriptor[]):
   for (const node of workflow.nodes) {
     if (ids.has(node.id)) errors.push(`Duplicate node ${node.id}`);
     ids.add(node.id);
-    if (!descriptor.has(node.type)) errors.push(`Unknown node type ${node.type}`);
+    if (!descriptor.has(node.type))
+      errors.push(`Unknown node type ${node.type}`);
   }
   for (const edge of workflow.connections) {
     const from = workflow.nodes.find((node) => node.id === edge.from);
     const to = workflow.nodes.find((node) => node.id === edge.to);
-    const fromPort = descriptor.get(from?.type || "")?.outputs.find((port) => port.name === edge.out);
-    const toPort = descriptor.get(to?.type || "")?.inputs.find((port) => port.name === edge.in);
-    if (!from || !to || !fromPort || !toPort) errors.push(`Invalid connection ${edge.id}`);
-    else if (!portsCompatible(fromPort, toPort)) errors.push(`Incompatible ports on ${edge.id}`);
-    if (edge.capacity < 1) errors.push(`Connection ${edge.id} has invalid capacity`);
+    const fromPort = descriptor
+      .get(from?.type || "")
+      ?.outputs.find((port) => port.name === edge.out);
+    const toPort = descriptor
+      .get(to?.type || "")
+      ?.inputs.find((port) => port.name === edge.in);
+    if (!from || !to || !fromPort || !toPort)
+      errors.push(`Invalid connection ${edge.id}`);
+    else if (!portsCompatible(fromPort, toPort))
+      errors.push(`Incompatible ports on ${edge.id}`);
+    if (edge.capacity < 1)
+      errors.push(`Connection ${edge.id} has invalid capacity`);
     const key = `${edge.to}:${edge.in}`;
     if (incoming.has(key)) errors.push(`Input ${key} has multiple producers`);
     incoming.add(key);
   }
   for (const iip of workflow.iips) {
     const key = `${iip.to}:${iip.in}`;
-    if (incoming.has(key)) errors.push(`Input ${key} has both a connection and IIP`);
+    if (incoming.has(key))
+      errors.push(`Input ${key} has both a connection and IIP`);
     incoming.add(key);
   }
   for (const node of workflow.nodes) {
@@ -253,7 +288,10 @@ function lispLiteral(value: unknown): string {
   if (Array.isArray(value)) return `(${value.map(lispLiteral).join(" ")})`;
   if (typeof value === "object") {
     return `(${Object.entries(value as Record<string, unknown>)
-      .flatMap(([key, item]) => [`:${key.replaceAll("_", "-")}`, lispLiteral(item)])
+      .flatMap(([key, item]) => [
+        `:${key.replaceAll("_", "-")}`,
+        lispLiteral(item),
+      ])
       .join(" ")})`;
   }
   throw new Error(`Unsupported value: ${typeof value}`);
@@ -270,21 +308,23 @@ export function workflowToLisp(workflow: Workflow): string {
     ":capabilities",
     lispLiteral(workflow.capabilities),
     ":limits",
-    lispLiteral(workflow.limits)
+    lispLiteral(workflow.limits),
   ].join(" ");
   const components = workflow.nodes.map(
-    (node) => `  (:component ${lispString(node.id)} ${lispString(node.type)} :config ${lispLiteral(node.config)})`
+    (node) =>
+      `  (:component ${lispString(node.id)} ${lispString(node.type)} :config ${lispLiteral(node.config)})`,
   );
   const connections = workflow.connections.map(
     (edge) =>
-      `  (:connect ${lispString(edge.from)} ${lispString(edge.out)} ${lispString(edge.to)} ${lispString(edge.in)} :capacity ${edge.capacity})`
+      `  (:connect ${lispString(edge.from)} ${lispString(edge.out)} ${lispString(edge.to)} ${lispString(edge.in)} :capacity ${edge.capacity})`,
   );
   const iips = workflow.iips.map(
-    (iip) => `  (:iip ${lispLiteral(iip.value)} ${lispString(iip.to)} ${lispString(iip.in)})`
+    (iip) =>
+      `  (:iip ${lispLiteral(iip.value)} ${lispString(iip.to)} ${lispString(iip.in)})`,
   );
   return `(define-network ${workflow.id.replaceAll(/[^A-Za-z0-9_-]/g, "-")}\n  (${options})\n${[
     ...components,
     ...connections,
-    ...iips
+    ...iips,
   ].join("\n")})\n`;
 }
