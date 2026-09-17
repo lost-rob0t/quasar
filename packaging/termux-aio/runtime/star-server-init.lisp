@@ -37,6 +37,5 @@
 
 (setf star.actors:*publish-timeout-seconds* 5)
 
-;;; Never export telemetry from a local phone appliance unless an operator
-;;; deliberately replaces this trusted init file.
-(setf (uiop:getenv "STAR_OBSERVABILITY_ENABLED") "false")
+;;; The launcher sets STAR_OBSERVABILITY_ENABLED=false before process start.
+;;; The observability addon is not loaded by this local appliance init file.
