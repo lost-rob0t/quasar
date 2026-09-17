@@ -92,7 +92,9 @@ export async function cpSystemCapabilities(): Promise<string[]> {
 export async function cpProActorManifests(): Promise<Record<string, unknown>[]> {
   const result = await client().send<unknown>("pro-actors.manifests", {});
   return Array.isArray(result)
-    ? result.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
+    ? result.filter((item): item is Record<string, unknown> =>
+        Boolean(item && typeof item === "object")
+      )
     : [];
 }
 
