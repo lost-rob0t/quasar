@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -11,16 +12,13 @@ const allowedExtensions = new Set([".md", ".org", ".txt"]);
 const roots = [
   { id: "quasar-docs", label: "Quasar docs", root: path.join(repoRoot, "docs") },
   { id: "quasar-wiki", label: "Operator wiki", root: path.join(repoRoot, "wiki") },
-  { id: "quasar-learn", label: "Learn", root: path.join(repoRoot, "learn") }
-];
-
-if (process.env.STARINTEL_DOCS_ROOT) {
-  roots.push({
+  { id: "quasar-learn", label: "Learn", root: path.join(repoRoot, "learn") },
+  {
     id: "starintel-server",
     label: "StarIntel Server",
-    root: path.resolve(process.env.STARINTEL_DOCS_ROOT)
-  });
-}
+    root: path.join(repoRoot, "vendor-docs", "starintel-server")
+  }
+];
 
 async function exists(target) {
   try {
@@ -73,7 +71,15 @@ function summaryFromSource(source) {
 }
 
 function safeFileName(id) {
-  return `${id.replace(/[^a-zA-Z0-9._-]+/g, "_")}.txt`;
+  const readable = id.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 120);
+  const digest = createHash("sha256").update(id).digest("hex").slice(0, 12);
+  return `${readable}-${digest}.txt`;
+}
+
+async function vendorRevision() {
+  const revisionPath = path.join(repoRoot, "vendor-docs", "starintel-server", "REVISION");
+  if (!(await exists(revisionPath))) return null;
+  return (await fs.readFile(revisionPath, "utf8")).trim() || null;
 }
 
 async function main() {
@@ -108,7 +114,16 @@ async function main() {
 
   await fs.writeFile(
     indexPath,
-    `${JSON.stringify({ version: 1, generatedAt: new Date().toISOString(), documents }, null, 2)}\n`,
+    `${JSON.stringify(
+      {
+        version: 1,
+        generatedAt: new Date().toISOString(),
+        sourceRevisions: { starintelServer: await vendorRevision() },
+        documents
+      },
+      null,
+      2
+    )}\n`,
     "utf8"
   );
 
