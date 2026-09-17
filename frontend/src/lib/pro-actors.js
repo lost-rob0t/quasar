@@ -97,7 +97,10 @@ export function parseManifestValue(raw, schema = {}) {
     if (!text) return schema.type === "array" ? [] : {};
     const value = JSON.parse(text);
     if (schema.type === "array" && !Array.isArray(value)) throw new Error("Value must be an array");
-    if (schema.type === "object" && (value === null || typeof value !== "object" || Array.isArray(value))) {
+    if (
+      schema.type === "object" &&
+      (value === null || typeof value !== "object" || Array.isArray(value))
+    ) {
       throw new Error("Value must be an object");
     }
     return value;
@@ -204,13 +207,25 @@ export function melissaTargetFromDocument(document) {
     };
   }
   if (dtype === "phone" || ["phone", "telephone", "mobile"].includes(etype)) {
-    return { target: first(data.phone, data.value, data.name, document.title), targetType: "phone", fields: {} };
+    return {
+      target: first(data.phone, data.value, data.name, document.title),
+      targetType: "phone",
+      fields: {}
+    };
   }
   if (dtype === "email" || etype === "email") {
-    return { target: first(data.email, data.value, data.name, document.title), targetType: "email", fields: {} };
+    return {
+      target: first(data.email, data.value, data.name, document.title),
+      targetType: "email",
+      fields: {}
+    };
   }
   if (dtype === "address" || etype === "address") {
-    return { target: addressValue(document), targetType: "address", fields: melissaFields(document) };
+    return {
+      target: addressValue(document),
+      targetType: "address",
+      fields: melissaFields(document)
+    };
   }
   if (dtype === "location") {
     return geo
@@ -218,15 +233,23 @@ export function melissaTargetFromDocument(document) {
       : { target: addressValue(document), targetType: "address", fields: melissaFields(document) };
   }
   if (dtype === "ip" || ["ip", "ip-address"].includes(etype)) {
-    return { target: first(data.ip, data.value, data.name, document.title), targetType: "ip", fields: {} };
+    return {
+      target: first(data.ip, data.value, data.name, document.title),
+      targetType: "ip",
+      fields: {}
+    };
   }
 
   const fallbackPhone = first(data.phone, data.telephone, data.mobile);
-  if (fallbackPhone) return { target: fallbackPhone, targetType: "phone", fields: melissaFields(document) };
+  if (fallbackPhone)
+    return { target: fallbackPhone, targetType: "phone", fields: melissaFields(document) };
   const fallbackEmail = first(data.email);
-  if (fallbackEmail) return { target: fallbackEmail, targetType: "email", fields: melissaFields(document) };
+  if (fallbackEmail)
+    return { target: fallbackEmail, targetType: "email", fields: melissaFields(document) };
   if (geo) return { target: geo.target, targetType: "geo", fields: {} };
-  throw new Error(`Melissa does not know how to derive a target from ${document.dtype || "this document"}`);
+  throw new Error(
+    `Melissa does not know how to derive a target from ${document.dtype || "this document"}`
+  );
 }
 
 export function actorTargetFromDocument(manifest, document) {
