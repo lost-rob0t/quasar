@@ -20,7 +20,12 @@ function inlineParts(text, keyPrefix) {
       const label = match[3] || match[2];
       parts.push(
         href ? (
-          <a key={`${keyPrefix}-${match.index}`} href={href} target={href.startsWith("http") ? "_blank" : undefined} rel="noreferrer">
+          <a
+            key={`${keyPrefix}-${match.index}`}
+            href={href}
+            target={href.startsWith("http") ? "_blank" : undefined}
+            rel="noreferrer"
+          >
             {label}
           </a>
         ) : (
@@ -34,6 +39,19 @@ function inlineParts(text, keyPrefix) {
   }
   if (cursor < text.length) parts.push(text.slice(cursor));
   return parts;
+}
+
+function tableCells(line) {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
+function tableSeparator(line) {
+  return /^\s*\|[\s|+:-]*-{2,}[\s|+:-]*\|?\s*$/.test(line);
 }
 
 function parseDocument(source) {
@@ -54,15 +72,24 @@ function parseDocument(source) {
     list = [];
   }
 
+  function flushText() {
+    flushParagraph();
+    flushList();
+  }
+
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
     const orgSource = line.match(/^#\+begin_src\s+([^\s]+).*$/i);
     const markdownFence = line.match(/^```([^\s`]*)\s*$/);
-    if (orgSource || markdownFence) {
-      flushParagraph();
-      flushList();
-      const language = (orgSource?.[1] || markdownFence?.[1] || "text").trim();
-      const endPattern = orgSource ? /^#\+end_src\s*$/i : /^```\s*$/;
+    const orgExample = /^#\+begin_example\s*$/i.test(line);
+    if (orgSource || markdownFence || orgExample) {
+      flushText();
+      const language = orgExample ? "text" : (orgSource?.[1] || markdownFence?.[1] || "text").trim();
+      const endPattern = orgExample
+        ? /^#\+end_example\s*$/i
+        : orgSource
+          ? /^#\+end_src\s*$/i
+          : /^```\s*$/;
       const code = [];
       index += 1;
       while (index < lines.length && !endPattern.test(lines[index])) {
@@ -73,11 +100,43 @@ function parseDocument(source) {
       continue;
     }
 
+    if (/^#\+begin_quote\s*$/i.test(line)) {
+      flushText();
+      const quote = [];
+      index += 1;
+      while (index < lines.length && !/^#\+end_quote\s*$/i.test(lines[index])) {
+        quote.push(lines[index]);
+        index += 1;
+      }
+      blocks.push({ type: "quote", text: quote.join(" ").trim() });
+      continue;
+    }
+
+    if (/^:PROPERTIES:\s*$/i.test(line)) {
+      flushText();
+      index += 1;
+      while (index < lines.length && !/^:END:\s*$/i.test(lines[index])) index += 1;
+      continue;
+    }
+
+    if (/^\s*\|/.test(line)) {
+      flushText();
+      const rawRows = [];
+      while (index < lines.length && /^\s*\|/.test(lines[index])) {
+        rawRows.push(lines[index]);
+        index += 1;
+      }
+      index -= 1;
+      const header = rawRows.length > 1 && tableSeparator(rawRows[1]);
+      const rows = rawRows.filter((row) => !tableSeparator(row)).map(tableCells);
+      if (rows.length) blocks.push({ type: "table", header, rows });
+      continue;
+    }
+
     const orgHeading = line.match(/^(\*{1,6})\s+(.+)$/);
     const markdownHeading = line.match(/^(#{1,6})\s+(.+)$/);
     if (orgHeading || markdownHeading) {
-      flushParagraph();
-      flushList();
+      flushText();
       blocks.push({
         type: "heading",
         level: (orgHeading?.[1] || markdownHeading?.[1]).length,
@@ -86,7 +145,8 @@ function parseDocument(source) {
       continue;
     }
 
-    if (/^#\+(title|author|date|options|startup|property):/i.test(line)) continue;
+    if (/^#\+(title|author|date|options|startup|property|results|name|caption):/i.test(line)) continue;
+    if (/^#(?!\+)/.test(line)) continue;
 
     const item = line.match(/^\s*[-+]\s+(.+)$/);
     if (item) {
@@ -96,14 +156,12 @@ function parseDocument(source) {
     }
 
     if (!line.trim()) {
-      flushParagraph();
-      flushList();
+      flushText();
       continue;
     }
 
     if (/^\s*([-_=])\1{2,}\s*$/.test(line)) {
-      flushParagraph();
-      flushList();
+      flushText();
       blocks.push({ type: "rule" });
       continue;
     }
@@ -111,8 +169,7 @@ function parseDocument(source) {
     paragraph.push(line.trim());
   }
 
-  flushParagraph();
-  flushList();
+  flushText();
   return blocks;
 }
 
@@ -127,6 +184,7 @@ export default function OrgDocument({ source }) {
           return <Tag key={key}>{inlineParts(block.text, key)}</Tag>;
         }
         if (block.type === "paragraph") return <p key={key}>{inlineParts(block.text, key)}</p>;
+        if (block.type === "quote") return <blockquote key={key}>{inlineParts(block.text, key)}</blockquote>;
         if (block.type === "list") {
           return (
             <ul key={key}>
@@ -134,6 +192,36 @@ export default function OrgDocument({ source }) {
                 <li key={`${key}-${itemIndex}`}>{inlineParts(item, `${key}-${itemIndex}`)}</li>
               ))}
             </ul>
+          );
+        }
+        if (block.type === "table") {
+          const [first, ...rest] = block.rows;
+          const bodyRows = block.header ? rest : block.rows;
+          return (
+            <div className="org-table-wrap" key={key}>
+              <table>
+                {block.header ? (
+                  <thead>
+                    <tr>
+                      {first.map((cell, cellIndex) => (
+                        <th key={`${key}-head-${cellIndex}`}>{inlineParts(cell, `${key}-head-${cellIndex}`)}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                ) : null}
+                <tbody>
+                  {bodyRows.map((row, rowIndex) => (
+                    <tr key={`${key}-row-${rowIndex}`}>
+                      {row.map((cell, cellIndex) => (
+                        <td key={`${key}-${rowIndex}-${cellIndex}`}>
+                          {inlineParts(cell, `${key}-${rowIndex}-${cellIndex}`)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           );
         }
         if (block.type === "code") {
