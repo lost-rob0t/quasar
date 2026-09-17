@@ -1,4 +1,5 @@
 import {
+  BookOpen,
   Bot,
   Code2,
   FilePlus2,
@@ -6,6 +7,7 @@ import {
   House,
   Layers3,
   Network,
+  NotebookPen,
   Search,
   Settings
 } from "lucide-react";
@@ -39,6 +41,20 @@ export const navigation = Object.freeze([
     label: "Add document",
     Icon: FilePlus2,
     match: (path) => path === "/documents/new"
+  },
+  {
+    to: "/docs",
+    label: "Documentation",
+    mobileLabel: "Manual",
+    Icon: BookOpen,
+    match: (path) => path === "/docs" || path.startsWith("/docs/")
+  },
+  {
+    to: "/notes",
+    label: "Notes",
+    mobileLabel: "Notes",
+    Icon: NotebookPen,
+    match: (path) => path === "/notes" || path.startsWith("/notes/")
   },
   {
     to: "/agents",
