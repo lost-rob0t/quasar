@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   builtInCatalog,
+  canonicalWorkflowId,
   connectWorkflowInput,
   emptyWorkflow,
   operationsToNodes,
@@ -43,6 +44,25 @@ describe("workflow model", () => {
     });
   });
 
+  it("requires an explicit trigger for optional-only operations", () => {
+    const [node] = operationsToNodes([
+      {
+        operation_id: "documents.search",
+        method: "get",
+        path: "/api/v1/documents/search",
+        query_parameters: [{ name: "limit", required: false }],
+        responses: [{ status: 200 }]
+      }
+    ]);
+    expect(node.inputs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "limit", required: false }),
+        expect.objectContaining({ name: "trigger", required: true })
+      ])
+    );
+    expect(node.configSchema?.required).toEqual(["operation", "credentialReference"]);
+  });
+
   it("validates named ports and emits ordinary Lisp without reader evaluation", () => {
     const workflow = emptyWorkflow("hello");
     workflow.nodes = [
@@ -62,9 +82,16 @@ describe("workflow model", () => {
     ];
     expect(validateWorkflow(workflow, builtInCatalog)).toEqual([]);
     const source = workflowToLisp(workflow);
-    expect(source).toContain("(define-network hello");
+    expect(source).toContain('(define-network "hello"');
     expect(source).toContain(":capacity 4");
     expect(source).not.toContain("#.");
+  });
+
+  it("emits a quoted canonical workflow id", () => {
+    const workflow = emptyWorkflow("123 Mixed Workflow");
+    expect(workflow.id).toBe("123 mixed workflow");
+    expect(canonicalWorkflowId("MiXeD-123")).toBe("mixed-123");
+    expect(workflowToLisp(workflow)).toContain('(define-network "123 mixed workflow"');
   });
 
   it("emits canonical kebab-case credential keys", () => {

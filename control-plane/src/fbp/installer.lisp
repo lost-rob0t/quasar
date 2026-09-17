@@ -230,6 +230,24 @@
                     collect (getf (component-spec-config component)
                                   :credential-reference))
             :test #'equal))
+         (secret-input-references
+           (remove-duplicates
+            (loop for iip in (network-iips network)
+                  for component = (find (iip-spec-to iip)
+                                        (network-components network)
+                                        :key #'component-spec-id :test #'string=)
+                  for node-type = (and component
+                                       (find-node-type
+                                        (component-spec-type component)
+                                        :errorp nil))
+                  for port = (and node-type
+                                  (port-named (node-type-inputs node-type)
+                                              (iip-spec-in iip)))
+                  when (and port
+                            (or (getf (port-spec-schema port) :secret)
+                                (getf (port-spec-schema port) :write-only)))
+                    collect (iip-spec-value iip))
+            :test #'equal))
          (approved-operations
            (loop for operation in network-operations
                  if (member operation allowed-operations :test #'string=)
@@ -263,7 +281,8 @@
                        environment-lines
                        (systemd-quote-argument runner)
                        (systemd-quote-argument (namestring source)))))
-    (dolist (reference network-credential-references)
+    (dolist (reference (append network-credential-references
+                               secret-input-references))
       (unless (and validated-reference (stringp reference)
                    (string= reference validated-reference))
         (signal-installer-validation-error

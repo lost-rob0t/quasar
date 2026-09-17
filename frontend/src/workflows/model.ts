@@ -78,6 +78,10 @@ export interface Workflow {
   iips: WorkflowIip[];
 }
 
+export function canonicalWorkflowId(id: string): string {
+  return id.toLowerCase();
+}
+
 const STARINTEL_OPERATION_PALETTE_PREFIX = "starintel.operation/";
 
 const unavailableBuiltInNodeTypes = new Set(["starintel/actor", "starintel/domain-server"]);
@@ -133,7 +137,7 @@ export const builtInCatalog: NodeDescriptor[] = [
 export function emptyWorkflow(id = "new-workflow"): Workflow {
   return {
     model: "quasar.fbp.v1",
-    id,
+    id: canonicalWorkflowId(id),
     version: "1",
     kind: "workflow",
     enabledAtLogin: false,
@@ -218,8 +222,12 @@ export function operationsToNodes(operations: StarIntelOperation[]): NodeDescrip
         schema: parameter.schema
       });
     }
-    if (!inputs.length) {
-      inputs.push({ name: "trigger", required: true, schema: { type: "object" } });
+    if (!inputs.some((input) => input.required)) {
+      inputs.push({
+        name: "trigger",
+        required: true,
+        schema: { type: "object" }
+      });
     }
     return {
       id: `starintel.operation/${operation.operation_id}`,
@@ -235,6 +243,7 @@ export function operationsToNodes(operations: StarIntelOperation[]): NodeDescrip
       capabilities: operation.scopes || [],
       configSchema: {
         type: "object",
+        required: ["operation", "credentialReference"],
         properties: {
           operation: { const: operation.operation_id },
           credentialReference: {
@@ -264,6 +273,10 @@ export function validateWorkflow(workflow: Workflow, catalog: NodeDescriptor[]):
   const descriptor = new Map(catalog.map((entry) => [entry.id, entry]));
   const incoming = new Map<string, string>();
   const iipIds = new Set<string>();
+  if (!workflow.id.length) errors.push("Workflow id cannot be empty");
+  if (workflow.id !== canonicalWorkflowId(workflow.id)) {
+    errors.push(`Workflow id must be lowercase: ${canonicalWorkflowId(workflow.id)}`);
+  }
   for (const node of workflow.nodes) {
     if (ids.has(node.id)) errors.push(`Duplicate node ${node.id}`);
     ids.add(node.id);
@@ -421,7 +434,7 @@ export function workflowToLisp(workflow: Workflow): string {
   const iips = workflow.iips.map(
     (iip) => `  (:iip ${lispLiteral(iip.value)} ${lispString(iip.to)} ${lispString(iip.in)})`
   );
-  return `(define-network ${workflow.id.replaceAll(/[^A-Za-z0-9_-]/g, "-")}\n  (${options})\n${[
+  return `(define-network ${lispString(canonicalWorkflowId(workflow.id))}\n  (${options})\n${[
     ...components,
     ...connections,
     ...iips

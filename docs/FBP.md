@@ -82,6 +82,12 @@ Set `STARINTEL_ENDPOINT`, list exact operation IDs in
 `QUASAR_CREDENTIAL_STARINTEL_API` (or `STARINTEL_API_KEY`). The optional
 `STARINTEL_AUTH_HEADER` and `STARINTEL_AUTH_PREFIX` settings support deployments
 whose canonical gateway uses a header other than `Authorization: Bearer`.
+Manifest authority is enforced per operation: public operations receive no
+credential header, bootstrap operations use `X-Star-Bootstrap-Secret`, and
+authenticated/administrator operations use the configured authorization header.
+Secret or `writeOnly` request ports accept only host-allowlisted
+`credential:NAME` references, which are resolved immediately before dispatch and
+are never serialized into the graph.
 
 ## Login automation and shell profiles
 

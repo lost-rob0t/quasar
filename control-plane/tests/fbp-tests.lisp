@@ -34,6 +34,38 @@
   (declare (ignore inputs context))
   nil)
 
+(defvar *gate-semaphore* nil)
+(defvar *gate-started-semaphore* nil)
+(defvar *gate-lock* (bt:make-lock "quasar-fbp-test-gate"))
+(defvar *gate-active* 0)
+(defvar *gate-peak* 0)
+
+(define-node test/gated
+    (:label "Gated worker" :category "Tests"
+     :inputs ((in :schema (:type "any")))
+     :outputs ())
+    (inputs context)
+  (declare (ignore inputs context))
+  (bt:with-lock-held (*gate-lock*)
+    (incf *gate-active*)
+    (setf *gate-peak* (max *gate-peak* *gate-active*)))
+  (bt:signal-semaphore *gate-started-semaphore*)
+  (unwind-protect
+       (bt:wait-on-semaphore *gate-semaphore*)
+    (bt:with-lock-held (*gate-lock*)
+      (decf *gate-active*)))
+  nil)
+
+(define-node test/fail-after-gate
+    (:label "Fail after gate starts" :category "Tests"
+     :inputs ((in :schema (:type "any")))
+     :outputs ())
+    (inputs context)
+  (declare (ignore inputs context))
+  (loop until (bt:with-lock-held (*gate-lock*) (plusp *gate-active*))
+        do (sleep 0.001))
+  (error "intentional worker failure"))
+
 (defun check (value format-control &rest arguments)
   (unless value
     (error (apply #'format nil format-control arguments))))
@@ -41,6 +73,44 @@
 (defun signals-p (type thunk)
   (handler-case (progn (funcall thunk) nil)
     (error (condition) (typep condition type))))
+
+(defun test-array-values (value)
+  (if (and (consp value) (eq (first value) :array)) (rest value) value))
+
+(defun set-json-test-value (object key value)
+  (let ((pair (assoc key (rest object) :test #'string=)))
+    (unless pair (error "Missing JSON test key ~A." key))
+    (setf (cdr pair) value)))
+
+(defun wait-until (predicate &key (seconds 2.0))
+  (let ((deadline (+ (get-internal-real-time)
+                     (round (* seconds internal-time-units-per-second)))))
+    (loop
+      (when (funcall predicate) (return t))
+      (when (> (get-internal-real-time) deadline) (return nil))
+      (sleep 0.005))))
+
+(defun reset-gate-state ()
+  (setf *gate-semaphore* (bt:make-semaphore :count 0)
+        *gate-started-semaphore* (bt:make-semaphore :count 0))
+  (bt:with-lock-held (*gate-lock*)
+    (setf *gate-active* 0
+          *gate-peak* 0)))
+
+(defun gated-network (&key (include-failure nil))
+  (let ((components nil)
+        (iips nil))
+    (dotimes (index 3)
+      (let ((id (format nil "gate-~D" index)))
+        (push (make-component-spec :id id :type "test/gated") components)
+        (push (make-iip-spec :value index :to id :in "in") iips)))
+    (when include-failure
+      (push (make-component-spec :id "fail" :type "test/fail-after-gate") components)
+      (push (make-iip-spec :value t :to "fail" :in "in") iips))
+    (make-network :id "worker-pool"
+                  :policy (make-sandbox-policy :limits '(:concurrency 2))
+                  :components (nreverse components)
+                  :iips (nreverse iips))))
 
 (defun basic-network (&key (capacity 2) (enabled nil))
   (make-network
@@ -142,6 +212,107 @@
       (check (/= (packet-sequence left) (packet-sequence right))
              "Fan-out deliveries did not receive distinct sequences."))))
 
+(defun test-fixed-worker-pool-is-bounded-and-reused ()
+  (reset-gate-state)
+  (let ((runtime (make-runtime (gated-network))))
+    (unwind-protect
+         (progn
+           (start-runtime runtime)
+           (check (bt:wait-on-semaphore *gate-started-semaphore* :timeout 2)
+                  "The first fixed-pool worker did not start.")
+           (check (bt:wait-on-semaphore *gate-started-semaphore* :timeout 2)
+                  "The second fixed-pool worker did not start.")
+           (sleep 0.05)
+           (check (= 2 (bt:with-lock-held (*gate-lock*) *gate-peak*))
+                  "The runtime exceeded or failed to reach its concurrency bound.")
+           (let ((workers
+                   (bt:with-lock-held ((quasar.fbp::runtime-lock runtime))
+                     (copy-list (quasar.fbp::runtime-worker-threads runtime)))))
+             (check (= 2 (length workers))
+                    "The runtime did not create exactly two persistent workers.")
+             (bt:signal-semaphore *gate-semaphore*)
+             (bt:signal-semaphore *gate-semaphore*)
+             (check (bt:wait-on-semaphore *gate-started-semaphore* :timeout 2)
+                    "A persistent worker did not accept the third activation.")
+             (check (equal workers
+                           (bt:with-lock-held ((quasar.fbp::runtime-lock runtime))
+                             (copy-list
+                              (quasar.fbp::runtime-worker-threads runtime))))
+                    "The runtime replaced workers instead of reusing its fixed pool."))
+           (bt:signal-semaphore *gate-semaphore*)
+           (check (wait-until
+                   (lambda ()
+                     (bt:with-lock-held ((quasar.fbp::runtime-lock runtime))
+                       (zerop (quasar.fbp::runtime-in-flight runtime)))))
+                  "The fixed worker pool did not drain."))
+      (loop repeat 4 do (bt:signal-semaphore *gate-semaphore*))
+      (ignore-errors (stop-runtime runtime)))
+    (check (null (quasar.fbp::runtime-worker-threads runtime))
+           "Stopped runtime retained worker handles.")))
+
+(defun test-worker-failure-stops-and-drains-pool ()
+  (reset-gate-state)
+  (let ((runtime (make-runtime (gated-network :include-failure t))))
+    (unwind-protect
+         (progn
+           (start-runtime runtime)
+           (check (wait-until
+                   (lambda ()
+                     (bt:with-lock-held (*gate-lock*) (plusp *gate-active*))))
+                  "The gated activation never entered a worker.")
+           (check (wait-until
+                   (lambda ()
+                     (bt:with-lock-held ((quasar.fbp::runtime-lock runtime))
+                       (quasar.fbp::runtime-stop-p runtime))))
+                  "A worker failure did not request runtime stop.")
+           (bt:signal-semaphore *gate-semaphore*)
+           (bt:signal-semaphore *gate-semaphore*)
+           (check (wait-until
+                   (lambda () (eq (runtime-status runtime) :failed)))
+                  "The runtime did not report its worker failure.")
+           (stop-runtime runtime)
+           (check (and (null (quasar.fbp::runtime-thread runtime))
+                       (null (quasar.fbp::runtime-worker-threads runtime))
+                       (zerop (quasar.fbp::runtime-in-flight runtime)))
+                  "Failed runtime did not join and clear its threads."))
+      (loop repeat 4 do (bt:signal-semaphore *gate-semaphore*))
+      (ignore-errors (stop-runtime runtime)))))
+
+(defun test-worker-pool-start-failure-rolls-back ()
+  (let ((runtime (make-runtime (gated-network)))
+        (calls 0)
+        (real-factory quasar.fbp::*runtime-thread-factory*))
+    (let ((quasar.fbp::*runtime-thread-factory*
+            (lambda (function &key name)
+              (incf calls)
+              (when (= calls 2)
+                (error "intentional thread start failure"))
+              (funcall real-factory function :name name))))
+      (check (signals-p 'error (lambda () (start-runtime runtime)))
+             "A partial worker-pool startup did not fail."))
+    (check (and (null (quasar.fbp::runtime-thread runtime))
+                (null (quasar.fbp::runtime-worker-threads runtime))
+                (zerop (quasar.fbp::runtime-in-flight runtime))
+                (loop for instance being the hash-values
+                        of (quasar.fbp::runtime-instances runtime)
+                      never (quasar.fbp::component-instance-busy-p instance)))
+           "Thread-start failure did not roll back scheduler claims and handles.")))
+
+(defun test-scheduler-failure-stops-and-joins-pool ()
+  (let ((runtime (make-runtime (fanout-network 1))))
+    (unwind-protect
+         (progn
+           (start-runtime runtime)
+           (check (wait-until
+                   (lambda () (eq (runtime-status runtime) :failed)))
+                  "A scheduler-side budget failure did not fail the runtime.")
+           (stop-runtime runtime)
+           (check (and (null (quasar.fbp::runtime-thread runtime))
+                       (null (quasar.fbp::runtime-worker-threads runtime))
+                       (zerop (quasar.fbp::runtime-in-flight runtime)))
+                  "Scheduler failure abandoned worker threads or in-flight work."))
+      (ignore-errors (stop-runtime runtime)))))
+
 (defun test-self-trust-is-rejected ()
   (check (signals-p 'sandbox-denied
                     (lambda ()
@@ -213,7 +384,21 @@
     (check (search "QUASAR_STARINTEL_ALLOWED_OPERATIONS=" unit)
            "The user unit omitted its host-owned operation allowlist.")
     (check (search "LoadCredential=\"starintel-api:" unit)
-           "The user unit omitted its systemd credential reference.")))
+           "The user unit omitted its systemd credential reference."))
+  (let ((network
+          (make-network
+           :id "secret-reference-authority"
+           :components (list (make-component-spec :id "secret" :type "test/secret-input"))
+           :iips (list (make-iip-spec :value "credential:unapproved"
+                                     :to "secret" :in "secret")))))
+    (check (signals-p
+            'validation-error
+            (lambda ()
+              (automation-plan network
+                               :executable "/bin/true"
+                               :endpoint "http://127.0.0.1:5000"
+                               :credential-reference "credential:starintel-api")))
+           "An unapproved secret-input credential reference passed deployment planning.")))
 
 (defun test-manifest-node-dispatch-when-control-loaded ()
   (let ((register
@@ -223,10 +408,29 @@
   (when (and register (fboundp register))
     (let* ((manifest
              (jsown:parse
-              "{\"schema\":\"starintel-client-manifest-v1\",\"operations\":[{\"operation_id\":\"documents.get\",\"method\":\"get\",\"path\":\"/documents/:id\",\"openapi_path\":\"/documents/{id}\",\"authority\":\"api-key\",\"scopes\":[\"documents:read\"],\"path_parameters\":[\"id\"],\"query_parameters\":[],\"request_schema\":null,\"responses\":[{\"status\":200,\"schema\":{\"type\":\"object\"}}]}],\"fbp_nodes\":[{\"id\":\"starintel.operation/documents.get\",\"component\":\"starintel.operation\",\"operation_id\":\"documents.get\",\"label\":\"Get document\",\"category\":\"StarIntel API\",\"inputs\":[{\"name\":\"id\",\"source\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}}],\"outputs\":[{\"name\":\"status-200\",\"status\":200,\"schema\":{\"type\":\"object\"}}],\"config_schema\":{\"type\":\"object\",\"properties\":{\"operation\":{\"const\":\"documents.get\"},\"credential_reference\":{\"type\":\"string\"}}}}]}"))
+              "{\"schema\":\"starintel-client-manifest-v1\",\"operations\":[{\"operation_id\":\"documents.get\",\"method\":\"get\",\"path\":\"/documents/:id\",\"openapi_path\":\"/documents/{id}\",\"authority\":\"authenticated\",\"scopes\":[\"documents:read\"],\"path_parameters\":[\"id\"],\"query_parameters\":[],\"request_schema\":null,\"responses\":[{\"status\":200,\"schema\":{\"type\":\"object\"}}]}],\"fbp_nodes\":[{\"id\":\"starintel.operation/documents.get\",\"component\":\"starintel.operation\",\"operation_id\":\"documents.get\",\"method\":\"get\",\"path\":\"/documents/:id\",\"openapi_path\":\"/documents/{id}\",\"authority\":\"authenticated\",\"path_parameters\":[\"id\"],\"query_parameters\":[],\"label\":\"Get document\",\"category\":\"StarIntel API\",\"inputs\":[{\"name\":\"id\",\"source\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}}],\"outputs\":[{\"name\":\"status-200\",\"status\":200,\"schema\":{\"type\":\"object\"}}],\"config_schema\":{\"type\":\"object\",\"properties\":{\"operation\":{\"const\":\"documents.get\"},\"credential_reference\":{\"type\":\"string\"}}}}]}"))
            (called nil))
       (unwind-protect
-           (multiple-value-bind (grants operations)
+           (progn
+             (let ((descriptor
+                     (first (test-array-values (jsown:val manifest "fbp_nodes")))))
+               (dolist (field '("method" "path" "openapi_path" "authority"
+                                "path_parameters" "query_parameters"))
+                 (let ((original (jsown:val descriptor field)))
+                   (set-json-test-value
+                    descriptor field (if (stringp original) "mismatch" :null))
+                   (check (signals-p
+                           'error
+                           (lambda ()
+                             (uiop:symbol-call
+                              :quasar.fbp.control
+                              :register-starintel-operation-nodes
+                              :manifest manifest
+                              :allowed-operations '("documents.get"))))
+                          "Divergent descriptor ~A metadata was registered."
+                          field)
+                   (set-json-test-value descriptor field original))))
+             (multiple-value-bind (grants operations)
                (uiop:symbol-call :quasar.fbp.control
                                  :register-starintel-operation-nodes
                                  :manifest manifest
@@ -277,8 +481,167 @@
                (check (= 1 (step-runtime runtime))
                       "Typed manifest operation did not execute.")
                (check (string= called "documents.get")
-                      "Dynamic operation processor lost its immutable operation id.")))
+                      "Dynamic operation processor lost its immutable operation id."))))
         (uiop:symbol-call :quasar.fbp.control :clear-starintel-operation-nodes))))))
+
+(defun test-starintel-adapter-authority-secrets-and-query-booleans ()
+  (let ((maker
+          (and (find-package "QUASAR.FBP.CONTROL")
+               (find-symbol "MAKE-STARINTEL-OPERATION-SERVICE"
+                            "QUASAR.FBP.CONTROL"))))
+    (when (and maker (fboundp maker))
+      (let* ((document
+               (jsown:parse
+                "{\"operations\":[{\"operation_id\":\"public.get\",\"method\":\"get\",\"path\":\"/public\",\"openapi_path\":\"/public\",\"authority\":\"public\",\"path_parameters\":[],\"query_parameters\":[{\"name\":\"enabled\"},{\"name\":\"force\"}],\"request_schema\":null},{\"operation_id\":\"bootstrap.post\",\"method\":\"post\",\"path\":\"/bootstrap\",\"openapi_path\":\"/bootstrap\",\"authority\":\"bootstrap\",\"path_parameters\":[],\"query_parameters\":[],\"request_schema\":null},{\"operation_id\":\"secure.post\",\"method\":\"post\",\"path\":\"/secure\",\"openapi_path\":\"/secure\",\"authority\":\"authenticated\",\"path_parameters\":[],\"query_parameters\":[],\"request_schema\":{\"type\":\"object\",\"properties\":{\"payload\":{\"type\":\"object\",\"properties\":{\"password\":{\"type\":\"string\",\"writeOnly\":true},\"visible\":{\"type\":\"string\"}}},\"items\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"token\":{\"type\":\"string\",\"x-starintel-secret\":true}}}}}}},{\"operation_id\":\"admin.get\",\"method\":\"get\",\"path\":\"/admin\",\"openapi_path\":\"/admin\",\"authority\":\"administrator\",\"path_parameters\":[],\"query_parameters\":[],\"request_schema\":null},{\"operation_id\":\"unknown.get\",\"method\":\"get\",\"path\":\"/unknown\",\"openapi_path\":\"/unknown\",\"authority\":\"api-key\",\"path_parameters\":[],\"query_parameters\":[],\"request_schema\":{\"type\":\"object\",\"properties\":{\"token\":{\"type\":\"string\",\"writeOnly\":true}}}}]}"))
+             (operations (jsown:val document "operations"))
+             (allowed-operations
+               '("public.get" "bootstrap.post" "secure.post" "admin.get"
+                 "unknown.get"))
+             (allowed-references
+               '("credential:api" "credential:body" "credential:item"))
+             (resolved nil)
+             (calls nil)
+             (requester
+               (lambda (url &rest options)
+                 (push (cons url options) calls)
+                 (values "{\"ok\":true}" 200)))
+             (resolver
+               (lambda (reference)
+                 (push reference resolved)
+                 (cond
+                   ((string= reference "credential:api") "api-secret")
+                   ((string= reference "credential:body") "body-secret")
+                   ((string= reference "credential:item") "item-secret"))))
+             (service
+               (funcall maker
+                        :endpoint "http://127.0.0.1:5000"
+                        :operations operations
+                        :allowed-operations allowed-operations
+                        :allowed-credential-references allowed-references
+                        :credential-resolver resolver
+                        :requester requester
+                        :authorization-header "X-Star-API-Key"
+                        :authorization-prefix "Key ")))
+        (funcall service "public.get"
+                 (jsown:parse "{\"enabled\":false,\"force\":true}")
+                 '(:credential-reference "credential:denied"))
+        (let* ((options (cdr (first calls)))
+               (headers (getf options :headers))
+               (parameters (getf options :parameters)))
+          (check (null resolved)
+                 "A public operation resolved a configured credential.")
+          (check (not (assoc "authorization" headers :test #'string-equal))
+                 "A public operation received an authorization header.")
+          (check (not (assoc "X-Star-API-Key" headers :test #'string-equal))
+                 "A public operation received the configured API header.")
+          (check (not (assoc "X-Star-Bootstrap-Secret" headers
+                             :test #'string-equal))
+                 "A public operation received a bootstrap secret header.")
+          (check (string= "false" (cdr (assoc "enabled" parameters
+                                               :test #'string=)))
+                 "A false query boolean was not encoded as lowercase false.")
+          (check (string= "true" (cdr (assoc "force" parameters
+                                              :test #'string=)))
+                 "A true query boolean was not encoded as lowercase true."))
+        (funcall service "bootstrap.post" (jsown:parse "{}")
+                 '(:credential-reference "credential:api"))
+        (let ((headers (getf (cdr (first calls)) :headers)))
+          (check (string= "api-secret"
+                          (cdr (assoc "X-Star-Bootstrap-Secret" headers
+                                      :test #'string-equal)))
+                 "A bootstrap operation omitted its raw bootstrap header.")
+          (check (not (assoc "X-Star-API-Key" headers :test #'string-equal))
+                 "A bootstrap operation received the configured API header."))
+        (funcall service "secure.post"
+                 (jsown:parse
+                  "{\"payload\":{\"password\":\"credential:body\",\"visible\":\"plain\"},\"items\":[{\"token\":\"credential:item\"}]}")
+                 '(:credential-reference "credential:api"))
+        (let* ((options (cdr (first calls)))
+               (headers (getf options :headers))
+               (body (jsown:parse (getf options :content)))
+               (payload (jsown:val body "payload"))
+               (items (jsown:val body "items"))
+               (item (first (test-array-values items))))
+          (check (string= "Key api-secret"
+                          (cdr (assoc "X-Star-API-Key" headers
+                                      :test #'string-equal)))
+                 "An authenticated operation omitted configured authorization.")
+          (check (string= "body-secret"
+                          (jsown:val payload "password"))
+                 "A nested writeOnly request credential was not resolved.")
+          (check (string= "plain"
+                          (jsown:val payload "visible"))
+                 "A non-secret nested request value changed.")
+          (check (string= "item-secret"
+                          (jsown:val item "token"))
+                 "A secret request credential inside an array was not resolved."))
+        (funcall service "admin.get" (jsown:parse "{}")
+                 '(:credential-reference "credential:api"))
+        (check (string= "Key api-secret"
+                        (cdr (assoc "X-Star-API-Key"
+                                    (getf (cdr (first calls)) :headers)
+                                    :test #'string-equal)))
+               "An administrator operation omitted configured authorization.")
+        (let ((resolver-called nil)
+              (requester-called nil))
+          (let ((denied-service
+                  (funcall maker
+                           :endpoint "http://127.0.0.1:5000"
+                           :operations operations
+                           :allowed-operations '("secure.post")
+                           :allowed-credential-references '("credential:api")
+                           :credential-resolver
+                           (lambda (reference)
+                             (declare (ignore reference))
+                             (setf resolver-called t)
+                             "must-not-resolve")
+                           :requester
+                           (lambda (&rest arguments)
+                             (declare (ignore arguments))
+                             (setf requester-called t)
+                             (values "{}" 200)))))
+            (check (signals-p
+                    'error
+                    (lambda ()
+                      (funcall denied-service "secure.post"
+                               (jsown:parse
+                                "{\"payload\":{\"password\":\"credential:denied\"}}")
+                               '(:credential-reference "credential:api"))))
+                   "A denied nested secret reference reached dispatch.")
+            (check (not resolver-called)
+                   "A denied nested secret reference reached the resolver.")
+            (check (not requester-called)
+                   "A denied nested secret reference reached the network.")))
+        (let ((resolver-called nil)
+              (requester-called nil))
+          (let ((unknown-service
+                  (funcall maker
+                           :endpoint "http://127.0.0.1:5000"
+                           :operations operations
+                           :allowed-operations '("unknown.get")
+                           :allowed-credential-references '("credential:api")
+                           :credential-resolver
+                           (lambda (reference)
+                             (declare (ignore reference))
+                             (setf resolver-called t)
+                             "must-not-resolve")
+                           :requester
+                           (lambda (&rest arguments)
+                             (declare (ignore arguments))
+                             (setf requester-called t)
+                             (values "{}" 200)))))
+            (check (signals-p
+                    'error
+                    (lambda ()
+                      (funcall unknown-service "unknown.get"
+                               (jsown:parse
+                                "{\"token\":\"credential:api\"}")
+                               '(:credential-reference "credential:api"))))
+                   "An operation with unknown authority reached dispatch.")
+            (check (not resolver-called)
+                   "Unknown authority resolved a credential.")
+            (check (not requester-called)
+                   "Unknown authority reached the network.")))))))
 
 (defun run-fbp-tests ()
   (dolist (test '(test-validation-and-iip
@@ -287,11 +650,16 @@
                   test-sandbox-denial
                   test-lossless-atomic-backpressure
                   test-fanout-budget-counts-deliveries
+                  test-fixed-worker-pool-is-bounded-and-reused
+                  test-worker-failure-stops-and-drains-pool
+                  test-worker-pool-start-failure-rolls-back
+                  test-scheduler-failure-stops-and-joins-pool
                   test-self-trust-is-rejected
                   test-literal-secret-is-rejected
                   test-profile-values-are-inert
                   test-installer-no-secret
-                  test-manifest-node-dispatch-when-control-loaded))
+                  test-manifest-node-dispatch-when-control-loaded
+                  test-starintel-adapter-authority-secrets-and-query-booleans))
     (funcall test))
-  (format t "~&Quasar FBP: 11 tests passed.~%")
+  (format t "~&Quasar FBP: 16 tests passed.~%")
   t)

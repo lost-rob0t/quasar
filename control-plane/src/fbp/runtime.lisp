@@ -24,6 +24,14 @@
   (inputs nil :type list)
   (emissions nil :type list))
 
+(defstruct activation-completion
+  activation
+  condition)
+
+(defparameter *runtime-thread-factory*
+  (lambda (function &key name)
+    (bt:make-thread function :name name)))
+
 (defstruct (runtime (:constructor %make-runtime))
   network
   (status :created)
@@ -42,6 +50,11 @@
   (started-at (get-internal-real-time) :type integer)
   thread
   (worker-threads nil :type list)
+  (work-queue nil :type list)
+  (completion-queue nil :type list)
+  (work-semaphore (bt:make-semaphore :count 0))
+  (scheduler-semaphore (bt:make-semaphore :count 0))
+  (workers-stop-signaled-p nil)
   (in-flight 0 :type integer)
   worker-error
   (stop-p nil)
@@ -370,90 +383,245 @@ emission set.  A blocked commit remains pending and is never reprocessed."
                   (return)))))
     fired))
 
-(defun prune-worker-threads (runtime)
-  (setf (runtime-worker-threads runtime)
-        (remove-if-not #'bt:thread-alive-p (runtime-worker-threads runtime))))
+(defun queue-append (queue value)
+  (nconc queue (list value)))
 
-(defun launch-activation-worker (runtime activation)
-  (let ((thread
-          (bt:make-thread
-           (lambda ()
-             (handler-case
-                 (progn
-                   (evaluate-activation runtime activation)
-                   (bt:with-lock-held ((runtime-lock runtime))
-                     (if (runtime-stop-p runtime)
-                         (setf (component-instance-busy-p
-                                (activation-instance activation)) nil)
-                         (setf (component-instance-pending-activation
-                                (activation-instance activation)) activation))
-                     (decf (runtime-in-flight runtime))))
-               (error (condition)
-                 (bt:with-lock-held ((runtime-lock runtime))
-                   (setf (component-instance-busy-p
-                          (activation-instance activation)) nil
-                         (runtime-worker-error runtime) condition)
-                   (decf (runtime-in-flight runtime))))))
-           :name "quasar-fbp-activation")))
+(defun cancel-activation (activation)
+  (let ((instance (activation-instance activation)))
+    (setf (component-instance-busy-p instance) nil
+          (component-instance-pending-activation instance) nil)))
+
+(defun cancel-queued-work-locked (runtime)
+  (dolist (activation (runtime-work-queue runtime))
+    (cancel-activation activation)
+    (decf (runtime-in-flight runtime)))
+  (setf (runtime-work-queue runtime) nil))
+
+(defun cancel-pending-activations-locked (runtime)
+  (maphash
+   (lambda (id instance)
+     (declare (ignore id))
+     (when (component-instance-pending-activation instance)
+       (setf (component-instance-pending-activation instance) nil
+             (component-instance-busy-p instance) nil)))
+   (runtime-instances runtime)))
+
+(defun signal-worker-stop (runtime)
+  "Wake each persistent worker exactly once after stop has been requested."
+  (let ((count 0))
     (bt:with-lock-held ((runtime-lock runtime))
-      (push thread (runtime-worker-threads runtime)))
-    thread))
+      (unless (runtime-workers-stop-signaled-p runtime)
+        (setf (runtime-workers-stop-signaled-p runtime) t
+              count (length (runtime-worker-threads runtime)))))
+    (loop repeat count
+          do (bt:signal-semaphore (runtime-work-semaphore runtime)))
+    (bt:signal-semaphore (runtime-scheduler-semaphore runtime))))
+
+(defun request-runtime-stop (runtime)
+  "Request cooperative shutdown without waiting for any thread."
+  (bt:with-lock-held ((runtime-lock runtime))
+    (setf (runtime-stop-p runtime) t)
+    (unless (eq (runtime-status runtime) :failed)
+      (setf (runtime-status runtime) :stopping))
+    (cancel-queued-work-locked runtime)
+    (cancel-pending-activations-locked runtime))
+  (signal-worker-stop runtime)
+  runtime)
+
+(defun take-work (runtime)
+  (bt:with-lock-held ((runtime-lock runtime))
+    (let ((activation (pop (runtime-work-queue runtime))))
+      (values activation (runtime-stop-p runtime)))))
+
+(defun publish-completion (runtime completion)
+  (bt:with-lock-held ((runtime-lock runtime))
+    (setf (runtime-completion-queue runtime)
+          (queue-append (runtime-completion-queue runtime) completion)))
+  (bt:signal-semaphore (runtime-scheduler-semaphore runtime)))
+
+(defun activation-worker-loop (runtime)
+  (loop
+    (bt:wait-on-semaphore (runtime-work-semaphore runtime))
+    (multiple-value-bind (activation stopping-p) (take-work runtime)
+      (cond
+        (activation
+         (publish-completion
+          runtime
+          (handler-case
+              (progn
+                (evaluate-activation runtime activation)
+                (make-activation-completion :activation activation))
+            (error (condition)
+              (make-activation-completion :activation activation
+                                          :condition condition)))))
+        (stopping-p
+         (return))))))
+
+(defun join-threads (threads)
+  "Join THREADS without holding a runtime or manager lock."
+  (let ((current (bt:current-thread)))
+    (dolist (thread threads)
+      (when (and thread (not (eq thread current)))
+        (bt:join-thread thread)))))
+
+(defun start-worker-pool (runtime)
+  "Start the complete fixed-size pool before the scheduler can claim inputs."
+  (let ((started nil)
+        (count (runtime-limit runtime :concurrency 4)))
+    (handler-case
+        (dotimes (index count)
+          (let ((thread
+                  (funcall *runtime-thread-factory*
+                           (lambda () (activation-worker-loop runtime))
+                           :name (format nil "quasar-fbp-worker-~D" index))))
+            (push thread started)
+            (bt:with-lock-held ((runtime-lock runtime))
+              (setf (runtime-worker-threads runtime) (reverse started)))))
+      (error (condition)
+        (request-runtime-stop runtime)
+        (join-threads started)
+        (bt:with-lock-held ((runtime-lock runtime))
+          (setf (runtime-worker-threads runtime) nil))
+        (error condition)))
+    (nreverse started)))
+
+(defun drain-completions-locked (runtime)
+  "Stage successful completions, or cancel all work after the first failure."
+  (let* ((completions (prog1 (runtime-completion-queue runtime)
+                        (setf (runtime-completion-queue runtime) nil)))
+         (condition (or (runtime-worker-error runtime)
+                        (loop for completion in completions
+                              thereis (activation-completion-condition completion)))))
+    (when condition
+      (setf (runtime-worker-error runtime) condition
+            (runtime-stop-p runtime) t)
+      (cancel-queued-work-locked runtime)
+      (cancel-pending-activations-locked runtime))
+    (dolist (completion completions)
+      (let* ((activation (activation-completion-activation completion))
+             (instance (activation-instance activation)))
+        (decf (runtime-in-flight runtime))
+        (if (or condition (runtime-stop-p runtime))
+            (cancel-activation activation)
+            (setf (component-instance-pending-activation instance) activation))))
+    (values (not (null completions)) condition)))
+
+(defun dispatch-ready-activations-locked (runtime)
+  (let ((count 0))
+    (loop while (< (runtime-in-flight runtime)
+                   (runtime-limit runtime :concurrency 4))
+          for activation = (claim-one-ready-activation runtime)
+          while activation
+          do (incf (runtime-in-flight runtime))
+             (incf count)
+             (setf (runtime-work-queue runtime)
+                   (queue-append (runtime-work-queue runtime) activation)))
+    count))
+
+(defun signal-work (runtime count)
+  (loop repeat count
+        do (bt:signal-semaphore (runtime-work-semaphore runtime))))
+
+(defun await-in-flight (runtime)
+  "Drain worker completions after stop/failure until no activation is running."
+  (loop
+    (let ((done nil))
+      (bt:with-lock-held ((runtime-lock runtime))
+        (drain-completions-locked runtime)
+        (setf done (zerop (runtime-in-flight runtime))))
+      (when done (return))
+      (bt:wait-on-semaphore (runtime-scheduler-semaphore runtime) :timeout 0.05))))
 
 (defun runtime-loop (runtime)
-  (setf (runtime-status runtime) :running)
-  (runtime-record runtime :run-started)
+  (bt:with-lock-held ((runtime-lock runtime))
+    (setf (runtime-status runtime) :running)
+    (runtime-record runtime :run-started))
   (handler-case
       (loop
-        (let ((launch nil)
-              (progress nil)
+        (let ((progress nil)
+              (dispatch-count 0)
               (done nil)
               (worker-error nil))
           (bt:with-lock-held ((runtime-lock runtime))
-            (setf worker-error (runtime-worker-error runtime))
-            (when worker-error (setf (runtime-stop-p runtime) t))
-            (loop while (commit-one-pending-activation runtime)
-                  do (setf progress t))
+            (multiple-value-bind (completed condition)
+                (drain-completions-locked runtime)
+              (setf progress completed
+                    worker-error condition))
             (unless (runtime-stop-p runtime)
-              (loop while (< (runtime-in-flight runtime)
-                             (runtime-limit runtime :concurrency 4))
-                    for activation = (claim-one-ready-activation runtime)
-                    while activation
-                    do (incf (runtime-in-flight runtime))
-                       (push activation launch)))
+              (loop while (commit-one-pending-activation runtime)
+                    do (setf progress t))
+              (setf dispatch-count (dispatch-ready-activations-locked runtime)))
             (setf done (and (runtime-stop-p runtime)
                             (zerop (runtime-in-flight runtime)))))
           (when worker-error (error worker-error))
-          (dolist (activation (nreverse launch))
-            (launch-activation-worker runtime activation))
+          (signal-work runtime dispatch-count)
           (when (> (runtime-elapsed-seconds runtime)
                    (runtime-limit runtime :seconds 3600))
             (error 'sandbox-denied :code "fbp.time-limit"
                    :message "Workflow wall-clock limit exceeded."))
           (when done (return))
-          (unless (or progress launch) (sleep 0.001))))
+          (unless (or progress (plusp dispatch-count))
+            (bt:wait-on-semaphore (runtime-scheduler-semaphore runtime)
+                                  :timeout 0.05))))
     (error (condition)
-      (setf (runtime-status runtime) :failed)
-      (runtime-record runtime :run-failed :message (princ-to-string condition))))
-  (unless (eq (runtime-status runtime) :failed)
-    (setf (runtime-status runtime) :stopped)
-    (runtime-record runtime :run-stopped)))
+      (bt:with-lock-held ((runtime-lock runtime))
+        (setf (runtime-status runtime) :failed
+              (runtime-worker-error runtime) condition)
+        (runtime-record runtime :run-failed :message (princ-to-string condition)))
+      (request-runtime-stop runtime)))
+  (request-runtime-stop runtime)
+  (await-in-flight runtime)
+  (let ((workers (bt:with-lock-held ((runtime-lock runtime))
+                   (copy-list (runtime-worker-threads runtime)))))
+    (join-threads workers))
+  (bt:with-lock-held ((runtime-lock runtime))
+    (setf (runtime-worker-threads runtime) nil)
+    (unless (eq (runtime-status runtime) :failed)
+      (setf (runtime-status runtime) :stopped)
+      (runtime-record runtime :run-stopped))))
 
 (defun start-runtime (runtime &key (background t))
   (when (member (runtime-status runtime) '(:running :starting))
     (return-from start-runtime runtime))
-  (setf (runtime-stop-p runtime) nil
-        (runtime-status runtime) :starting)
-  (if background
-      (setf (runtime-thread runtime)
-            (bt:make-thread (lambda () (runtime-loop runtime))
-                            :name (format nil "quasar-fbp-~A"
-                                          (network-id (runtime-network runtime)))))
-      (runtime-loop runtime))
+  (bt:with-lock-held ((runtime-lock runtime))
+    (setf (runtime-stop-p runtime) nil
+          (runtime-worker-error runtime) nil
+          (runtime-workers-stop-signaled-p runtime) nil
+          (runtime-work-queue runtime) nil
+          (runtime-completion-queue runtime) nil
+          (runtime-in-flight runtime) 0
+          (runtime-status runtime) :starting))
+  (handler-case
+      (progn
+        (start-worker-pool runtime)
+        (if background
+            (setf (runtime-thread runtime)
+                  (funcall *runtime-thread-factory*
+                           (lambda () (runtime-loop runtime))
+                           :name (format nil "quasar-fbp-~A"
+                                         (network-id (runtime-network runtime)))))
+            (runtime-loop runtime)))
+    (error (condition)
+      (bt:with-lock-held ((runtime-lock runtime))
+        (setf (runtime-status runtime) :failed))
+      (request-runtime-stop runtime)
+      (let ((workers (bt:with-lock-held ((runtime-lock runtime))
+                       (copy-list (runtime-worker-threads runtime)))))
+        (join-threads workers))
+      (bt:with-lock-held ((runtime-lock runtime))
+        (setf (runtime-worker-threads runtime) nil
+              (runtime-thread runtime) nil
+              (runtime-in-flight runtime) 0)
+        (maphash (lambda (id instance)
+                   (declare (ignore id))
+                   (setf (component-instance-busy-p instance) nil
+                         (component-instance-pending-activation instance) nil))
+                 (runtime-instances runtime)))
+      (error condition)))
   runtime)
 
 (defun stop-runtime (runtime)
-  (bt:with-lock-held ((runtime-lock runtime))
-    (setf (runtime-stop-p runtime) t))
+  (request-runtime-stop runtime)
   (let ((current (bt:current-thread)))
     (labels ((live-threads ()
                (remove-if-not
@@ -466,14 +634,19 @@ emission set.  A blocked commit remains pending and is never reprocessed."
             while (live-threads)
             do (sleep 0.01))
       (when (live-threads)
-        (setf (runtime-status runtime) :stopping)
+        (bt:with-lock-held ((runtime-lock runtime))
+          (unless (eq (runtime-status runtime) :failed)
+            (setf (runtime-status runtime) :stopping)))
         (error 'fbp-error :code "fbp.stop-timeout"
                :message "Workflow did not stop within five seconds."))))
+  (let ((threads (bt:with-lock-held ((runtime-lock runtime))
+                   (remove nil
+                           (cons (runtime-thread runtime)
+                                 (copy-list (runtime-worker-threads runtime)))))))
+    (join-threads threads))
   (bt:with-lock-held ((runtime-lock runtime))
-    (prune-worker-threads runtime)
-    (when (and (runtime-thread runtime)
-               (not (bt:thread-alive-p (runtime-thread runtime))))
-      (setf (runtime-thread runtime) nil)))
+    (setf (runtime-thread runtime) nil
+          (runtime-worker-threads runtime) nil))
   runtime)
 
 (defun inject-packet (runtime component port value)

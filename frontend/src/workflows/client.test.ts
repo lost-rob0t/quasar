@@ -35,4 +35,30 @@ describe("workflow persistence operations", () => {
       "Workflow id already exists: beta"
     );
   });
+
+  it("refuses to overwrite an existing workflow when creating", () => {
+    const alpha = emptyWorkflow("alpha");
+    const document = {
+      _id: "quasar:fbp:workflow:alpha",
+      dtype: "quasar.fbp.workflow",
+      body: alpha
+    };
+    expect(() => workflowSaveOperations([document], alpha, null)).toThrow(
+      "Workflow id already exists: alpha"
+    );
+  });
+
+  it("canonicalizes a new workflow id before persistence", () => {
+    const workflow = emptyWorkflow();
+    workflow.id = "MiXeD";
+    expect(workflowSaveOperations([], workflow, null)).toMatchObject([
+      {
+        type: "document.create",
+        payload: {
+          _id: "quasar:fbp:workflow:mixed",
+          body: { id: "mixed" }
+        }
+      }
+    ]);
+  });
 });

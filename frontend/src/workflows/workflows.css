@@ -14,7 +14,7 @@
   background: #08121e;
 }
 
-.workflow-toolbar > div:first-child {
+.workflow-toolbar .workflow-identity {
   display: grid;
   min-width: 210px;
 }
@@ -35,7 +35,7 @@
   color: #dce7f2;
 }
 
-.workflow-toolbar > div:first-child input {
+.workflow-toolbar .workflow-identity input {
   padding: 0.2rem 0;
   border: 0;
   background: transparent;

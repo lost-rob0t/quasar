@@ -97,7 +97,12 @@
   (loop for parameter in (array-values (operation-field operation "query_parameters" nil))
         for name = (operation-field parameter "name")
         for value = (quasar.protocol:json-value request name :missing)
-        unless (eq value :missing) collect (cons name (princ-to-string value))))
+        unless (eq value :missing)
+          collect (cons name
+                        (cond
+                          ((eq value t) "true")
+                          ((null value) "false")
+                          (t (princ-to-string value))))))
 
 (defun operation-body (operation request)
   (let ((schema (operation-field operation "request_schema" nil)))
@@ -113,9 +118,106 @@
                     (quasar.protocol:object-set body name value)))))
             (quasar.protocol:json-value request "request" request))))))
 
+(defun credential-reference-value (reference allowed-credential-references
+                                    credential-resolver)
+  "Resolve one exact host-allowed credential reference, never a literal secret."
+  (unless (and (stringp reference)
+               (member reference allowed-credential-references :test #'string=))
+    (error 'quasar.protocol:quasar-error
+           :code "fbp.credential-reference-denied"
+           :message "The host did not allow this credential reference."
+           :details (quasar.protocol:empty-object)))
+  (let ((credential (and credential-resolver
+                         (funcall credential-resolver reference))))
+    (unless (and (stringp credential) (plusp (length credential)))
+      (error 'quasar.protocol:quasar-error
+             :code "fbp.credential-unavailable"
+             :message "The referenced StarIntel credential is unavailable."
+             :details (quasar.protocol:empty-object)))
+    credential))
+
+(defun secret-schema-p (schema)
+  (and (quasar.protocol:object-p schema)
+       (or (operation-field schema "writeOnly" nil)
+           (operation-field schema "x-starintel-secret" nil))))
+
+(defun resolve-request-secret-value (schema value allowed-credential-references
+                                     credential-resolver)
+  "Return VALUE with secret-annotated leaves resolved through the host adapter."
+  (cond
+    ((secret-schema-p schema)
+     (credential-reference-value value allowed-credential-references
+                                 credential-resolver))
+    ((and (quasar.protocol:object-p schema)
+          (quasar.protocol:object-p value))
+     (let ((properties (operation-field schema "properties"
+                                        (quasar.protocol:empty-object)))
+           (result (quasar.protocol:empty-object)))
+       (dolist (name (quasar.protocol:object-keys value) result)
+         (let ((item (quasar.protocol:json-value value name))
+               (item-schema (and (quasar.protocol:object-p properties)
+                                 (quasar.protocol:json-value properties name nil))))
+           (quasar.protocol:object-set
+            result name
+            (if item-schema
+                (resolve-request-secret-value
+                 item-schema item allowed-credential-references credential-resolver)
+                item))))))
+    ((and (quasar.protocol:object-p schema)
+          (string= (operation-field schema "type" "") "array")
+          (listp value))
+     (let ((items (operation-field schema "items" nil)))
+       (if items
+           (mapcar (lambda (item)
+                     (resolve-request-secret-value
+                      items item allowed-credential-references
+                      credential-resolver))
+                   (array-values value))
+           value)))
+    (t value)))
+
+(defun operation-authorization-headers (operation config
+                                        allowed-credential-references
+                                        credential-resolver
+                                        authorization-header
+                                        authorization-prefix)
+  (let ((authority (operation-field operation "authority" "")))
+    (cond
+      ((string= authority "public") nil)
+      ((string= authority "bootstrap")
+       (list
+        (cons "X-Star-Bootstrap-Secret"
+              (credential-reference-value
+               (getf config :credential-reference)
+               allowed-credential-references credential-resolver))))
+      ((member authority '("authenticated" "administrator") :test #'string=)
+       (list
+        (cons authorization-header
+              (concatenate
+               'string authorization-prefix
+               (credential-reference-value
+                (getf config :credential-reference)
+                allowed-credential-references credential-resolver)))))
+      (t
+       (error 'quasar.protocol:quasar-error
+              :code "fbp.unknown-starintel-authority"
+              :message "The StarIntel operation has an unsupported authority."
+              :details (quasar.protocol:empty-object))))))
+
+(defun ensure-supported-operation-authority (operation)
+  (unless (member (operation-field operation "authority" "")
+                  '("public" "bootstrap" "authenticated" "administrator")
+                  :test #'string=)
+    (error 'quasar.protocol:quasar-error
+           :code "fbp.unknown-starintel-authority"
+           :message "The StarIntel operation has an unsupported authority."
+           :details (quasar.protocol:empty-object)))
+  operation)
+
 (defun make-starintel-operation-service (&key endpoint credential-resolver
                                               allowed-operations operations
                                               allowed-credential-references
+                                              (requester #'dex:request)
                                               (authorization-header "authorization")
                                               (authorization-prefix "Bearer "))
   "Create an authenticated adapter that invokes only manifest-listed operations."
@@ -131,45 +233,40 @@
                (find operation-id operation-table
                      :key (lambda (value) (operation-field value "operation_id"))
                      :test #'string=))
-             (request (request-object input))
-             (reference (getf config :credential-reference))
-             (credential nil))
+             (request (request-object input)))
         (unless operation
           (error 'quasar.protocol:quasar-error
                  :code "fbp.unknown-starintel-operation"
                  :message "The operation is absent from the canonical StarIntel manifest."
                  :details (quasar.protocol:empty-object)))
-        (unless (member reference allowed-credential-references :test #'string=)
-          (error 'quasar.protocol:quasar-error
-                 :code "fbp.credential-reference-denied"
-                 :message "The host did not allow this credential reference."
-                 :details (quasar.protocol:empty-object)))
-        (setf credential (and credential-resolver
-                              (funcall credential-resolver reference)))
-        (unless (and (stringp credential) (plusp (length credential)))
-          (error 'quasar.protocol:quasar-error
-                 :code "fbp.credential-unavailable"
-                 :message "The referenced StarIntel credential is unavailable."
-                 :details (quasar.protocol:empty-object)))
+        (ensure-supported-operation-authority operation)
         (let* ((path (operation-path operation request))
                (query (query-pairs operation request))
                (url (endpoint-url validated-endpoint path))
-               (body (operation-body operation request))
-               (headers (list (cons "accept" "application/json")
-                              (cons "content-type" "application/json")
-                              (cons authorization-header
-                                    (concatenate 'string authorization-prefix credential)))))
+               (raw-body (operation-body operation request))
+               (body (and raw-body
+                          (resolve-request-secret-value
+                           (operation-field operation "request_schema") raw-body
+                           allowed-credential-references credential-resolver)))
+               (headers
+                 (append
+                  (list (cons "accept" "application/json")
+                        (cons "content-type" "application/json"))
+                  (operation-authorization-headers
+                   operation config allowed-credential-references
+                   credential-resolver authorization-header
+                   authorization-prefix))))
           (multiple-value-bind (response status)
-              (dex:request url
-                           :method (intern (string-upcase
-                                            (operation-field operation "method"))
-                                           :keyword)
-                           :headers headers
-                           :content (and body (jsown:to-json body))
-                           :parameters query
-                           :connect-timeout 10
-                           :read-timeout 30
-                           :max-redirects 0)
+              (funcall requester url
+                       :method (intern (string-upcase
+                                        (operation-field operation "method"))
+                                       :keyword)
+                       :headers headers
+                       :content (and body (jsown:to-json body))
+                       :parameters query
+                       :connect-timeout 10
+                       :read-timeout 30
+                       :max-redirects 0)
             (values (handler-case (jsown:parse response)
                       (error () response))
                     status)))))))
@@ -210,6 +307,15 @@
       (error "StarIntel descriptor ~A has duplicate ~A names."
              (operation-field descriptor "id") field))))
 
+(defun ensure-descriptor-routing-matches (descriptor operation)
+  "Reject a UI descriptor whose routing metadata differs from its operation."
+  (dolist (field '("method" "path" "openapi_path" "authority"
+                   "path_parameters" "query_parameters"))
+    (unless (equal (operation-field descriptor field :missing)
+                   (operation-field operation field :missing))
+      (error "StarIntel descriptor ~A has non-canonical ~A metadata."
+             (operation-field descriptor "id") field))))
+
 (defun register-starintel-operation-nodes (&key manifest allowed-operations)
   "Register exact host-allowed manifest types and return grants and operations."
   (let* ((nodes (array-values (quasar.protocol:json-value manifest "fbp_nodes")))
@@ -233,6 +339,7 @@
                               "starintel.operation")
                      (string= (operation-field operation-schema "const") operation-id))
           (error "Invalid StarIntel FBP descriptor identity for ~A." operation-id))
+        (ensure-descriptor-routing-matches descriptor operation)
         (ensure-unique-descriptor-ports descriptor "inputs")
         (ensure-unique-descriptor-ports descriptor "outputs")
         (let ((existing (quasar.fbp:find-node-type expected-id :errorp nil)))

@@ -16,16 +16,19 @@ import {
   deploy,
   deploymentPlan,
   applyProfile,
+  deleteWorkflow,
   loadCatalog,
   loadWorkflows,
   profilePlan,
   saveWorkflow,
   startRemote,
+  statusRemote,
   stopRemote,
   validateRemote
 } from "./client";
 import {
   advertisedCatalog,
+  canonicalWorkflowId,
   connectWorkflowInput,
   descriptorForWorkflowNode,
   emptyWorkflow,
@@ -156,7 +159,7 @@ function NodeCard({
         <small>{node.id}</small>
       </header>
       <div className="workflow-ports">
-        <div>
+        <div className="workflow-identity">
           {(descriptor?.inputs || []).map((port) => (
             <button
               key={port.name}
@@ -187,6 +190,7 @@ export default function WorkflowPage() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [workflow, setWorkflow] = useState<Workflow>(() => emptyWorkflow());
   const [persistedId, setPersistedId] = useState<string | null>(null);
+  const [runId, setRunId] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<NodeDescriptor[]>([]);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
@@ -206,7 +210,14 @@ export default function WorkflowPage() {
       .then(([saved, items]) => {
         if (cancelled) return;
         setWorkflows(saved);
-        setWorkflow(saved[0] || emptyWorkflow());
+        setWorkflow(
+          saved[0]
+            ? {
+                ...structuredClone(saved[0]),
+                id: canonicalWorkflowId(saved[0].id)
+              }
+            : emptyWorkflow()
+        );
         setPersistedId(saved[0]?.id || null);
         setCatalog(advertisedCatalog(items));
         setMessage(saved.length ? "Loaded from workspace" : "Ready");
@@ -270,17 +281,95 @@ export default function WorkflowPage() {
   async function save() {
     try {
       setMessage("Saving to workspace…");
-      await saveWorkflow(workflow, persistedId);
+      const savedWorkflow = {
+        ...workflow,
+        id: canonicalWorkflowId(workflow.id)
+      };
+      await saveWorkflow(savedWorkflow, persistedId);
       const next = [
-        ...workflows.filter((item) => item.id !== persistedId && item.id !== workflow.id),
-        workflow
+        ...workflows.filter((item) => item.id !== persistedId && item.id !== savedWorkflow.id),
+        savedWorkflow
       ];
       setWorkflows(next);
-      setPersistedId(workflow.id);
+      setWorkflow(savedWorkflow);
+      setPersistedId(savedWorkflow.id);
       setMessage("Saved to canonical workspace");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     }
+  }
+
+  function selectSavedWorkflow(id: string) {
+    const saved = workflows.find((item) => item.id === id);
+    if (!saved) return;
+    setWorkflow({
+      ...structuredClone(saved),
+      id: canonicalWorkflowId(saved.id)
+    });
+    setPersistedId(saved.id);
+    setSelected(null);
+    setPending(null);
+    setRunId(null);
+    setPlan(null);
+    setMessage(`Loaded ${saved.id}`);
+  }
+
+  function createWorkflow() {
+    let id = "new-workflow";
+    let suffix = 2;
+    const ids = new Set(workflows.map((item) => canonicalWorkflowId(item.id)));
+    while (ids.has(id)) id = `new-workflow-${suffix++}`;
+    setWorkflow(emptyWorkflow(id));
+    setPersistedId(null);
+    setSelected(null);
+    setPending(null);
+    setRunId(null);
+    setPlan(null);
+    setMessage("New workflow");
+  }
+
+  async function removeSavedWorkflow() {
+    if (!persistedId) return;
+    try {
+      const deleting = persistedId;
+      setMessage(`Deleting ${deleting}…`);
+      await deleteWorkflow(deleting);
+      const remaining = workflows.filter((item) => item.id !== deleting);
+      const replacement = remaining[0];
+      setWorkflows(remaining);
+      setWorkflow(
+        replacement
+          ? {
+              ...structuredClone(replacement),
+              id: canonicalWorkflowId(replacement.id)
+            }
+          : emptyWorkflow()
+      );
+      setPersistedId(replacement?.id || null);
+      setSelected(null);
+      setPending(null);
+      setRunId(null);
+      setPlan(null);
+      setMessage(`Deleted ${deleting}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function startWorkflow() {
+    const result = await action("Run", () => startRemote(workflow));
+    if (result && typeof result.id === "string") setRunId(result.id);
+  }
+
+  async function stopWorkflow() {
+    const result = await action("Stop", () =>
+      stopRemote(runId || canonicalWorkflowId(workflow.id))
+    );
+    if (result) setRunId(null);
+  }
+
+  async function inspectWorkflowStatus() {
+    await action("Status", () => statusRemote(runId || canonicalWorkflowId(workflow.id)));
   }
 
   async function action(label: string, run: () => Promise<Record<string, unknown>>) {
@@ -298,11 +387,38 @@ export default function WorkflowPage() {
   return (
     <section className="workflow-page">
       <header className="workflow-toolbar">
+        <label>
+          Saved workflow
+          <select
+            aria-label="Saved workflow"
+            value={persistedId || ""}
+            onChange={(event) => selectSavedWorkflow(event.target.value)}
+          >
+            <option value="">Unsaved workflow</option>
+            {workflows.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.id}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button className="button" onClick={createWorkflow}>
+          <Plus size={15} /> New
+        </button>
+        <button
+          className="button danger"
+          onClick={() => void removeSavedWorkflow()}
+          disabled={!persistedId}
+        >
+          <Trash2 size={15} /> Delete workflow
+        </button>
         <div>
           <span className="eyebrow">Morrison FBP · quasar.fbp.v1</span>
           <input
             value={workflow.id}
-            onChange={(event) => update((next) => ((next.id = event.target.value), next))}
+            onChange={(event) =>
+              update((next) => ((next.id = canonicalWorkflowId(event.target.value)), next))
+            }
             aria-label="Workflow id"
           />
         </div>
@@ -340,13 +456,20 @@ export default function WorkflowPage() {
         </button>
         <button
           className="button primary"
-          onClick={() => action("Run", () => startRemote(workflow))}
+          onClick={() => void startWorkflow()}
           disabled={errors.length > 0}
         >
           <CirclePlay size={15} /> Run
         </button>
-        <button className="button" onClick={() => action("Stop", () => stopRemote(workflow.id))}>
+        <button className="button" onClick={() => void stopWorkflow()} disabled={!workflow.id}>
           <CircleStop size={15} /> Stop
+        </button>
+        <button
+          className="button"
+          onClick={() => void inspectWorkflowStatus()}
+          disabled={!workflow.id}
+        >
+          Status
         </button>
         <button className="button" onClick={() => setSourceOpen((value) => !value)}>
           <Braces size={15} /> Lisp
@@ -668,8 +791,13 @@ export default function WorkflowPage() {
               const file = event.target.files?.[0];
               if (file)
                 void file.text().then((text) => {
-                  setWorkflow(JSON.parse(text) as Workflow);
+                  const imported = JSON.parse(text) as Workflow;
+                  setWorkflow({
+                    ...imported,
+                    id: canonicalWorkflowId(imported.id)
+                  });
                   setPersistedId(null);
+                  setRunId(null);
                 });
             }}
           />

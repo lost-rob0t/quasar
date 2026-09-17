@@ -1,6 +1,6 @@
 import { getControlPlaneOrThrow } from "../control-plane";
 import type { NodeDescriptor, Workflow } from "./model";
-import { builtInCatalog, workflowToLisp } from "./model";
+import { builtInCatalog, canonicalWorkflowId, workflowToLisp } from "./model";
 
 const WORKFLOW_DOCUMENT_ID_PREFIX = "quasar:fbp:workflow:";
 const WORKFLOW_DOCUMENT_TYPE = "quasar.fbp.workflow";
@@ -119,13 +119,15 @@ export function workflowSaveOperations(
   previousId: string | null
 ): JsonObject[] {
   const current = existing.filter(isWorkflowDocument);
-  const desired = workflowDocument(workflow);
+  const canonicalId = canonicalWorkflowId(workflow.id);
+  if (!canonicalId.length) throw new Error("Workflow id cannot be empty");
+  const desired = workflowDocument({ ...workflow, id: canonicalId });
   const target = current.find((document) => document._id === desired._id);
-  if (previousId !== null && previousId !== workflow.id && target) {
-    throw new Error(`Workflow id already exists: ${workflow.id}`);
+  if (target && previousId !== canonicalId) {
+    throw new Error(`Workflow id already exists: ${canonicalId}`);
   }
   const operations: JsonObject[] = [];
-  if (previousId !== null && previousId !== workflow.id) {
+  if (previousId !== null && previousId !== canonicalId) {
     const oldId = workflowDocumentId(previousId);
     if (current.some((document) => document._id === oldId)) {
       operations.push({ type: "document.delete", payload: { id: oldId } });
@@ -183,6 +185,10 @@ export async function startRemote(workflow: Workflow): Promise<Record<string, un
 
 export async function stopRemote(id: string): Promise<Record<string, unknown>> {
   return getControlPlaneOrThrow().send<Record<string, unknown>>("fbp.run.stop", { id });
+}
+
+export async function statusRemote(id: string): Promise<Record<string, unknown>> {
+  return getControlPlaneOrThrow().send<Record<string, unknown>>("fbp.run.status", { id });
 }
 
 export async function deploymentPlan(workflow: Workflow): Promise<Record<string, unknown>> {
