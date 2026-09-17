@@ -61,7 +61,7 @@ case "${language,,}" in
     swipl_bin="$(command -v swipl || true)"
     [[ -n "$swipl_bin" ]] || { printf 'SWI-Prolog runtime unavailable\n' >&2; exit 69; }
     run_isolated "$timeout_bin" --signal=KILL "${seconds}s" \
-      "$swipl_bin" --quiet --no-signals --traditional -f /work/source -t halt
+      "$swipl_bin" --quiet --no-signals --no-packs --no-pce --no-threads -f /work/source -t halt
     ;;
   *)
     printf 'unsupported sandbox language: %s\n' "$language" >&2
