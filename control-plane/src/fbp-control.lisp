@@ -4,15 +4,26 @@
 (defvar *workflow-lock* (bt:make-lock "quasar-fbp-manager"))
 (defvar *runtime-services* nil)
 (defvar *runtime-grants* nil)
+(defvar *runtime-limits* '(:packets 100000 :bytes 67108864 :seconds 3600 :trace 1000
+                           :concurrency 4))
 (defvar *automation-executable* nil)
+(defvar *starintel-node-ids* nil)
+(defvar *starintel-endpoint* nil)
+(defvar *starintel-credential-reference* "credential:starintel-api")
 
-(defun configure-fbp-runtime (&key services grants automation-executable)
+(defun configure-fbp-runtime (&key services grants limits automation-executable
+                                   starintel-endpoint
+                                   (starintel-credential-reference
+                                     "credential:starintel-api"))
   "Install host-owned adapters and grants. Workflow source cannot change these."
   (when (member :all grants)
     (error "Wildcard FBP grants are forbidden."))
   (setf *runtime-services* (copy-list services)
         *runtime-grants* (copy-list grants)
-        *automation-executable* automation-executable)
+        *runtime-limits* (copy-list (or limits *runtime-limits*))
+        *automation-executable* automation-executable
+        *starintel-endpoint* starintel-endpoint
+        *starintel-credential-reference* starintel-credential-reference)
   t)
 
 (defun endpoint-url (endpoint path)
@@ -22,11 +33,20 @@
               path
               (concatenate 'string "/" path))))
 
-(defun manifest-operations (endpoint)
+(defun manifest-document (endpoint)
   (let* ((body (dex:get (endpoint-url endpoint "/client-manifest.json")
-                        :headers '(("accept" . "application/json"))))
+                        :headers '(("accept" . "application/json"))
+                        :max-redirects 0
+                        :connect-timeout 10
+                        :read-timeout 30))
          (document (jsown:parse body)))
-    (quasar.protocol:json-value document "operations")))
+    (unless (string= (quasar.protocol:json-value document "schema" "")
+                     "starintel-client-manifest-v1")
+      (error "Unsupported StarIntel client manifest schema."))
+    document))
+
+(defun manifest-operations (endpoint)
+  (quasar.protocol:json-value (manifest-document endpoint) "operations"))
 
 (defun operation-field (operation name &optional default)
   (quasar.protocol:json-value operation name default))
@@ -55,7 +75,8 @@
             else do (return)))))
 
 (defun operation-path (operation request)
-  (let ((path (operation-field operation "path")))
+  (let ((path (or (operation-field operation "openapi_path" nil)
+                  (operation-field operation "path"))))
     (dolist (name (array-values (operation-field operation "path_parameters" nil)) path)
       (let ((value (quasar.protocol:json-value request name)))
         (unless value
@@ -83,21 +104,24 @@
               (quasar.protocol:object-set body name value))))))))
 
 (defun make-starintel-operation-service (&key endpoint credential-resolver
+                                              allowed-operations operations
                                               (authorization-header "authorization")
                                               (authorization-prefix "Bearer "))
   "Create an authenticated adapter that invokes only manifest-listed operations."
   (let ((validated-endpoint (quasar.fbp::validate-endpoint endpoint))
-        (operations nil))
+        (operation-table (array-values operations)))
     (lambda (operation-id input config)
-      (unless operations
-        (setf operations (array-values (manifest-operations validated-endpoint))))
+      (unless (member operation-id allowed-operations :test #'string=)
+        (error 'quasar.protocol:quasar-error
+               :code "fbp.starintel-operation-denied"
+               :message "The host did not allow this StarIntel operation."
+               :details (quasar.protocol:empty-object)))
       (let* ((operation
-               (find operation-id operations
+               (find operation-id operation-table
                      :key (lambda (value) (operation-field value "operation_id"))
                      :test #'string=))
              (request (request-object input))
-             (reference (or (getf config :credential-reference)
-                            "credential:starintel-api"))
+             (reference (getf config :credential-reference))
              (credential (and credential-resolver
                               (funcall credential-resolver reference))))
         (unless operation
@@ -117,22 +141,129 @@
                (headers (list (cons "accept" "application/json")
                               (cons authorization-header
                                     (concatenate 'string authorization-prefix credential))))
-               (response
-                 (dex:request url
-                              :method (intern (string-upcase
-                                               (operation-field operation "method"))
-                                              :keyword)
-                              :headers headers
-                              :content (and body (jsown:to-json body))
-                              :parameters query)))
-          (handler-case (jsown:parse response)
-            (error () response)))))))
+          (multiple-value-bind (response status)
+              (dex:request url
+                           :method (intern (string-upcase
+                                            (operation-field operation "method"))
+                                           :keyword)
+                           :headers headers
+                           :content (and body (jsown:to-json body))
+                           :parameters query
+                           :connect-timeout 10
+                           :read-timeout 30
+                           :max-redirects 0)
+            (values (handler-case (jsown:parse response)
+                      (error () response))
+                    status))))))))
+
+(defun manifest-value->lisp (value)
+  (cond
+    ((quasar.protocol:object-p value)
+     (loop for key in (quasar.protocol:object-keys value)
+           append (list (intern (string-upcase (substitute #\- #\_ key)) :keyword)
+                        (manifest-value->lisp
+                         (quasar.protocol:json-value value key)))))
+    ((and (consp value) (eq (first value) :array))
+     (mapcar #'manifest-value->lisp (rest value)))
+    (t value)))
+
+(defun descriptor-port (value)
+  (quasar.fbp:make-port-spec
+   :name (operation-field value "name")
+   :schema (manifest-value->lisp (operation-field value "schema" nil))
+   :required-p (and (operation-field value "required" nil) t)
+   :array-p (and (operation-field value "array" nil) t)))
+
+(defun operation-capabilities (operation)
+  (list :starintel-operation
+        (format nil "starintel.operation:~A"
+                (operation-field operation "operation_id"))))
+
+(defun unique-manifest-entry (id values field kind)
+  (let ((matches (remove-if-not
+                  (lambda (value) (string= id (operation-field value field)))
+                  values)))
+    (unless (= (length matches) 1)
+      (error "StarIntel manifest must contain exactly one ~A for ~A." kind id))
+    (first matches)))
+
+(defun ensure-unique-descriptor-ports (descriptor field)
+  (let* ((ports (array-values (operation-field descriptor field)))
+         (names (mapcar (lambda (port) (operation-field port "name")) ports)))
+    (unless (= (length names) (length (remove-duplicates names :test #'string=)))
+      (error "StarIntel descriptor ~A has duplicate ~A names."
+             (operation-field descriptor "id") field))))
+
+(defun register-starintel-operation-nodes (&key manifest allowed-operations)
+  "Register exact host-allowed manifest types and return grants and operations."
+  (let* ((nodes (array-values (quasar.protocol:json-value manifest "fbp_nodes")))
+         (operations (array-values (quasar.protocol:json-value manifest "operations")))
+         (specs nil)
+         (grants nil))
+    (dolist (operation-id allowed-operations)
+      (let* ((operation (unique-manifest-entry
+                         operation-id operations "operation_id" "operation"))
+             (descriptor (unique-manifest-entry
+                          operation-id nodes "operation_id" "descriptor"))
+             (expected-id (format nil "starintel.operation/~A" operation-id))
+             (config-schema (operation-field descriptor "config_schema"))
+             (properties (operation-field config-schema "properties"))
+             (operation-schema (operation-field properties "operation"))
+             (capabilities (operation-capabilities operation)))
+        (unless (and (string= (operation-field descriptor "id") expected-id)
+                     (string= (operation-field descriptor "component")
+                              "starintel.operation")
+                     (string= (operation-field operation-schema "const") operation-id))
+          (error "Invalid StarIntel FBP descriptor identity for ~A." operation-id))
+        (ensure-unique-descriptor-ports descriptor "inputs")
+        (ensure-unique-descriptor-ports descriptor "outputs")
+        (let ((existing (quasar.fbp:find-node-type expected-id :errorp nil)))
+          (when (and existing
+                     (not (member expected-id *starintel-node-ids* :test #'string=)))
+            (error "StarIntel descriptor attempted to replace node type ~A." expected-id)))
+        (setf grants (append capabilities grants))
+        (push
+         (quasar.fbp:make-node-type
+          :id expected-id
+          :label (operation-field descriptor "label")
+          :category (operation-field descriptor "category")
+          :inputs (mapcar #'descriptor-port
+                          (array-values (operation-field descriptor "inputs")))
+          :outputs (mapcar #'descriptor-port
+                           (array-values (operation-field descriptor "outputs")))
+          :capabilities capabilities
+          :config-schema (manifest-value->lisp config-schema)
+          :descriptor descriptor
+          :processor
+          (lambda (inputs context)
+            (let ((request (quasar.protocol:empty-object))
+                  (invoke (quasar.fbp::required-service
+                           context :starintel-operation)))
+              (dolist (input inputs)
+                (quasar.protocol:object-set request (car input) (cdr input)))
+              (multiple-value-bind (body status)
+                  (funcall invoke operation-id request (getf context :config))
+                (let ((port (format nil "status-~D" status)))
+                  (unless (quasar.fbp::port-named
+                           (quasar.fbp:node-type-outputs
+                            (quasar.fbp:find-node-type expected-id)) port)
+                    (error "StarIntel returned undeclared status ~D for ~A."
+                           status operation-id))
+                  (list (cons port (list body)))))))
+         specs)))
+    (dolist (id *starintel-node-ids*) (quasar.fbp:unregister-node-type id))
+    (setf *starintel-node-ids* nil)
+    (dolist (spec (nreverse specs))
+      (quasar.fbp:register-node-type spec)
+      (push (quasar.fbp:node-type-id spec) *starintel-node-ids*))
+    (values (remove-duplicates grants :test #'equal) operations))))
 
 (defun json-key (value)
   (string-downcase (substitute #\_ #\- (symbol-name value))))
 
 (defun json-value (value)
   (cond
+    ((quasar.protocol:object-p value) value)
     ((or (stringp value) (numberp value) (eq value t) (null value)) value)
     ((keywordp value) (string-downcase (symbol-name value)))
     ((and (listp value) (or (null value) (keywordp (first value))))
@@ -190,18 +321,23 @@
          (id (quasar.fbp:network-id network))
          (key (runtime-key envelope id))
          (runtime (make-runtime network :services (services-for-network network)
-                                :grants *runtime-grants*)))
-    (bt:with-lock-held (*workflow-lock*)
-      (let ((old (gethash key *workflow-runtimes*)))
-        (when old (stop-runtime old))
-        (setf (gethash key *workflow-runtimes*) runtime)))
+                                :grants *runtime-grants*
+                                :host-limits *runtime-limits*)))
+    (let ((old nil))
+      (bt:with-lock-held (*workflow-lock*)
+        (setf old (gethash key *workflow-runtimes*))
+        (remhash key *workflow-runtimes*))
+      (when old (stop-runtime old)))
     (start-runtime runtime)
+    (bt:with-lock-held (*workflow-lock*)
+      (setf (gethash key *workflow-runtimes*) runtime))
     (quasar.protocol:json-object
      (cons "id" id)
      (cons "status" "starting"))))
 
 (defun runtime-for (envelope id)
-  (or (gethash (runtime-key envelope id) *workflow-runtimes*)
+  (or (bt:with-lock-held (*workflow-lock*)
+        (gethash (runtime-key envelope id) *workflow-runtimes*))
       (error 'quasar.protocol:quasar-error
              :code "fbp.run-not-found"
              :message (format nil "Workflow run ~A does not exist." id)
@@ -215,13 +351,25 @@
      (cons "trace" (json-value (reverse (runtime-trace runtime)))))))
 
 (defun stop-result (id envelope)
-  (let ((runtime (runtime-for envelope id)))
+  (let ((runtime nil))
+    (bt:with-lock-held (*workflow-lock*)
+      (setf runtime (gethash (runtime-key envelope id) *workflow-runtimes*))
+      (when runtime (remhash (runtime-key envelope id) *workflow-runtimes*)))
+    (unless runtime
+      (error 'quasar.protocol:quasar-error
+             :code "fbp.run-not-found" :message "Workflow run does not exist."
+             :details (quasar.protocol:empty-object)))
     (stop-runtime runtime)
-    (status-result id envelope)))
+    (quasar.protocol:json-object
+     (cons "id" id)
+     (cons "status" (string-downcase (symbol-name (runtime-status runtime)))))))
 
 (defun deployment-result (source apply-p)
   (let* ((network (read-network source))
-         (plan (automation-plan network :executable *automation-executable*)))
+         (plan (automation-plan network :executable *automation-executable*
+                                :endpoint *starintel-endpoint*
+                                :credential-reference
+                                *starintel-credential-reference*)))
     (when apply-p
       (require-operator)
       (apply-automation-plan plan :execute-commands t))
@@ -290,10 +438,12 @@
   plane)
 
 (defun stop-all-workflows ()
-  (bt:with-lock-held (*workflow-lock*)
-    (maphash (lambda (id runtime)
-               (declare (ignore id))
-               (stop-runtime runtime))
-             *workflow-runtimes*)
-    (clrhash *workflow-runtimes*))
+  (let ((runtimes nil))
+    (bt:with-lock-held (*workflow-lock*)
+      (maphash (lambda (id runtime)
+                 (declare (ignore id))
+                 (push runtime runtimes))
+               *workflow-runtimes*)
+      (clrhash *workflow-runtimes*))
+    (dolist (runtime runtimes) (stop-runtime runtime)))
   t)

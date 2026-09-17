@@ -9,30 +9,35 @@ import {
   Search,
   ShieldCheck,
   Trash2,
-  Upload,
+  Upload
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   deploy,
   deploymentPlan,
+  applyProfile,
   loadCatalog,
   loadWorkflows,
-  saveWorkflows,
+  profilePlan,
+  saveWorkflow,
   startRemote,
   stopRemote,
-  validateRemote,
+  validateRemote
 } from "./client";
 import {
   advertisedCatalog,
+  connectWorkflowInput,
   descriptorForWorkflowNode,
   emptyWorkflow,
   STARINTEL_OPERATION_NODE_TYPE,
+  removeWorkflowNode,
+  renameWorkflowNode,
   validateWorkflow,
   workflowNodeFromDescriptor,
   workflowToLisp,
   type NodeDescriptor,
   type Workflow,
-  type WorkflowNode,
+  type WorkflowNode
 } from "./model";
 
 type PendingPort = { node: string; port: string } | null;
@@ -58,7 +63,7 @@ function defaultPacketValue(port: NodeDescriptor["inputs"][number]): unknown {
 function JsonValueEditor({
   label,
   value,
-  onCommit,
+  onCommit
 }: {
   label: string;
   value: unknown;
@@ -105,7 +110,7 @@ function NodeCard({
   onSelect,
   onMove,
   onOutput,
-  onInput,
+  onInput
 }: {
   node: WorkflowNode;
   descriptor?: NodeDescriptor;
@@ -132,7 +137,7 @@ function NodeCard({
           x: event.clientX,
           y: event.clientY,
           left: node.x,
-          top: node.y,
+          top: node.y
         };
         event.currentTarget.setPointerCapture(event.pointerId);
         onSelect();
@@ -141,7 +146,7 @@ function NodeCard({
         if (!drag.current) return;
         onMove(
           Math.max(0, drag.current.left + event.clientX - drag.current.x),
-          Math.max(0, drag.current.top + event.clientY - drag.current.y),
+          Math.max(0, drag.current.top + event.clientY - drag.current.y)
         );
       }}
       onPointerUp={() => (drag.current = null)}
@@ -182,6 +187,7 @@ function NodeCard({
 export default function WorkflowPage() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [workflow, setWorkflow] = useState<Workflow>(() => emptyWorkflow());
+  const [persistedId, setPersistedId] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<NodeDescriptor[]>([]);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
@@ -189,6 +195,9 @@ export default function WorkflowPage() {
   const [message, setMessage] = useState("Ready");
   const [sourceOpen, setSourceOpen] = useState(false);
   const [plan, setPlan] = useState<Record<string, unknown> | null>(null);
+  const [endpoint, setEndpoint] = useState("http://127.0.0.1:5000");
+  const [credentialReference, setCredentialReference] = useState("credential:starintel-api");
+  const [profileShell, setProfileShell] = useState<"sh" | "bash">("sh");
   const importRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -198,36 +207,27 @@ export default function WorkflowPage() {
         if (cancelled) return;
         setWorkflows(saved);
         setWorkflow(saved[0] || emptyWorkflow());
+        setPersistedId(saved[0]?.id || null);
         setCatalog(advertisedCatalog(items));
         setMessage(saved.length ? "Loaded from workspace" : "Ready");
       })
       .catch((error: unknown) => {
-        if (!cancelled)
-          setMessage(error instanceof Error ? error.message : String(error));
+        if (!cancelled) setMessage(error instanceof Error ? error.message : String(error));
       });
     return () => {
       cancelled = true;
     };
   }, []);
-  const descriptors = useMemo(
-    () => new Map(catalog.map((item) => [item.id, item])),
-    [catalog],
-  );
+  const descriptors = useMemo(() => new Map(catalog.map((item) => [item.id, item])), [catalog]);
   const filtered = useMemo(
     () =>
       catalog.filter((item) =>
-        `${item.label} ${item.id} ${item.category}`
-          .toLowerCase()
-          .includes(query.toLowerCase()),
+        `${item.label} ${item.id} ${item.category}`.toLowerCase().includes(query.toLowerCase())
       ),
-    [catalog, query],
+    [catalog, query]
   );
-  const errors = useMemo(
-    () => validateWorkflow(workflow, catalog),
-    [workflow, catalog],
-  );
-  const selectedNode =
-    workflow.nodes.find((node) => node.id === selected) || null;
+  const errors = useMemo(() => validateWorkflow(workflow, catalog), [workflow, catalog]);
+  const selectedNode = workflow.nodes.find((node) => node.id === selected) || null;
   const selectedDescriptor = selectedNode
     ? descriptorForWorkflowNode(selectedNode, descriptors)
     : undefined;
@@ -245,15 +245,14 @@ export default function WorkflowPage() {
           ?.replaceAll(/[^a-z0-9-]/gi, "-") || "node";
       let id = base;
       let number = 2;
-      while (next.nodes.some((node) => node.id === id))
-        id = `${base}-${number++}`;
+      while (next.nodes.some((node) => node.id === id)) id = `${base}-${number++}`;
       next.nodes.push(
         workflowNodeFromDescriptor(
           descriptor,
           id,
           80 + (next.nodes.length % 4) * 230,
-          80 + Math.floor(next.nodes.length / 4) * 190,
-        ),
+          80 + Math.floor(next.nodes.length / 4) * 190
+        )
       );
       setSelected(id);
       return next;
@@ -263,47 +262,32 @@ export default function WorkflowPage() {
   function connect(to: string, input: string) {
     if (!pending || pending.node === to) return;
     update((next) => {
-      next.connections = next.connections.filter(
-        (edge) => !(edge.to === to && edge.in === input),
-      );
-      next.connections.push({
-        id: `${pending.node}:${pending.port}->${to}:${input}`,
-        from: pending.node,
-        out: pending.port,
-        to,
-        in: input,
-        capacity: 16,
-      });
-      return next;
+      return connectWorkflowInput(next, pending.node, pending.port, to, input);
     });
     setPending(null);
   }
 
   async function save() {
-    const next = [
-      ...workflows.filter((item) => item.id !== workflow.id),
-      workflow,
-    ];
     try {
       setMessage("Saving to workspace…");
-      await saveWorkflows(next);
+      await saveWorkflow(workflow, persistedId);
+      const next = [
+        ...workflows.filter((item) => item.id !== persistedId && item.id !== workflow.id),
+        workflow
+      ];
       setWorkflows(next);
+      setPersistedId(workflow.id);
       setMessage("Saved to canonical workspace");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     }
   }
 
-  async function action(
-    label: string,
-    run: () => Promise<Record<string, unknown>>,
-  ) {
+  async function action(label: string, run: () => Promise<Record<string, unknown>>) {
     try {
       setMessage(`${label}…`);
       const result = await run();
-      setMessage(
-        `${label}: ${String(result.status || result.valid || "done")}`,
-      );
+      setMessage(`${label}: ${String(result.status || result.valid || "done")}`);
       return result;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
@@ -318,9 +302,7 @@ export default function WorkflowPage() {
           <span className="eyebrow">Morrison FBP · quasar.fbp.v1</span>
           <input
             value={workflow.id}
-            onChange={(event) =>
-              update((next) => ((next.id = event.target.value), next))
-            }
+            onChange={(event) => update((next) => ((next.id = event.target.value), next))}
             aria-label="Workflow id"
           />
         </div>
@@ -328,12 +310,7 @@ export default function WorkflowPage() {
           <select
             value={workflow.kind}
             onChange={(event) =>
-              update(
-                (next) => (
-                  (next.kind = event.target.value as Workflow["kind"]),
-                  next
-                ),
-              )
+              update((next) => ((next.kind = event.target.value as Workflow["kind"]), next))
             }
           >
             <option value="workflow">Workflow</option>
@@ -346,9 +323,7 @@ export default function WorkflowPage() {
             type="checkbox"
             checked={workflow.enabledAtLogin}
             onChange={(event) =>
-              update(
-                (next) => ((next.enabledAtLogin = event.target.checked), next),
-              )
+              update((next) => ((next.enabledAtLogin = event.target.checked), next))
             }
           />
           start at login
@@ -370,16 +345,10 @@ export default function WorkflowPage() {
         >
           <CirclePlay size={15} /> Run
         </button>
-        <button
-          className="button"
-          onClick={() => action("Stop", () => stopRemote(workflow.id))}
-        >
+        <button className="button" onClick={() => action("Stop", () => stopRemote(workflow.id))}>
           <CircleStop size={15} /> Stop
         </button>
-        <button
-          className="button"
-          onClick={() => setSourceOpen((value) => !value)}
-        >
+        <button className="button" onClick={() => setSourceOpen((value) => !value)}>
           <Braces size={15} /> Lisp
         </button>
       </header>
@@ -394,28 +363,22 @@ export default function WorkflowPage() {
               onChange={(event) => setQuery(event.target.value)}
             />
           </div>
-          {[...new Set(filtered.map((item) => item.category))].map(
-            (category) => (
-              <section key={category}>
-                <h2>{category}</h2>
-                {filtered
-                  .filter((item) => item.category === category)
-                  .map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => addNode(item)}
-                      title={item.id}
-                    >
-                      <Plus size={13} />
-                      <span>
-                        {item.label}
-                        <small>{item.id}</small>
-                      </span>
-                    </button>
-                  ))}
-              </section>
-            ),
-          )}
+          {[...new Set(filtered.map((item) => item.category))].map((category) => (
+            <section key={category}>
+              <h2>{category}</h2>
+              {filtered
+                .filter((item) => item.category === category)
+                .map((item) => (
+                  <button key={item.id} onClick={() => addNode(item)} title={item.id}>
+                    <Plus size={13} />
+                    <span>
+                      {item.label}
+                      <small>{item.id}</small>
+                    </span>
+                  </button>
+                ))}
+            </section>
+          ))}
         </aside>
 
         <main
@@ -465,8 +428,7 @@ export default function WorkflowPage() {
               <Play size={28} />
               <strong>Drop in a process</strong>
               <span>
-                Pick a node from the palette. Click an output, then an input, to
-                wire named ports.
+                Pick a node from the palette. Click an output, then an input, to wire named ports.
               </span>
             </div>
           )}
@@ -482,10 +444,11 @@ export default function WorkflowPage() {
                   value={selectedNode.id}
                   onChange={(event) =>
                     update((next) => {
-                      const target = next.nodes.find(
-                        (node) => node.id === selectedNode.id,
-                      );
-                      if (target) target.id = event.target.value;
+                      const target = next.nodes.find((node) => node.id === selectedNode.id);
+                      if (target) {
+                        renameWorkflowNode(next, selectedNode.id, event.target.value);
+                        setSelected(event.target.value);
+                      }
                       return next;
                     })
                   }
@@ -499,12 +462,11 @@ export default function WorkflowPage() {
                     try {
                       const value = JSON.parse(event.target.value);
                       update((next) => {
-                        const target = next.nodes.find(
-                          (node) => node.id === selectedNode.id,
-                        );
+                        const target = next.nodes.find((node) => node.id === selectedNode.id);
                         if (target) {
                           if (
-                            target.type === STARINTEL_OPERATION_NODE_TYPE &&
+                            (target.type === STARINTEL_OPERATION_NODE_TYPE ||
+                              target.type.startsWith("starintel.operation/")) &&
                             typeof target.config.operation === "string"
                           ) {
                             value.operation = target.config.operation;
@@ -522,7 +484,7 @@ export default function WorkflowPage() {
               <h2>Initial packets</h2>
               {(selectedDescriptor?.inputs || []).map((port) => {
                 const packet = workflow.iips.find(
-                  (iip) => iip.to === selectedNode.id && iip.in === port.name,
+                  (iip) => iip.to === selectedNode.id && iip.in === port.name
                 );
                 return (
                   <div className="workflow-iip" key={port.name}>
@@ -534,9 +496,7 @@ export default function WorkflowPage() {
                           value={packet.value}
                           onCommit={(value) =>
                             update((next) => {
-                              const target = next.iips.find(
-                                (iip) => iip.id === packet.id,
-                              );
+                              const target = next.iips.find((iip) => iip.id === packet.id);
                               if (target) target.value = value;
                               return next;
                             })
@@ -551,9 +511,7 @@ export default function WorkflowPage() {
                         className="button"
                         onClick={() =>
                           update((next) => {
-                            next.iips = next.iips.filter(
-                              (iip) => iip.id !== packet.id,
-                            );
+                            next.iips = next.iips.filter((iip) => iip.id !== packet.id);
                             return next;
                           })
                         }
@@ -566,24 +524,16 @@ export default function WorkflowPage() {
                         onClick={() =>
                           update((next) => {
                             next.connections = next.connections.filter(
-                              (edge) =>
-                                !(
-                                  edge.to === selectedNode.id &&
-                                  edge.in === port.name
-                                ),
+                              (edge) => !(edge.to === selectedNode.id && edge.in === port.name)
                             );
                             next.iips = next.iips.filter(
-                              (iip) =>
-                                !(
-                                  iip.to === selectedNode.id &&
-                                  iip.in === port.name
-                                ),
+                              (iip) => !(iip.to === selectedNode.id && iip.in === port.name)
                             );
                             next.iips.push({
                               id: `${selectedNode.id}:${port.name}:iip`,
                               value: defaultPacketValue(port),
                               to: selectedNode.id,
-                              in: port.name,
+                              in: port.name
                             });
                             return next;
                           })
@@ -599,14 +549,7 @@ export default function WorkflowPage() {
                 className="button danger"
                 onClick={() =>
                   update((next) => {
-                    next.nodes = next.nodes.filter(
-                      (node) => node.id !== selectedNode.id,
-                    );
-                    next.connections = next.connections.filter(
-                      (edge) =>
-                        edge.from !== selectedNode.id &&
-                        edge.to !== selectedNode.id,
-                    );
+                    removeWorkflowNode(next, selectedNode.id);
                     setSelected(null);
                     return next;
                   })
@@ -632,11 +575,7 @@ export default function WorkflowPage() {
             <button
               className="button"
               onClick={async () =>
-                setPlan(
-                  await action("Deployment plan", () =>
-                    deploymentPlan(workflow),
-                  ),
-                )
+                setPlan(await action("Deployment plan", () => deploymentPlan(workflow)))
               }
             >
               <Download size={14} /> Dry run
@@ -649,6 +588,52 @@ export default function WorkflowPage() {
               <Upload size={14} /> Install service
             </button>
           </div>
+          <h2>StarIntel profile</h2>
+          <label>
+            Endpoint
+            <input value={endpoint} onChange={(event) => setEndpoint(event.target.value)} />
+          </label>
+          <label>
+            Credential reference (never the key)
+            <input
+              value={credentialReference}
+              onChange={(event) => setCredentialReference(event.target.value)}
+            />
+          </label>
+          <label>
+            Shell profile
+            <select
+              value={profileShell}
+              onChange={(event) => setProfileShell(event.target.value as "sh" | "bash")}
+            >
+              <option value="sh">POSIX sh (.profile)</option>
+              <option value="bash">Bash (.bash_profile)</option>
+            </select>
+          </label>
+          <div className="workflow-deploy">
+            <button
+              className="button"
+              onClick={async () =>
+                setPlan(
+                  await action("Profile plan", () =>
+                    profilePlan(endpoint, credentialReference, profileShell)
+                  )
+                )
+              }
+            >
+              <Download size={14} /> Preview profile
+            </button>
+            <button
+              className="button"
+              onClick={() =>
+                action("Install profile", () =>
+                  applyProfile(endpoint, credentialReference, profileShell)
+                )
+              }
+            >
+              <Upload size={14} /> Install profile
+            </button>
+          </div>
           <p className="workflow-status">{message}</p>
           {plan && <pre>{JSON.stringify(plan, null, 2)}</pre>}
           <input
@@ -658,10 +643,7 @@ export default function WorkflowPage() {
             hidden
             onChange={(event) => {
               const file = event.target.files?.[0];
-              if (file)
-                void file
-                  .text()
-                  .then((text) => setWorkflow(JSON.parse(text) as Workflow));
+              if (file) void file.text().then((text) => setWorkflow(JSON.parse(text) as Workflow));
             }}
           />
           <button className="button" onClick={() => importRef.current?.click()}>
@@ -670,20 +652,14 @@ export default function WorkflowPage() {
           <button
             className="button"
             onClick={() =>
-              download(
-                `${workflow.id}.json`,
-                JSON.stringify(workflow, null, 2),
-                "application/json",
-              )
+              download(`${workflow.id}.json`, JSON.stringify(workflow, null, 2), "application/json")
             }
           >
             <Download size={14} /> Export JSON
           </button>
         </aside>
       </div>
-      {sourceOpen && (
-        <pre className="workflow-source">{workflowToLisp(workflow)}</pre>
-      )}
+      {sourceOpen && <pre className="workflow-source">{workflowToLisp(workflow)}</pre>}
     </section>
   );
 }

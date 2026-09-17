@@ -35,25 +35,65 @@
                          (substitute #\_ #\. suffix))))))
 
 (defun resolve-environment-credential (reference)
-  (or (uiop:getenv (credential-environment-name reference))
+  (or (let ((directory (uiop:getenv "CREDENTIALS_DIRECTORY")))
+        (when directory
+          (let ((path (merge-pathnames
+                       (subseq reference (length "credential:"))
+                       (uiop:ensure-directory-pathname directory))))
+            (when (probe-file path)
+              (string-trim '(#\Space #\Tab #\Newline #\Return)
+                           (uiop:read-file-string path))))))
+      (uiop:getenv (credential-environment-name reference))
       (when (string= reference "credential:starintel-api")
         (uiop:getenv "STARINTEL_API_KEY"))))
 
+(defun comma-separated-environment (name)
+  (let ((value (uiop:getenv name)))
+    (when value
+      (remove-if (lambda (item) (zerop (length item)))
+                 (mapcar (lambda (item)
+                           (string-trim '(#\Space #\Tab) item))
+                         (uiop:split-string value :separator '(#\,)))))))
+
 (defun configure-default-fbp-runtime ()
-  (let ((endpoint (uiop:getenv "STARINTEL_ENDPOINT")))
-    (quasar.fbp.control:configure-fbp-runtime
-     :services
-     (when endpoint
-       (list :starintel-operation
-             (quasar.fbp.control:make-starintel-operation-service
-              :endpoint endpoint
-              :credential-resolver #'resolve-environment-credential
-              :authorization-header
-              (or (uiop:getenv "STARINTEL_AUTH_HEADER") "authorization")
-              :authorization-prefix
-              (or (uiop:getenv "STARINTEL_AUTH_PREFIX") "Bearer "))))
-     :grants (when endpoint '(:starintel-operation))
-     :automation-executable (packaged-automation-executable))))
+  (let* ((endpoint (uiop:getenv "STARINTEL_ENDPOINT"))
+         (allowed (comma-separated-environment
+                   "QUASAR_STARINTEL_ALLOWED_OPERATIONS"))
+         (enabled (and endpoint allowed)))
+    (if enabled
+        (let ((manifest (quasar.fbp.control::manifest-document endpoint)))
+          (multiple-value-bind (grants operations)
+              (quasar.fbp.control:register-starintel-operation-nodes
+               :manifest manifest :allowed-operations allowed)
+            (quasar.fbp.control:configure-fbp-runtime
+             :services
+             (list :starintel-operation
+                   (quasar.fbp.control:make-starintel-operation-service
+                    :endpoint endpoint
+                    :operations operations
+                    :allowed-operations allowed
+                    :credential-resolver #'resolve-environment-credential
+                    :authorization-header
+                    (or (uiop:getenv "STARINTEL_AUTH_HEADER") "authorization")
+                    :authorization-prefix
+                    (or (uiop:getenv "STARINTEL_AUTH_PREFIX") "Bearer ")))
+             :grants grants
+             :limits '(:packets 100000 :bytes 67108864 :seconds 3600 :trace 1000
+                       :concurrency 4)
+             :starintel-endpoint endpoint
+             :starintel-credential-reference
+             (or (uiop:getenv "STARINTEL_CREDENTIAL_REF")
+                 "credential:starintel-api")
+             :automation-executable (packaged-automation-executable))))
+        (quasar.fbp.control:configure-fbp-runtime
+         :services nil :grants nil
+         :limits '(:packets 100000 :bytes 67108864 :seconds 3600 :trace 1000
+                   :concurrency 4)
+         :starintel-endpoint endpoint
+         :starintel-credential-reference
+         (or (uiop:getenv "STARINTEL_CREDENTIAL_REF")
+             "credential:starintel-api")
+         :automation-executable (packaged-automation-executable)))))
 
 (defun fbp-run-argument ()
   (let ((arguments (uiop:command-line-arguments)))
@@ -71,7 +111,8 @@
          (runtime (quasar.fbp:make-runtime
                    network
                    :services quasar.fbp.control::*runtime-services*
-                   :grants quasar.fbp.control::*runtime-grants*)))
+                   :grants quasar.fbp.control::*runtime-grants*
+                   :host-limits quasar.fbp.control::*runtime-limits*)))
     (quasar.fbp:start-runtime runtime :background nil)))
 
 (defun new-session-token ()
@@ -84,6 +125,8 @@
                 (ws-port 8081)
                 (frontend-url "/")
                 (insecure-development-p nil)
+                (enable-fbp-host-mutations-p
+                  (string= (or (uiop:getenv "QUASAR_ENABLE_FBP_HOST_MUTATIONS") "") "1"))
                 (open-browser-p nil)
                 workspace-store
                 storage-path
@@ -98,6 +141,9 @@ Otherwise Quasar owns one full-durability Tek9 store for the process lifetime.
 STORAGE-PATH overrides the normal XDG data path when Quasar creates that store."
   (when (or *control-plane* *workspace-store*)
     (stop))
+  (when (and enable-fbp-host-mutations-p
+             (not (member host '("127.0.0.1" "::1" "localhost") :test #'string-equal)))
+    (error "FBP host mutations require an explicitly loopback-only Quasar host."))
   (setf quasar.ui:*frontend-url* frontend-url
         *workspace-store-owned-p* (null workspace-store)
         *workspace-store*
@@ -127,8 +173,9 @@ STORAGE-PATH overrides the normal XDG data path when Quasar creates that store."
          *websocket-server* *browser-session-token* "local-user" '("default")
          :capabilities (append quasar.ws::+default-capabilities+
                                +fbp-browser-capabilities+
-                               +fbp-local-operator-capabilities+)
-         :authority-kind :operator)
+                               (when enable-fbp-host-mutations-p
+                                 +fbp-local-operator-capabilities+))
+         :authority-kind (if enable-fbp-host-mutations-p :operator :internal))
         (attach-subscriber *websocket-server*)
         (start-websocket-server *websocket-server*)
         (start-ui *control-plane*

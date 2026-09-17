@@ -28,6 +28,9 @@
   network
   (status :created)
   (services nil :type list)
+  (host-limits '(:packets 100000 :bytes 67108864 :seconds 3600 :trace 1000
+                 :concurrency 4)
+               :type list)
   (instances (make-hash-table :test #'equal))
   (inputs (make-hash-table :test #'equal))
   (outputs (make-hash-table :test #'equal))
@@ -38,6 +41,9 @@
   (bytes-emitted 0 :type integer)
   (started-at (get-internal-real-time) :type integer)
   thread
+  (worker-threads nil :type list)
+  (in-flight 0 :type integer)
+  worker-error
   (stop-p nil)
   (lock (bt:make-lock "quasar-fbp-runtime")))
 
@@ -67,8 +73,7 @@
 (defun runtime-record (runtime event &rest fields)
   (push (list* :event event :at (get-universal-time) fields)
         (runtime-trace runtime))
-  (let ((maximum (limit-value (network-policy (runtime-network runtime))
-                              :trace 1000)))
+  (let ((maximum (runtime-limit runtime :trace 1000)))
     (when (> (length (runtime-trace runtime)) maximum)
       (setf (runtime-trace runtime)
             (subseq (runtime-trace runtime) 0 maximum)))))
@@ -82,21 +87,53 @@
             (let ((*print-readably* t) (*print-circle* t))
               (write value :stream stream)))))
 
-(defun ensure-runtime-budget (runtime emissions)
-  (let* ((policy (network-policy (runtime-network runtime)))
-         (values (loop for emission in emissions append (cdr emission)))
-         (packets (length values))
-         (bytes (reduce #'+ values :key #'encoded-size :initial-value 0)))
+(defun runtime-limit (runtime key fallback)
+  (let* ((host (or (getf (runtime-host-limits runtime) key) fallback))
+         (requested (getf (sandbox-policy-limits
+                           (network-policy (runtime-network runtime))) key)))
+    (if requested (min requested host) host)))
+
+(defun validate-runtime-limits (limits)
+  (unless (and (listp limits) (evenp (length limits)))
+    (error 'validation-error :code "fbp.invalid-limits"
+           :message "Runtime limits must be a property list."))
+  (loop for (key value) on limits by #'cddr
+        do (unless (member key '(:packets :bytes :seconds :trace :concurrency))
+             (error 'validation-error :code "fbp.unknown-limit"
+                    :message (format nil "Unknown runtime limit ~A." key)))
+           (unless (and (integerp value) (plusp value))
+             (error 'validation-error :code "fbp.invalid-limit"
+                    :message (format nil "Runtime limit ~A must be a positive integer."
+                                     key))))
+  limits)
+
+(defun map-emission-deliveries (runtime instance emissions function)
+  (let ((component (component-spec-id (component-instance-spec instance))))
+    (dolist (emission emissions)
+      (dolist (channel (gethash (list component (car emission))
+                                (runtime-outputs runtime)))
+        (dolist (value (cdr emission))
+          (funcall function channel value))))))
+
+(defun ensure-runtime-budget (runtime instance emissions)
+  (let ((packets 0)
+        (bytes 0))
+    (map-emission-deliveries
+     runtime instance emissions
+     (lambda (channel value)
+       (declare (ignore channel))
+       (incf packets)
+       (incf bytes (encoded-size value))))
     (when (> (+ (runtime-packets-emitted runtime) packets)
-             (limit-value policy :packets 100000))
+             (runtime-limit runtime :packets 100000))
       (error 'sandbox-denied :code "fbp.packet-limit"
              :message "Workflow packet limit exceeded."))
     (when (> (+ (runtime-bytes-emitted runtime) bytes)
-             (limit-value policy :bytes (* 64 1024 1024)))
+             (runtime-limit runtime :bytes (* 64 1024 1024)))
       (error 'sandbox-denied :code "fbp.byte-limit"
              :message "Workflow byte limit exceeded."))
     (when (> (runtime-elapsed-seconds runtime)
-             (limit-value policy :seconds 3600))
+             (runtime-limit runtime :seconds 3600))
       (error 'sandbox-denied :code "fbp.time-limit"
              :message "Workflow wall-clock limit exceeded."))
     (values packets bytes)))
@@ -128,10 +165,18 @@
                                         :owner "@iip" :sequence 0))))
   runtime)
 
-(defun make-runtime (network &key services grants)
+(defun make-runtime (network &key services grants host-limits)
   (ensure-runtime-capabilities network grants)
+  (validate-runtime-limits (sandbox-policy-limits (network-policy network)))
+  (validate-runtime-limits (or host-limits
+                               '(:packets 100000 :bytes 67108864 :seconds 3600
+                                 :trace 1000 :concurrency 4)))
   (let ((runtime (%make-runtime :network (compile-network network)
-                                :services services)))
+                                :services services
+                                :host-limits (or host-limits
+                                                 '(:packets 100000 :bytes 67108864
+                                                   :seconds 3600 :trace 1000
+                                                   :concurrency 4)))))
     (build-runtime-indexes runtime)
     runtime))
 
@@ -208,15 +253,12 @@
 (defun enqueue-emissions (runtime instance emissions)
   "Enqueue a preflighted emission set while the runtime lock is held."
   (let ((owner (component-spec-id (component-instance-spec instance))))
-    (dolist (emission emissions)
-      (let ((channels (gethash (list owner (car emission))
-                               (runtime-outputs runtime))))
-        (dolist (value (cdr emission))
-          (let ((packet (make-packet :value value
-                                     :owner owner
-                                     :sequence (incf (runtime-sequence runtime)))))
-            (dolist (channel channels)
-              (channel-push channel packet))))))))
+    (map-emission-deliveries
+     runtime instance emissions
+     (lambda (channel value)
+       (channel-push channel
+                     (make-packet :value value :owner owner
+                                  :sequence (incf (runtime-sequence runtime))))))))
 
 (defun commit-activation (runtime activation)
   "Atomically consume claimed inputs and publish every output, or do nothing."
@@ -231,7 +273,7 @@
     (unless (reservations-fit-p reservations)
       (return-from commit-activation nil))
     (multiple-value-bind (packet-count byte-count)
-        (ensure-runtime-budget runtime emissions)
+        (ensure-runtime-budget runtime instance emissions)
       (consume-claimed-inputs activation)
       (enqueue-emissions runtime instance emissions)
       (incf (runtime-packets-emitted runtime) packet-count)
@@ -272,8 +314,8 @@
       (setf (component-instance-busy-p instance) nil
             (component-instance-pending-activation instance) nil))))
 
-(defun process-activation (runtime activation)
-  "Run component code outside the scheduler lock, then stage or commit output."
+(defun evaluate-activation (runtime activation)
+  "Run component code without mutating scheduler state."
   (let* ((instance (activation-instance activation))
          (context (list :component (component-spec-id
                                     (component-instance-spec instance))
@@ -283,20 +325,26 @@
                         :services (runtime-services runtime)
                         :runtime runtime))
          (processor (node-type-processor (component-instance-type instance))))
-    (handler-case
-        (let ((emissions
-                (validate-emissions
-                 instance
-                 (normalize-emissions
-                  (and processor
-                       (funcall processor (activation-inputs activation) context))))))
-          (setf (activation-emissions activation) emissions)
-          (bt:with-lock-held ((runtime-lock runtime))
-            (setf (component-instance-pending-activation instance) activation)
-            (commit-activation runtime activation)))
-      (error (condition)
-        (release-failed-activation runtime activation)
-        (error condition)))))
+    (setf (activation-emissions activation)
+          (validate-emissions
+           instance
+           (normalize-emissions
+            (and processor
+                 (funcall processor (activation-inputs activation) context)))))
+    activation))
+
+(defun process-activation (runtime activation)
+  "Evaluate outside the lock and commit synchronously for deterministic stepping."
+  (handler-case
+      (progn
+        (evaluate-activation runtime activation)
+        (bt:with-lock-held ((runtime-lock runtime))
+          (setf (component-instance-pending-activation
+                 (activation-instance activation)) activation)
+          (commit-activation runtime activation)))
+    (error (condition)
+      (release-failed-activation runtime activation)
+      (error condition))))
 
 (defun step-runtime (runtime &key (max-activations 1))
   "Commit at most MAX-ACTIVATIONS firings with lossless bounded backpressure.
@@ -322,13 +370,67 @@ emission set.  A blocked commit remains pending and is never reprocessed."
                   (return)))))
     fired))
 
+(defun prune-worker-threads (runtime)
+  (setf (runtime-worker-threads runtime)
+        (remove-if-not #'bt:thread-alive-p (runtime-worker-threads runtime))))
+
+(defun launch-activation-worker (runtime activation)
+  (let ((thread
+          (bt:make-thread
+           (lambda ()
+             (handler-case
+                 (progn
+                   (evaluate-activation runtime activation)
+                   (bt:with-lock-held ((runtime-lock runtime))
+                     (if (runtime-stop-p runtime)
+                         (setf (component-instance-busy-p
+                                (activation-instance activation)) nil)
+                         (setf (component-instance-pending-activation
+                                (activation-instance activation)) activation))
+                     (decf (runtime-in-flight runtime))))
+               (error (condition)
+                 (bt:with-lock-held ((runtime-lock runtime))
+                   (setf (component-instance-busy-p
+                          (activation-instance activation)) nil
+                         (runtime-worker-error runtime) condition)
+                   (decf (runtime-in-flight runtime))))))
+           :name "quasar-fbp-activation")))
+    (bt:with-lock-held ((runtime-lock runtime))
+      (push thread (runtime-worker-threads runtime)))
+    thread))
+
 (defun runtime-loop (runtime)
   (setf (runtime-status runtime) :running)
   (runtime-record runtime :run-started)
   (handler-case
-      (loop until (runtime-stop-p runtime)
-            for fired = (step-runtime runtime :max-activations 128)
-            do (when (zerop fired) (sleep 0.001)))
+      (loop
+        (let ((launch nil)
+              (progress nil)
+              (done nil)
+              (worker-error nil))
+          (bt:with-lock-held ((runtime-lock runtime))
+            (setf worker-error (runtime-worker-error runtime))
+            (when worker-error (setf (runtime-stop-p runtime) t))
+            (loop while (commit-one-pending-activation runtime)
+                  do (setf progress t))
+            (unless (runtime-stop-p runtime)
+              (loop while (< (runtime-in-flight runtime)
+                             (runtime-limit runtime :concurrency 4))
+                    for activation = (claim-one-ready-activation runtime)
+                    while activation
+                    do (incf (runtime-in-flight runtime))
+                       (push activation launch)))
+            (setf done (and (runtime-stop-p runtime)
+                            (zerop (runtime-in-flight runtime)))))
+          (when worker-error (error worker-error))
+          (dolist (activation (nreverse launch))
+            (launch-activation-worker runtime activation))
+          (when (> (runtime-elapsed-seconds runtime)
+                   (runtime-limit runtime :seconds 3600))
+            (error 'sandbox-denied :code "fbp.time-limit"
+                   :message "Workflow wall-clock limit exceeded."))
+          (when done (return))
+          (unless (or progress launch) (sleep 0.001))))
     (error (condition)
       (setf (runtime-status runtime) :failed)
       (runtime-record runtime :run-failed :message (princ-to-string condition))))
@@ -354,8 +456,17 @@ emission set.  A blocked commit remains pending and is never reprocessed."
   (let ((thread (runtime-thread runtime)))
     (when (and thread (bt:thread-alive-p thread)
                (not (eq thread (bt:current-thread))))
-      (bt:join-thread thread)))
-  (setf (runtime-thread runtime) nil)
+      (loop repeat 500
+            while (bt:thread-alive-p thread)
+            do (sleep 0.01))
+      (when (bt:thread-alive-p thread)
+        (setf (runtime-status runtime) :stopping)
+        (error 'fbp-error :code "fbp.stop-timeout"
+               :message "Workflow did not stop within five seconds.")))
+    (when (and thread (not (bt:thread-alive-p thread)))
+      (setf (runtime-thread runtime) nil)))
+  (bt:with-lock-held ((runtime-lock runtime))
+    (prune-worker-threads runtime))
   runtime)
 
 (defun inject-packet (runtime component port value)

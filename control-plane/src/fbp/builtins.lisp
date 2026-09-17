@@ -57,18 +57,6 @@
                                  (single-input inputs "request")
                                  (getf context :config)))))))
 
-  (define-node starintel/target
-      (:label "Submit target" :category "Targets"
-       :inputs ((target :schema (:type "object")))
-       :outputs ((receipt :schema (:type "object")))
-       :capabilities (:starintel-operation))
-      (inputs context)
-    (let ((invoke (required-service context :starintel-operation)))
-      (list (cons "receipt"
-                  (list (funcall invoke "targets.create"
-                                 (single-input inputs "target")
-                                 (getf context :config)))))))
-
   (define-node language/lisp
       (:label "Trusted Lisp component" :category "Languages"
        :inputs ((in :schema (:type "any")))

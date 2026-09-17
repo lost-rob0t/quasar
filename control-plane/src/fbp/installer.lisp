@@ -167,7 +167,9 @@
          "Automation executable must be an explicit, existing absolute file path."))
       (namestring resolved))))
 
-(defun automation-plan (network &key executable graph-path)
+(defun automation-plan (network &key executable graph-path endpoint
+                                      (credential-reference
+                                        "credential:starintel-api"))
   "Return a write/enable plan. It never includes secret values."
   (let* ((id (safe-unit-id (network-id network)))
          (unit-name (format nil "quasar-fbp@~A.service" id))
@@ -180,12 +182,38 @@
          ;; There is no independently packaged `quasar-fbp` executable in this
          ;; system. Callers must select the real packaged Quasar entry point.
          (runner (required-automation-executable executable))
+         (validated-endpoint (and endpoint (validate-endpoint endpoint)))
+         (validated-reference (and endpoint
+                                   (validate-credential-reference
+                                    credential-reference)))
+         (credential-name (and validated-reference
+                               (subseq validated-reference
+                                       (length +credential-reference-prefix+))))
+         (credential-path
+           (and credential-name
+                (merge-pathnames credential-name
+                                 (xdg-path "XDG_CONFIG_HOME" ".config/"
+                                           "quasar/" "credentials/"))))
+         (environment-lines
+           (if validated-endpoint
+               (format nil "Environment=~A~%Environment=~A~%LoadCredential=~A~%"
+                       (systemd-quote-argument
+                        (format nil "STARINTEL_ENDPOINT=~A" validated-endpoint))
+                       (systemd-quote-argument
+                        (format nil "STARINTEL_CREDENTIAL_REF=~A"
+                                validated-reference))
+                       (systemd-quote-argument
+                        (format nil "~A:~A" credential-name
+                                (namestring credential-path))))
+               ""))
          (unit (format nil
-                       "[Unit]~%Description=Quasar FBP automation %i~%After=network-online.target~%~%[Service]~%Type=simple~%ExecStart=~A fbp-run --graph ~A~%NoNewPrivileges=yes~%PrivateTmp=yes~%ProtectSystem=strict~%ProtectHome=read-only~%RestrictSUIDSGID=yes~%LockPersonality=yes~%MemoryDenyWriteExecute=yes~%~%[Install]~%WantedBy=default.target~%"
+                       "[Unit]~%Description=Quasar FBP automation %i~%After=network-online.target~%~%[Service]~%Type=simple~%~AExecStart=~A fbp-run --graph ~A~%NoNewPrivileges=yes~%PrivateTmp=yes~%ProtectSystem=strict~%ProtectHome=read-only~%RestrictSUIDSGID=yes~%LockPersonality=yes~%MemoryDenyWriteExecute=yes~%~%[Install]~%WantedBy=default.target~%"
+                       environment-lines
                        (systemd-quote-argument runner)
                        (systemd-quote-argument (namestring source)))))
     (list :id id :unit-name unit-name :unit-path unit-path
           :graph-path source :graph-source (network-to-lisp network)
+          :credential-path credential-path
           :unit-source unit
           :enable (and (network-enabled-at-login-p network) t)
           :commands (append (list (list "systemctl" "--user" "daemon-reload"))

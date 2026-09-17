@@ -102,6 +102,38 @@
                 (zerop (quasar.fbp::channel-size right)))
            "Backpressure partially committed a multi-port emission.")))
 
+(defun fanout-network (packet-limit)
+  (make-network
+   :id "fanout-budget"
+   :policy (make-sandbox-policy :limits (list :packets packet-limit))
+   :components (list (make-component-spec :id "copy" :type "core/identity")
+                     (make-component-spec :id "left" :type "test/capture")
+                     (make-component-spec :id "right" :type "test/capture"))
+   :connections (list (make-connection-spec :from "copy" :out "out"
+                                            :to "left" :in "in")
+                      (make-connection-spec :from "copy" :out "out"
+                                            :to "right" :in "in"))
+   :iips (list (make-iip-spec :value "one" :to "copy" :in "in"))))
+
+(defun test-fanout-budget-counts-deliveries ()
+  (let* ((rejected (make-runtime (fanout-network 1)))
+         (input (quasar.fbp::input-channel rejected "copy" "in")))
+    (check (signals-p 'sandbox-denied
+                      (lambda () (step-runtime rejected)))
+           "Two fan-out deliveries passed a one-packet budget.")
+    (check (= 1 (quasar.fbp::channel-size input))
+           "A rejected budget consumed its input."))
+  (let* ((runtime (make-runtime (fanout-network 2)))
+         (channels (gethash '("copy" "out")
+                            (quasar.fbp::runtime-outputs runtime))))
+    (check (= 1 (step-runtime runtime)) "A valid two-packet fan-out did not fire.")
+    (let ((left (first (quasar.fbp::channel-queue (first channels))))
+          (right (first (quasar.fbp::channel-queue (second channels)))))
+      (check (and left right (not (eq left right)))
+             "Fan-out reused one packet object across independent channels.")
+      (check (/= (packet-sequence left) (packet-sequence right))
+             "Fan-out deliveries did not receive distinct sequences."))))
+
 (defun test-self-trust-is-rejected ()
   (check (signals-p 'sandbox-denied
                     (lambda ()
@@ -133,7 +165,19 @@
                                         :executable "/bin/true"))
          (rendered (with-output-to-string (stream) (prin1 plan stream))))
     (check (not (search secret rendered)) "Installer plan leaked a secret.")
-    (check (getf plan :enable) "Enabled automation did not request systemd enable.")))
+    (check (getf plan :enable) "Enabled automation did not request systemd enable."))
+  (let* ((plan (automation-plan (basic-network :enabled t)
+                                :graph-path #P"/tmp/basic.lisp"
+                                :executable "/bin/true"
+                                :endpoint "http://127.0.0.1:5000"
+                                :credential-reference "credential:starintel-api"))
+         (unit (getf plan :unit-source)))
+    (check (search "ExecStart=\"/bin/true\" fbp-run --graph" unit)
+           "The user unit does not invoke the packaged fbp-run entry point.")
+    (check (search "STARINTEL_ENDPOINT=http://127.0.0.1:5000" unit)
+           "The user unit omitted its StarIntel endpoint.")
+    (check (search "LoadCredential=\"starintel-api:" unit)
+           "The user unit omitted its systemd credential reference.")))
 
 (defun run-fbp-tests ()
   (dolist (test '(test-validation-and-iip
@@ -141,10 +185,11 @@
                   test-invalid-port
                   test-sandbox-denial
                   test-lossless-atomic-backpressure
+                  test-fanout-budget-counts-deliveries
                   test-self-trust-is-rejected
                   test-literal-secret-is-rejected
                   test-profile-values-are-inert
                   test-installer-no-secret))
     (funcall test))
-  (format t "~&Quasar FBP: 9 tests passed.~%")
+  (format t "~&Quasar FBP: 10 tests passed.~%")
   t)

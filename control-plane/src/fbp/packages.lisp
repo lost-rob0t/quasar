@@ -9,7 +9,8 @@
    #:port-spec-required-p #:port-spec-array-p
    #:node-type #:make-node-type #:node-type-id #:node-type-label
    #:node-type-category #:node-type-inputs #:node-type-outputs
-   #:node-type-capabilities #:node-type-config-schema #:node-type-processor
+   #:node-type-capabilities #:node-type-config-schema #:node-type-descriptor
+   #:node-type-processor
    #:component-spec #:make-component-spec #:component-spec-id
    #:component-spec-type #:component-spec-config
    #:connection-spec #:make-connection-spec #:connection-spec-from
@@ -44,4 +45,5 @@
                 #:automation-plan #:apply-automation-plan
                 #:profile-plan #:apply-profile-plan)
   (:export #:install-fbp-commands #:stop-all-workflows
-           #:configure-fbp-runtime #:make-starintel-operation-service))
+           #:configure-fbp-runtime #:make-starintel-operation-service
+           #:register-starintel-operation-nodes))

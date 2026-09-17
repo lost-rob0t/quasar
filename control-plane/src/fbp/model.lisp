@@ -29,6 +29,7 @@
   (outputs nil :type list)
   (capabilities nil :type list)
   config-schema
+  descriptor
   processor)
 
 (defstruct component-spec
@@ -119,15 +120,11 @@
     (or (null from) (null to) (string= from "any") (string= to "any")
         (string= from to))))
 
-(defun secret-like-p (value)
-  (cond
-    ((stringp value)
-     (or (search "star_sk_" value :test #'char-equal)
-         (search "rabbit_password" value :test #'char-equal)
-         (search "couchdb_password" value :test #'char-equal)))
-    ((consp value) (or (secret-like-p (car value)) (secret-like-p (cdr value))))
-    ((vectorp value) (some #'secret-like-p value))
-    (t nil)))
+(defun sensitive-field-name-p (value)
+  (when (or (symbolp value) (stringp value))
+    (let ((name (string-downcase (if (symbolp value) (symbol-name value) value))))
+      (some (lambda (needle) (search needle name))
+            '("password" "secret" "token" "api-key" "api_key" "credential-value")))))
 
 (defun credential-reference-p (value)
   (and (stringp value)
@@ -137,18 +134,48 @@
                 (or (alphanumericp character) (find character "_.-")))
               (subseq value (length "credential:")))))
 
+(defun secret-like-p (value)
+  (cond
+    ((stringp value)
+     (or (search "star_sk_" value :test #'char-equal)
+         (search "rabbit_password" value :test #'char-equal)
+         (search "couchdb_password" value :test #'char-equal)))
+    ((and (listp value) (evenp (length value)))
+     (loop for (key item) on value by #'cddr
+           thereis (or (and (sensitive-field-name-p key)
+                            (not (credential-reference-p item)))
+                       (secret-like-p item))))
+    ((consp value) (or (secret-like-p (car value)) (secret-like-p (cdr value))))
+    ((vectorp value) (some #'secret-like-p value))
+    (t nil)))
+
 (defun validate-component-config (component)
-  (when (string= (component-spec-type component) "starintel/operation")
+  (when (or (string= (component-spec-type component) "starintel/operation")
+            (uiop:string-prefix-p "starintel.operation/"
+                                  (component-spec-type component)))
     (let* ((config (component-spec-config component))
            (operation (getf config :operation))
            (reference (getf config :credential-reference)))
+      (unless (and (listp config) (evenp (length config))
+                   (every (lambda (key)
+                            (member key '(:operation :credential-reference)))
+                          (loop for tail on config by #'cddr
+                                collect (first tail))))
+        (error 'validation-error :code "fbp.invalid-operation-config"
+               :message "StarIntel operation config accepts only operation and credential-reference."))
       (unless (and (stringp operation) (plusp (length operation)))
         (error 'validation-error :code "fbp.invalid-operation"
                :message "A StarIntel operation node requires an immutable operation id."))
-      (when reference
-        (unless (credential-reference-p reference)
-          (error 'validation-error :code "fbp.invalid-credential-reference"
-                 :message "Credential reference must match credential:[A-Za-z0-9_.-]+.")))))
+      (when (uiop:string-prefix-p "starintel.operation/"
+                                  (component-spec-type component))
+        (let ((expected (subseq (component-spec-type component)
+                                (length "starintel.operation/"))))
+          (unless (string= operation expected)
+            (error 'validation-error :code "fbp.operation-type-mismatch"
+                   :message "The StarIntel node type and immutable operation id disagree."))))
+      (unless (credential-reference-p reference)
+        (error 'validation-error :code "fbp.invalid-credential-reference"
+               :message "Credential reference must match credential:[A-Za-z0-9_.-]+."))))
   component)
 
 (defun validate-network (network)
@@ -239,6 +266,8 @@
   (validate-network network))
 
 (defun node-descriptor (type)
+  (when (node-type-descriptor type)
+    (return-from node-descriptor (node-type-descriptor type)))
   (labels ((port (value)
              (list :name (port-spec-name value)
                    :schema (port-spec-schema value)
