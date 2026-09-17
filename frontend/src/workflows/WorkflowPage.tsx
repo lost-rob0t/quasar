@@ -643,7 +643,11 @@ export default function WorkflowPage() {
             hidden
             onChange={(event) => {
               const file = event.target.files?.[0];
-              if (file) void file.text().then((text) => setWorkflow(JSON.parse(text) as Workflow));
+              if (file)
+                void file.text().then((text) => {
+                  setWorkflow(JSON.parse(text) as Workflow);
+                  setPersistedId(null);
+                });
             }}
           />
           <button className="button" onClick={() => importRef.current?.click()}>

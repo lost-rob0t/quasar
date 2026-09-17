@@ -168,6 +168,7 @@
       (namestring resolved))))
 
 (defun automation-plan (network &key executable graph-path endpoint
+                                      allowed-operations
                                       (credential-reference
                                         "credential:starintel-api"))
   "Return a write/enable plan. It never includes secret values."
@@ -189,6 +190,21 @@
          (credential-name (and validated-reference
                                (subseq validated-reference
                                        (length +credential-reference-prefix+))))
+         (network-operations
+           (remove-duplicates
+            (loop for component in (network-components network)
+                  when (string-prefix-equal-p
+                        "starintel.operation/" (component-spec-type component))
+                    collect (getf (component-spec-config component) :operation))
+            :test #'string=))
+         (approved-operations
+           (loop for operation in network-operations
+                 if (member operation allowed-operations :test #'string=)
+                   collect operation
+                 else do (signal-installer-validation-error
+                          "fbp.starintel-operation-denied"
+                          (format nil "The host did not allow StarIntel operation ~A."
+                                  operation))))
          (credential-path
            (and credential-name
                 (merge-pathnames credential-name
@@ -196,12 +212,15 @@
                                            "quasar/" "credentials/"))))
          (environment-lines
            (if validated-endpoint
-               (format nil "Environment=~A~%Environment=~A~%LoadCredential=~A~%"
+               (format nil "Environment=~A~%Environment=~A~%Environment=~A~%LoadCredential=~A~%"
                        (systemd-quote-argument
                         (format nil "STARINTEL_ENDPOINT=~A" validated-endpoint))
                        (systemd-quote-argument
                         (format nil "STARINTEL_CREDENTIAL_REF=~A"
                                 validated-reference))
+                       (systemd-quote-argument
+                        (format nil "QUASAR_STARINTEL_ALLOWED_OPERATIONS=~{~A~^,~}"
+                                approved-operations))
                        (systemd-quote-argument
                         (format nil "~A:~A" credential-name
                                 (namestring credential-path))))

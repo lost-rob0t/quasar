@@ -50,10 +50,12 @@
 (defun comma-separated-environment (name)
   (let ((value (uiop:getenv name)))
     (when value
-      (remove-if (lambda (item) (zerop (length item)))
-                 (mapcar (lambda (item)
-                           (string-trim '(#\Space #\Tab) item))
-                         (uiop:split-string value :separator '(#\,)))))))
+      (remove-duplicates
+       (remove-if (lambda (item) (zerop (length item)))
+                  (mapcar (lambda (item)
+                            (string-trim '(#\Space #\Tab) item))
+                          (uiop:split-string value :separator '(#\,))))
+       :test #'string=))))
 
 (defun configure-default-fbp-runtime ()
   (let* ((endpoint (uiop:getenv "STARINTEL_ENDPOINT"))
@@ -72,6 +74,9 @@
                     :endpoint endpoint
                     :operations operations
                     :allowed-operations allowed
+                    :allowed-credential-references
+                    (list (or (uiop:getenv "STARINTEL_CREDENTIAL_REF")
+                              "credential:starintel-api"))
                     :credential-resolver #'resolve-environment-credential
                     :authorization-header
                     (or (uiop:getenv "STARINTEL_AUTH_HEADER") "authorization")
@@ -81,19 +86,23 @@
              :limits '(:packets 100000 :bytes 67108864 :seconds 3600 :trace 1000
                        :concurrency 4)
              :starintel-endpoint endpoint
+             :starintel-allowed-operations allowed
              :starintel-credential-reference
              (or (uiop:getenv "STARINTEL_CREDENTIAL_REF")
                  "credential:starintel-api")
              :automation-executable (packaged-automation-executable))))
-        (quasar.fbp.control:configure-fbp-runtime
+        (progn
+          (quasar.fbp.control::clear-starintel-operation-nodes)
+          (quasar.fbp.control:configure-fbp-runtime
          :services nil :grants nil
          :limits '(:packets 100000 :bytes 67108864 :seconds 3600 :trace 1000
                    :concurrency 4)
          :starintel-endpoint endpoint
+         :starintel-allowed-operations nil
          :starintel-credential-reference
          (or (uiop:getenv "STARINTEL_CREDENTIAL_REF")
              "credential:starintel-api")
-         :automation-executable (packaged-automation-executable)))))
+         :automation-executable (packaged-automation-executable))))))
 
 (defun fbp-run-argument ()
   (let ((arguments (uiop:command-line-arguments)))

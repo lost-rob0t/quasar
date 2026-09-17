@@ -179,6 +179,67 @@
     (check (search "LoadCredential=\"starintel-api:" unit)
            "The user unit omitted its systemd credential reference.")))
 
+(defun test-manifest-node-dispatch-when-control-loaded ()
+  (when (find-package "QUASAR.FBP.CONTROL")
+    (let* ((manifest
+             (jsown:parse
+              "{\"schema\":\"starintel-client-manifest-v1\",\"operations\":[{\"operation_id\":\"documents.get\",\"method\":\"get\",\"path\":\"/documents/:id\",\"openapi_path\":\"/documents/{id}\",\"authority\":\"api-key\",\"scopes\":[\"documents:read\"],\"path_parameters\":[\"id\"],\"query_parameters\":[],\"request_schema\":null,\"responses\":[{\"status\":200,\"schema\":{\"type\":\"object\"}}]}],\"fbp_nodes\":[{\"id\":\"starintel.operation/documents.get\",\"component\":\"starintel.operation\",\"operation_id\":\"documents.get\",\"label\":\"Get document\",\"category\":\"StarIntel API\",\"inputs\":[{\"name\":\"id\",\"source\":\"path\",\"required\":true,\"schema\":{\"type\":\"string\"}}],\"outputs\":[{\"name\":\"status-200\",\"status\":200,\"schema\":{\"type\":\"object\"}}],\"config_schema\":{\"type\":\"object\",\"properties\":{\"operation\":{\"const\":\"documents.get\"},\"credential_reference\":{\"type\":\"string\"}}}}]}"))
+           (called nil))
+      (unwind-protect
+           (multiple-value-bind (grants operations)
+               (uiop:symbol-call :quasar.fbp.control
+                                 :register-starintel-operation-nodes
+                                 :manifest manifest
+                                 :allowed-operations '("documents.get"))
+             (let ((resolver-called nil)
+                   (service
+                     (uiop:symbol-call
+                      :quasar.fbp.control :make-starintel-operation-service
+                      :endpoint "http://127.0.0.1:5000"
+                      :operations operations
+                      :allowed-operations '("documents.get")
+                      :allowed-credential-references
+                      '("credential:starintel-api")
+                      :credential-resolver
+                      (lambda (reference)
+                        (declare (ignore reference))
+                        (setf resolver-called t)
+                        "forbidden"))))
+               (check (signals-p
+                       'error
+                       (lambda ()
+                         (funcall service "documents.get"
+                                  (jsown:parse "{\"id\":\"doc-1\"}")
+                                  '(:credential-reference "credential:other"))))
+                      "An unapproved credential reference reached dispatch.")
+               (check (not resolver-called)
+                      "An unapproved credential reference reached the resolver."))
+             (let* ((network
+                      (make-network
+                       :id "typed-manifest"
+                       :components
+                       (list (make-component-spec
+                              :id "get" :type "starintel.operation/documents.get"
+                              :config '(:operation "documents.get"
+                                        :credential-reference
+                                        "credential:starintel-api")))
+                       :iips (list (make-iip-spec :value "doc-1"
+                                                 :to "get" :in "id"))))
+                    (runtime
+                      (make-runtime
+                       network :grants grants
+                       :services
+                       (list :starintel-operation
+                             (lambda (operation request config)
+                               (declare (ignore request config))
+                               (setf called operation)
+                               (values (jsown:parse "{\"ok\":true}") 200))))))
+               (check (= 1 (step-runtime runtime))
+                      "Typed manifest operation did not execute.")
+               (check (string= called "documents.get")
+                      "Dynamic operation processor lost its immutable operation id.")))
+        (uiop:symbol-call :quasar.fbp.control :clear-starintel-operation-nodes)))))
+
 (defun run-fbp-tests ()
   (dolist (test '(test-validation-and-iip
                   test-round-trip
@@ -189,7 +250,8 @@
                   test-self-trust-is-rejected
                   test-literal-secret-is-rejected
                   test-profile-values-are-inert
-                  test-installer-no-secret))
+                  test-installer-no-secret
+                  test-manifest-node-dispatch-when-control-loaded))
     (funcall test))
-  (format t "~&Quasar FBP: 10 tests passed.~%")
+  (format t "~&Quasar FBP: 11 tests passed.~%")
   t)
