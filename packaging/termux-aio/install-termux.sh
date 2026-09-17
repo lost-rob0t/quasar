@@ -15,6 +15,13 @@ aio_home="${QUASAR_AIO_HOME:-$HOME/.local/share/quasar-aio}"
 distro="${QUASAR_AIO_DISTRO:-quasar-aio-debian}"
 
 test -d "$payload_dir" || fail "payload/ is missing; extract the complete release ZIP first"
+test -f "$bundle_dir/PAYLOAD-SHA256SUMS" || fail "PAYLOAD-SHA256SUMS is missing"
+
+printf '[0/5] Verifying release payload...\n'
+(
+  cd "$bundle_dir"
+  sha256sum -c PAYLOAD-SHA256SUMS
+)
 
 printf '[1/5] Installing Termux host prerequisites...\n'
 pkg install -y proot-distro curl ca-certificates
