@@ -28,6 +28,24 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
+      - name: Format touched frontend files deterministically
+        run: |
+          npm --prefix frontend exec -- prettier --write \
+            src/components/ProActorManager.jsx \
+            src/control-plane/mutations.ts \
+            src/lib/pro-actors.js \
+            src/lib/pro-actors.test.js
+      - name: Upload formatter output
+        uses: actions/upload-artifact@v4
+        with:
+          name: pro-actor-prettier
+          path: |
+            frontend/src/components/ProActorManager.jsx
+            frontend/src/control-plane/mutations.ts
+            frontend/src/lib/pro-actors.js
+            frontend/src/lib/pro-actors.test.js
+      - name: Require committed formatter output
+        run: git diff --exit-code -- frontend/src
       - name: Frontend static checks
         run: npm --prefix frontend run check
       - name: Pro actor unit tests
