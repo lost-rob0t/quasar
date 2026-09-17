@@ -8,16 +8,12 @@ const repoRoot = path.resolve(import.meta.dirname, "..");
 const outputRoot = path.join(repoRoot, "frontend", "public", "quasar-docs");
 const indexPath = path.join(outputRoot, "index.json");
 const allowedExtensions = new Set([".md", ".org", ".txt"]);
+const starIntelManifestPath = path.join(repoRoot, "vendor-docs", "starintel-server", "MANIFEST.json");
 
 const roots = [
   { id: "quasar-docs", label: "Quasar docs", root: path.join(repoRoot, "docs") },
   { id: "quasar-wiki", label: "Operator wiki", root: path.join(repoRoot, "wiki") },
-  { id: "quasar-learn", label: "Learn", root: path.join(repoRoot, "learn") },
-  {
-    id: "starintel-server",
-    label: "StarIntel Server",
-    root: path.join(repoRoot, "vendor-docs", "starintel-server")
-  }
+  { id: "quasar-learn", label: "Learn", root: path.join(repoRoot, "learn") }
 ];
 
 async function exists(target) {
@@ -76,10 +72,13 @@ function safeFileName(id) {
   return `${readable}-${digest}.txt`;
 }
 
-async function vendorRevision() {
-  const revisionPath = path.join(repoRoot, "vendor-docs", "starintel-server", "REVISION");
-  if (!(await exists(revisionPath))) return null;
-  return (await fs.readFile(revisionPath, "utf8")).trim() || null;
+async function loadStarIntelManifest() {
+  if (!(await exists(starIntelManifestPath))) return null;
+  const manifest = JSON.parse(await fs.readFile(starIntelManifestPath, "utf8"));
+  if (!manifest?.revision || !manifest?.rawBase || !Array.isArray(manifest.documents)) {
+    throw new Error("Invalid StarIntel documentation manifest");
+  }
+  return manifest;
 }
 
 async function main() {
@@ -103,7 +102,28 @@ async function main() {
         title: titleFromSource(source, path.basename(file.relative)),
         summary: summaryFromSource(source),
         format: path.extname(file.relative).slice(1).toLowerCase(),
-        asset: `/quasar-docs/${asset}`
+        asset: `/quasar-docs/${asset}`,
+        remote: false
+      });
+    }
+  }
+
+  const starIntelManifest = await loadStarIntelManifest();
+  if (starIntelManifest) {
+    for (const document of starIntelManifest.documents) {
+      const relativePath = String(document.path || "").replace(/^\/+/, "");
+      if (!relativePath) continue;
+      documents.push({
+        id: `starintel-server/${relativePath}`,
+        section: "starintel-server",
+        sectionLabel: "StarIntel Server",
+        path: relativePath,
+        title: document.title || relativePath,
+        summary: `Pinned StarIntel Server documentation at ${starIntelManifest.revision.slice(0, 12)}.`,
+        format: path.extname(relativePath).slice(1).toLowerCase(),
+        asset: new URL(relativePath, starIntelManifest.rawBase).href,
+        remote: true,
+        revision: starIntelManifest.revision
       });
     }
   }
@@ -118,7 +138,7 @@ async function main() {
       {
         version: 1,
         generatedAt: new Date().toISOString(),
-        sourceRevisions: { starintelServer: await vendorRevision() },
+        sourceRevisions: { starintelServer: starIntelManifest?.revision || null },
         documents
       },
       null,
@@ -127,7 +147,7 @@ async function main() {
     "utf8"
   );
 
-  console.log(`Packaged ${documents.length} documentation files into ${outputRoot}`);
+  console.log(`Packaged ${documents.length} documentation entries into ${outputRoot}`);
 }
 
 main().catch((error) => {
