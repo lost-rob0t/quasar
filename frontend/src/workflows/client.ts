@@ -166,8 +166,7 @@ export async function loadCatalog(): Promise<NodeDescriptor[]> {
   } catch {
     // The editor remains useful in offline/browser-only mode.
   }
-  const hasTypedStarIntel = local.some((node) => node.id.startsWith("starintel.operation/"));
-  return hasTypedStarIntel ? local.filter((node) => node.id !== "starintel/operation") : local;
+  return local;
 }
 
 export async function validateRemote(workflow: Workflow): Promise<Record<string, unknown>> {
@@ -201,11 +200,13 @@ export async function deploy(workflow: Workflow): Promise<Record<string, unknown
 export async function profilePlan(
   endpoint: string,
   credentialReference: string,
+  allowedOperations: string[],
   shell: "sh" | "bash"
 ): Promise<Record<string, unknown>> {
   return getControlPlaneOrThrow().send<Record<string, unknown>>("fbp.profile.plan", {
     endpoint,
     credentialReference,
+    allowedOperations,
     shell
   });
 }
@@ -213,11 +214,13 @@ export async function profilePlan(
 export async function applyProfile(
   endpoint: string,
   credentialReference: string,
+  allowedOperations: string[],
   shell: "sh" | "bash"
 ): Promise<Record<string, unknown>> {
   return getControlPlaneOrThrow().send<Record<string, unknown>>("fbp.profile.apply", {
     endpoint,
     credentialReference,
+    allowedOperations,
     shell
   });
 }

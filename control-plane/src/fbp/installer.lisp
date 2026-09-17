@@ -123,6 +123,17 @@
        "Credential reference must match credential:[A-Za-z0-9_.-]+."))
     reference))
 
+(defun validate-operation-id (value)
+  (let ((operation (ensure-clean-string value "operation id" :maximum-length 256)))
+    (unless (every (lambda (character)
+                     (or (ascii-alphanumeric-p character)
+                         (member character '(#\. #\_ #\- #\: #\/))))
+                   operation)
+      (signal-installer-validation-error
+       "fbp.invalid-operation-id"
+       "Operation ids may contain only letters, digits, dot, underscore, dash, colon, and slash."))
+    operation))
+
 (defun posix-single-quote (value)
   "Quote VALUE as one inert POSIX shell word."
   (ensure-clean-string value "profile value")
@@ -161,7 +172,8 @@
 (defun xdg-path (environment-name fallback &rest parts)
   (let ((root (or (uiop:getenv environment-name)
                   (merge-pathnames fallback (user-homedir-pathname)))))
-    (reduce #'merge-pathnames parts :initial-value (uiop:ensure-directory-pathname root))))
+    (reduce (lambda (base part) (merge-pathnames part base))
+            parts :initial-value (uiop:ensure-directory-pathname root))))
 
 (defun required-automation-executable (executable)
   (let* ((value (ensure-clean-string executable "automation executable"
@@ -333,7 +345,7 @@
   plan)
 
 (defun profile-plan (&key endpoint (credential-reference "credential:starintel-api")
-                          (shell :sh))
+                          allowed-operations (shell :sh))
   "Create an idempotent managed profile block containing references, never keys."
   (unless (member shell '(:sh :bash))
     (error 'validation-error :code "fbp.unsupported-shell"
@@ -342,14 +354,19 @@
            (validate-endpoint (or endpoint "http://127.0.0.1:5000")))
          (validated-reference
            (validate-credential-reference credential-reference))
+         (validated-operations
+           (remove-duplicates (mapcar #'validate-operation-id allowed-operations)
+                              :test #'string=))
          (profile (merge-pathnames (if (eq shell :bash) ".bash_profile" ".profile")
                                    (user-homedir-pathname)))
          (begin "# >>> quasar-fbp >>>")
          (end "# <<< quasar-fbp <<<")
-         (block (format nil "~A~%export STARINTEL_ENDPOINT=~A~%export STARINTEL_CREDENTIAL_REF=~A~%~A~%"
+         (block (format nil "~A~%export STARINTEL_ENDPOINT=~A~%export STARINTEL_CREDENTIAL_REF=~A~%export QUASAR_STARINTEL_ALLOWED_OPERATIONS=~A~%~A~%"
                         begin
                         (posix-single-quote validated-endpoint)
                         (posix-single-quote validated-reference)
+                        (posix-single-quote
+                         (format nil "~{~A~^,~}" validated-operations))
                         end)))
     (list :path profile :begin begin :end end :content block)))
 

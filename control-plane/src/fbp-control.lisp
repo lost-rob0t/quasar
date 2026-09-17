@@ -403,9 +403,14 @@
   (let* ((endpoint (quasar.protocol:json-value payload "endpoint"))
          (reference (or (quasar.protocol:json-value payload "credentialReference")
                         "credential:starintel-api"))
+         (allowed-operations
+           (array-values
+            (or (quasar.protocol:json-value payload "allowedOperations")
+                nil)))
          (shell-name (or (quasar.protocol:json-value payload "shell") "sh"))
          (plan (profile-plan :endpoint endpoint
                              :credential-reference reference
+                             :allowed-operations allowed-operations
                              :shell (if (string= shell-name "bash") :bash :sh))))
     (when apply-p
       (require-operator)

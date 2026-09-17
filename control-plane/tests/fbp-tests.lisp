@@ -176,7 +176,17 @@
   (check (signals-p 'validation-error
                     (lambda ()
                       (profile-plan :endpoint "http://starintel.example.test")))
-         "Plain HTTP was accepted for a non-loopback StarIntel endpoint."))
+         "Plain HTTP was accepted for a non-loopback StarIntel endpoint.")
+  (check (signals-p 'validation-error
+                    (lambda ()
+                      (profile-plan :allowed-operations '("documents.get\nBAD=1"))))
+         "An unsafe operation id was accepted by the profile installer.")
+  (let ((content (getf (profile-plan
+                        :allowed-operations '("targets.create" "documents.get"))
+                       :content)))
+    (check (search "QUASAR_STARINTEL_ALLOWED_OPERATIONS='targets.create,documents.get'"
+                   content)
+           "The shell profile omitted its exact StarIntel operation allowlist.")))
 
 (defun test-installer-no-secret ()
   (let* ((secret "star_sk_v1_must_not_appear")
@@ -192,6 +202,9 @@
                                 :endpoint "http://127.0.0.1:5000"
                                 :credential-reference "credential:starintel-api"))
          (unit (getf plan :unit-source)))
+    (check (search "/.config/systemd/user/quasar-fbp@basic.service"
+                   (namestring (getf plan :unit-path)))
+           "The user unit path is outside XDG_CONFIG_HOME/systemd/user.")
     (check (and (search "ExecStart=" unit)
                 (search " fbp-run --graph" unit))
            "The user unit does not invoke the packaged fbp-run entry point.")

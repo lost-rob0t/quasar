@@ -29,7 +29,6 @@ import {
   connectWorkflowInput,
   descriptorForWorkflowNode,
   emptyWorkflow,
-  STARINTEL_OPERATION_NODE_TYPE,
   removeWorkflowNode,
   renameWorkflowNode,
   validateWorkflow,
@@ -197,6 +196,7 @@ export default function WorkflowPage() {
   const [plan, setPlan] = useState<Record<string, unknown> | null>(null);
   const [endpoint, setEndpoint] = useState("http://127.0.0.1:5000");
   const [credentialReference, setCredentialReference] = useState("credential:starintel-api");
+  const [allowedOperations, setAllowedOperations] = useState("");
   const [profileShell, setProfileShell] = useState<"sh" | "bash">("sh");
   const importRef = useRef<HTMLInputElement>(null);
 
@@ -465,8 +465,7 @@ export default function WorkflowPage() {
                         const target = next.nodes.find((node) => node.id === selectedNode.id);
                         if (target) {
                           if (
-                            (target.type === STARINTEL_OPERATION_NODE_TYPE ||
-                              target.type.startsWith("starintel.operation/")) &&
+                            target.type.startsWith("starintel.operation/") &&
                             typeof target.config.operation === "string"
                           ) {
                             value.operation = target.config.operation;
@@ -601,6 +600,14 @@ export default function WorkflowPage() {
             />
           </label>
           <label>
+            Allowed operation IDs (comma-separated)
+            <input
+              value={allowedOperations}
+              placeholder="targets.create,documents.get"
+              onChange={(event) => setAllowedOperations(event.target.value)}
+            />
+          </label>
+          <label>
             Shell profile
             <select
               value={profileShell}
@@ -616,7 +623,15 @@ export default function WorkflowPage() {
               onClick={async () =>
                 setPlan(
                   await action("Profile plan", () =>
-                    profilePlan(endpoint, credentialReference, profileShell)
+                    profilePlan(
+                      endpoint,
+                      credentialReference,
+                      allowedOperations
+                        .split(",")
+                        .map((value) => value.trim())
+                        .filter(Boolean),
+                      profileShell
+                    )
                   )
                 )
               }
@@ -627,7 +642,15 @@ export default function WorkflowPage() {
               className="button"
               onClick={() =>
                 action("Install profile", () =>
-                  applyProfile(endpoint, credentialReference, profileShell)
+                  applyProfile(
+                    endpoint,
+                    credentialReference,
+                    allowedOperations
+                      .split(",")
+                      .map((value) => value.trim())
+                      .filter(Boolean),
+                    profileShell
+                  )
                 )
               }
             >

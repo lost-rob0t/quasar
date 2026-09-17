@@ -78,8 +78,6 @@ export interface Workflow {
   iips: WorkflowIip[];
 }
 
-export const STARINTEL_OPERATION_NODE_TYPE = "starintel/operation";
-
 const STARINTEL_OPERATION_PALETTE_PREFIX = "starintel.operation/";
 
 const unavailableBuiltInNodeTypes = new Set(["starintel/actor", "starintel/domain-server"]);
@@ -271,8 +269,7 @@ export function validateWorkflow(workflow: Workflow, catalog: NodeDescriptor[]):
     ids.add(node.id);
     if (!descriptor.has(node.type)) errors.push(`Unknown node type ${node.type}`);
     if (
-      (node.type === STARINTEL_OPERATION_NODE_TYPE ||
-        node.type.startsWith(STARINTEL_OPERATION_PALETTE_PREFIX)) &&
+      node.type.startsWith(STARINTEL_OPERATION_PALETTE_PREFIX) &&
       (typeof node.config.operation !== "string" || !node.config.operation)
     )
       errors.push(`StarIntel operation node ${node.id} has no operation id`);

@@ -72,7 +72,7 @@ describe("workflow model", () => {
     workflow.nodes = [
       {
         id: "call",
-        type: "starintel/operation",
+        type: "starintel.operation/targets.create",
         x: 0,
         y: 0,
         config: {
