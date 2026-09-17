@@ -130,13 +130,52 @@
   scroll-margin-top: 80px;
 }
 
+.org-document blockquote {
+  margin: 18px 0;
+  padding: 10px 14px;
+  border-left: 3px solid currentColor;
+  background: rgba(255, 255, 255, 0.035);
+  opacity: 0.9;
+}
+
+.org-table-wrap {
+  width: 100%;
+  margin: 18px 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.org-document table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.org-document th,
+.org-document td {
+  max-width: 42rem;
+  padding: 7px 9px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.14));
+  vertical-align: top;
+  text-align: left;
+  word-break: break-word;
+}
+
+.org-document th {
+  background: rgba(255, 255, 255, 0.055);
+  font-weight: 650;
+}
+
 .org-document code,
 .doc-code-block code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 .org-document p code,
-.org-document li code {
+.org-document li code,
+.org-document td code,
+.org-document th code {
   border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
   border-radius: 5px;
   padding: 1px 5px;
@@ -201,10 +240,11 @@
 
 .note-block {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) 30px;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: flex-start;
   padding: 4px 0;
+  transition: margin-inline-start 100ms ease;
 }
 
 .note-block-bullet {
@@ -221,6 +261,17 @@
   resize: vertical;
   padding: 8px 10px;
   line-height: 1.45;
+}
+
+.note-block-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.note-block-actions .icon-button {
+  min-width: 28px;
+  min-height: 28px;
 }
 
 .note-block-refs,
@@ -299,5 +350,19 @@
 
   .org-document {
     font-size: 0.96rem;
+  }
+
+  .org-document table {
+    font-size: 0.85rem;
+  }
+
+  .note-block {
+    grid-template-columns: 14px minmax(0, 1fr);
+  }
+
+  .note-block-actions {
+    grid-column: 2;
+    flex-direction: row;
+    justify-content: flex-end;
   }
 }
