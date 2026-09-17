@@ -4,8 +4,10 @@
   :depends-on ("quasar-fbp")
   :serial t
   :pathname "../control-plane/tests/"
-  :components ((:file "fbp-tests"))
+  :components ((:file "fbp-tests")
+               (:file "beast-a2a-tests"))
   :perform (test-op (operation component)
              (declare (ignore operation component))
-             (uiop:symbol-call :quasar.fbp.tests :run-fbp-tests)))
+             (uiop:symbol-call :quasar.fbp.tests :run-fbp-tests)
+             (uiop:symbol-call :quasar.fbp.beast-a2a-tests :run-beast-a2a-tests)))
 

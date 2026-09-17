@@ -1,0 +1,57 @@
+name: Beast A2A workflows
+
+on:
+  push:
+    branches:
+      - feature/81-beast-a2a-workflows
+    paths:
+      - 'control-plane/src/fbp/**'
+      - 'control-plane/tests/beast-a2a-tests.lisp'
+      - 'example_configs/beast-*.lisp'
+      - 'systems/quasar-fbp-tests.asd'
+      - '.github/workflows/beast-a2a.yml'
+  pull_request:
+    paths:
+      - 'control-plane/src/fbp/**'
+      - 'control-plane/tests/beast-a2a-tests.lisp'
+      - 'example_configs/beast-*.lisp'
+      - 'systems/quasar-fbp-tests.asd'
+      - '.github/workflows/beast-a2a.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fbp:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Install Common Lisp runtime dependencies
+        run: |
+          sudo apt-get update --quiet
+          sudo apt-get install --yes --quiet \
+            sbcl curl git libffi-dev libssl-dev libsqlite3-dev librabbitmq-dev liblmdb-dev
+          curl --fail --silent --show-error --output /tmp/quicklisp.lisp \
+            https://beta.quicklisp.org/quicklisp.lisp
+          sbcl --non-interactive \
+            --load /tmp/quicklisp.lisp \
+            --eval '(quicklisp-quickstart:install :path #p"/home/runner/quicklisp/")'
+          printf '%s\n' '(load #p"/home/runner/quicklisp/setup.lisp")' > /home/runner/.sbclrc
+          bash scripts/bootstrap-lisp-deps
+          sbcl --non-interactive \
+            --eval '(ql:quickload (list "bordeaux-threads" "jsown"))'
+
+      - name: Run FBP and Beast A2A tests
+        env:
+          QUASAR_REPOSITORY_ROOT: ${{ github.workspace }}/
+        run: |
+          sbcl --non-interactive \
+            --eval '(require :asdf)' \
+            --eval '(asdf:initialize-source-registry `(:source-registry (:tree ,(uiop:getcwd)) :inherit-configuration))' \
+            --eval '(asdf:test-system "quasar-fbp-tests")'

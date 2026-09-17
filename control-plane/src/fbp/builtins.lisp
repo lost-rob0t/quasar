@@ -11,6 +11,13 @@
 (defun single-input (inputs &optional (name "in"))
   (cdr (assoc name inputs :test #'string=)))
 
+(defun required-config-string (context key code)
+  (let ((value (getf (getf context :config) key)))
+    (unless (and (stringp value) (plusp (length value)))
+      (error 'sandbox-denied :code code
+             :message (format nil "Required FBP config ~A is missing or invalid." key)))
+    value))
+
 (defun register-builtins ()
   (define-node core/identity
       (:label "Identity" :category "Core"
@@ -65,6 +72,21 @@
                 (list (funcall (required-service context :star-language)
                                (getf (getf context :config) :program)
                                (single-input inputs))))))
+
+  (define-node starintel.a2a/worker
+      (:label "StarIntel A2A worker" :category "StarIntel / A2A"
+       :inputs ((task :schema (:type "object")))
+       :outputs ((result :schema (:type "object")))
+       :capabilities (:a2a-worker))
+      (inputs context)
+    (let ((worker (required-config-string context :worker "fbp.a2a-worker-missing")))
+      (list
+       (cons "result"
+             (list
+              (funcall (required-service context :a2a-worker)
+                       worker
+                       (single-input inputs "task")
+                       (getf context :config)))))))
 
   (define-node process/exec
       (:label "Sandboxed process" :category "Languages"
