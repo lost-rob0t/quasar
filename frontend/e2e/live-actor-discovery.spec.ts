@@ -3,7 +3,10 @@ import { expect, test } from "@playwright/test";
 const liveServerUrl = process.env.STAR_ACTOR_E2E_SERVER_URL || "";
 
 test.describe("live StarIntel actor discovery", () => {
-  test.skip(!liveServerUrl, "STAR_ACTOR_E2E_SERVER_URL is required for the live cross-service check");
+  test.skip(
+    !liveServerUrl,
+    "STAR_ACTOR_E2E_SERVER_URL is required for the live cross-service check"
+  );
 
   test("shows local Lisp and remote BBPD actors in Actor Studio", async ({ page }) => {
     await page.goto("/settings");
