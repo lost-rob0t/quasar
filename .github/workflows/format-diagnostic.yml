@@ -1,0 +1,25 @@
+name: Actor Studio format diagnostic
+
+on:
+  push:
+    branches:
+      - feature/actor-runtime-discovery-20260908
+
+permissions:
+  contents: read
+
+jobs:
+  prettier-diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Print exact Prettier diff
+        run: |
+          npx prettier --config frontend/.prettierrc.json --write frontend/src/components/ActorManager.jsx
+          git diff --check
+          git diff -- frontend/src/components/ActorManager.jsx
