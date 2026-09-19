@@ -12,7 +12,9 @@ import {
   Trash2
 } from "lucide-react";
 import { BUILTIN_ACTORS, isBuiltinActor, normalizeActorManifest } from "../lib/actors";
+import { validateSource } from "../lib/code-validation";
 import { useQuasar } from "../store";
+import CodeEditor from "./CodeEditor";
 import "../actor-manager.css";
 
 const NEW_ACTOR = "__new_actor__";
@@ -53,17 +55,11 @@ function defaultActor() {
   };
 }
 
-function insertIndent(event, value, onChange) {
-  if (event.key !== "Tab") return;
-  event.preventDefault();
-  const start = event.currentTarget.selectionStart;
-  const end = event.currentTarget.selectionEnd;
-  const next = `${value.slice(0, start)}  ${value.slice(end)}`;
-  onChange(next);
-  requestAnimationFrame(() => {
-    event.currentTarget.selectionStart = start + 2;
-    event.currentTarget.selectionEnd = start + 2;
-  });
+function syntaxErrorMessage(validation) {
+  const failure = validation.diagnostics[0];
+  if (!failure) return "Invalid JavaScript actor source";
+  const location = failure.line && failure.column ? ` at ${failure.line}:${failure.column}` : "";
+  return `Invalid JavaScript actor source${location}: ${failure.message}`;
 }
 
 export default function ActorManager() {
@@ -118,6 +114,10 @@ export default function ActorManager() {
 
   async function saveActor() {
     try {
+      const sourceValidation = validateSource(draft.source, "javascript", {
+        javascriptExpression: true
+      });
+      if (!sourceValidation.valid) throw new Error(syntaxErrorMessage(sourceValidation));
       const parsed = JSON.parse(draft.config);
       const normalized = normalizeActorManifest({ ...parsed, source: draft.source });
       const occupied = allActors.find(
@@ -185,10 +185,8 @@ export default function ActorManager() {
 
   function formatConfig() {
     try {
-      setDraft((current) => ({
-        ...current,
-        config: JSON.stringify(JSON.parse(current.config), null, 2)
-      }));
+      const formatted = JSON.stringify(JSON.parse(draft.config), null, 2);
+      setDraft((current) => ({ ...current, config: formatted }));
       setStatus({ kind: "idle", message: "Manifest JSON formatted." });
     } catch (error) {
       setStatus({ kind: "error", message: error.message });
@@ -328,23 +326,17 @@ export default function ActorManager() {
           </nav>
 
           {editorTab === "code" && (
-            <label className="actor-code-field">
+            <div className="actor-code-field">
               <span>JavaScript actor function</span>
-              <textarea
-                className="actor-code-editor"
+              <CodeEditor
                 value={draft.source}
                 readOnly={!editable}
-                spellCheck="false"
-                onKeyDown={(event) =>
-                  insertIndent(event, draft.source, (source) =>
-                    setDraft((current) => ({ ...current, source }))
-                  )
-                }
-                onChange={(event) =>
-                  setDraft((current) => ({ ...current, source: event.target.value }))
-                }
+                language="javascript"
+                validationMode="expression"
+                ariaLabel="JavaScript actor function"
+                onChange={(source) => setDraft((current) => ({ ...current, source }))}
               />
-            </label>
+            </div>
           )}
 
           {editorTab === "config" && (
@@ -355,19 +347,12 @@ export default function ActorManager() {
                   Format JSON
                 </button>
               </div>
-              <textarea
-                className="actor-code-editor"
+              <CodeEditor
                 value={draft.config}
                 readOnly={!editable}
-                spellCheck="false"
-                onKeyDown={(event) =>
-                  insertIndent(event, draft.config, (config) =>
-                    setDraft((current) => ({ ...current, config }))
-                  )
-                }
-                onChange={(event) =>
-                  setDraft((current) => ({ ...current, config: event.target.value }))
-                }
+                language="json"
+                ariaLabel="Actor manifest JSON"
+                onChange={(config) => setDraft((current) => ({ ...current, config }))}
               />
             </div>
           )}
