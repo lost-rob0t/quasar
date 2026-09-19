@@ -50,9 +50,12 @@ function normalizeActorDeployment(manifest) {
   if (!manifest || typeof manifest !== "object") return null;
   const actorId = deploymentString(manifest, "id");
   if (!actorId) return null;
-  const service = manifest.service && typeof manifest.service === "object" ? manifest.service : {};
-  const runtime = manifest.runtime && typeof manifest.runtime === "object" ? manifest.runtime : {};
-  const dispatch = manifest.dispatch && typeof manifest.dispatch === "object" ? manifest.dispatch : {};
+  const service =
+    manifest.service && typeof manifest.service === "object" ? manifest.service : {};
+  const runtime =
+    manifest.runtime && typeof manifest.runtime === "object" ? manifest.runtime : {};
+  const dispatch =
+    manifest.dispatch && typeof manifest.dispatch === "object" ? manifest.dispatch : {};
   const location = deploymentString(runtime, "location", "remote");
   const language = deploymentString(service, "language", "unknown");
   const serviceId = deploymentString(service, "id", "starintel-server");
@@ -60,7 +63,11 @@ function normalizeActorDeployment(manifest) {
     id: `star-runtime:${actorId}`,
     actorId,
     label: deploymentString(manifest, "label", actorId),
-    description: deploymentString(manifest, "description", "StarIntel server-managed actor deployment."),
+    description: deploymentString(
+      manifest,
+      "description",
+      "StarIntel server-managed actor deployment."
+    ),
     source: "",
     serverManaged: true,
     readOnly: true,
