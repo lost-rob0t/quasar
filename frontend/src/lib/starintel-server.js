@@ -50,10 +50,8 @@ function normalizeActorDeployment(manifest) {
   if (!manifest || typeof manifest !== "object") return null;
   const actorId = deploymentString(manifest, "id");
   if (!actorId) return null;
-  const service =
-    manifest.service && typeof manifest.service === "object" ? manifest.service : {};
-  const runtime =
-    manifest.runtime && typeof manifest.runtime === "object" ? manifest.runtime : {};
+  const service = manifest.service && typeof manifest.service === "object" ? manifest.service : {};
+  const runtime = manifest.runtime && typeof manifest.runtime === "object" ? manifest.runtime : {};
   const dispatch =
     manifest.dispatch && typeof manifest.dispatch === "object" ? manifest.dispatch : {};
   const location = deploymentString(runtime, "location", "remote");
