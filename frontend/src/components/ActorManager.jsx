@@ -283,12 +283,7 @@ export default function ActorManager() {
           >
             <Copy size={16} /> Clone
           </button>
-          <button
-            className="button primary"
-            type="button"
-            disabled={!editable}
-            onClick={saveActor}
-          >
+          <button className="button primary" type="button" disabled={!editable} onClick={saveActor}>
             <Save size={16} /> Save
           </button>
         </div>
