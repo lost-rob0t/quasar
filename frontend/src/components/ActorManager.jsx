@@ -96,9 +96,9 @@ export default function ActorManager() {
   const editable = !builtin && !serverManaged;
   const canRunSelected = Boolean(
     selectedActor &&
-      !serverManaged &&
-      selectedIds.length &&
-      (builtin || currentSettings.actorsEnabled)
+    !serverManaged &&
+    selectedIds.length &&
+    (builtin || currentSettings.actorsEnabled)
   );
   const filteredActors = allActors.filter((actor) => {
     const needle = query.trim().toLowerCase();
