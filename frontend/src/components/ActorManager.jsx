@@ -103,11 +103,17 @@ export default function ActorManager() {
   const filteredActors = allActors.filter((actor) => {
     const needle = query.trim().toLowerCase();
     if (!needle) return true;
-    return [actor.id, actor.actorId, actor.label, actor.description, actor.serviceId, actor.language].some(
-      (value) =>
-        String(value || "")
-          .toLowerCase()
-          .includes(needle)
+    return [
+      actor.id,
+      actor.actorId,
+      actor.label,
+      actor.description,
+      actor.serviceId,
+      actor.language
+    ].some((value) =>
+      String(value || "")
+        .toLowerCase()
+        .includes(needle)
     );
   });
 
@@ -269,10 +275,20 @@ export default function ActorManager() {
           <button className="button" type="button" onClick={createActor}>
             <Plus size={16} /> Create actor
           </button>
-          <button className="button" type="button" disabled={serverManaged} onClick={duplicateActor}>
+          <button
+            className="button"
+            type="button"
+            disabled={serverManaged}
+            onClick={duplicateActor}
+          >
             <Copy size={16} /> Clone
           </button>
-          <button className="button primary" type="button" disabled={!editable} onClick={saveActor}>
+          <button
+            className="button primary"
+            type="button"
+            disabled={!editable}
+            onClick={saveActor}
+          >
             <Save size={16} /> Save
           </button>
         </div>
@@ -438,9 +454,7 @@ export default function ActorManager() {
                 value={draft.config}
                 readOnly={!editable}
                 language="json"
-                ariaLabel={
-                  serverManaged ? "Actor deployment manifest JSON" : "Actor manifest JSON"
-                }
+                ariaLabel={serverManaged ? "Actor deployment manifest JSON" : "Actor manifest JSON"}
                 onChange={(config) => setDraft((current) => ({ ...current, config }))}
               />
             </div>
