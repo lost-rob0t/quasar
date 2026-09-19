@@ -93,7 +93,10 @@ function SchemaField({ name, schema, values, onChange }) {
 
 function normalizedDefaults(manifest) {
   return Object.fromEntries(
-    Object.entries(defaultConfigForManifest(manifest)).map(([key, value]) => [key, inputValue(value)])
+    Object.entries(defaultConfigForManifest(manifest)).map(([key, value]) => [
+      key,
+      inputValue(value)
+    ])
   );
 }
 
@@ -126,14 +129,8 @@ function parseOptions(options, values) {
 }
 
 export default function ProActorManager() {
-  const {
-    documents,
-    selectedDocuments,
-    settings,
-    submitTarget,
-    setNotice,
-    controlPlaneStatus
-  } = useQuasar();
+  const { documents, selectedDocuments, settings, submitTarget, setNotice, controlPlaneStatus } =
+    useQuasar();
   const [capabilities, setCapabilities] = useState([]);
   const [manifests, setManifests] = useState([]);
   const [actorId, setActorId] = useState("");
@@ -150,13 +147,16 @@ export default function ProActorManager() {
   const configFields = useMemo(() => editableConfigProperties(actor), [actor]);
   const targetOptions = useMemo(() => editableTargetOptions(actor), [actor]);
   const candidateInputs = useMemo(() => {
-    const selected = (selectedDocuments || []).filter((document) => document?.dtype !== "actor-manifest");
+    const selected = (selectedDocuments || []).filter(
+      (document) => document?.dtype !== "actor-manifest"
+    );
     if (selected.length) return selected;
     return (documents || []).filter(
       (document) => document?.dtype !== "actor-manifest" && document?.dtype !== "relation"
     );
   }, [documents, selectedDocuments]);
-  const input = candidateInputs.find((document) => document._id === inputId) || candidateInputs[0] || null;
+  const input =
+    candidateInputs.find((document) => document._id === inputId) || candidateInputs[0] || null;
 
   async function refresh() {
     setLoading(true);
@@ -174,7 +174,9 @@ export default function ProActorManager() {
       const byId = new Map([...local, ...remote].map((manifest) => [manifest.id, manifest]));
       const next = [...byId.values()].sort((left, right) => left.id.localeCompare(right.id));
       setManifests(next);
-      setActorId((current) => (next.some((item) => item.id === current) ? current : next[0]?.id || ""));
+      setActorId((current) =>
+        next.some((item) => item.id === current) ? current : next[0]?.id || ""
+      );
     } catch (cause) {
       setError(cause?.message || String(cause));
       setManifests([]);
@@ -273,7 +275,11 @@ export default function ProActorManager() {
             documents; secrets stay on the actor deployment.
           </p>
         </div>
-        <button className="button" onClick={refresh} disabled={loading || !controlPlaneStatus?.connected}>
+        <button
+          className="button"
+          onClick={refresh}
+          disabled={loading || !controlPlaneStatus?.connected}
+        >
           <RefreshCw size={15} /> {loading ? "Refreshing…" : "Refresh manifests"}
         </button>
       </div>
@@ -341,7 +347,9 @@ export default function ProActorManager() {
 
           <div className="page-card compact-card">
             <div className="button-row">
-              <span className="badge"><Crown size={13} /> Pro</span>
+              <span className="badge">
+                <Crown size={13} /> Pro
+              </span>
               <code>{actor.id}</code>
               <span className="muted">{actor.runtime}</span>
             </div>
