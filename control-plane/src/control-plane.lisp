@@ -458,6 +458,10 @@ returns a result envelope with revision, operation ID, and canonical data."
 (defun start-control-plane (plane)
   (unless (control-plane-started-p plane)
     (install-core-commands plane)
+    (let ((installer (find-symbol "INSTALL-PROLOG-IO-COMMANDS"
+                                  "QUASAR.CONTROL-PLANE")))
+      (when (and installer (fboundp installer))
+        (funcall installer plane)))
     (setf (control-plane-actor-system plane)
           (sento.actor-system:make-actor-system))
     (setf (control-plane-command-actor plane)
