@@ -27,6 +27,7 @@
                (:file "phase2-stage-cleanup")
                (:file "phase2-store-reads")
                (:file "control-plane")
+               (:file "prolog-io")
                (:file "pro-actors")
                (:file "command-authority-context")
                (:file "autodig-store")
