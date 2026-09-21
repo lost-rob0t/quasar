@@ -7,6 +7,8 @@ import { installStarIntelViews, queryCountView, queryStarIntelView } from "./vie
 export const documentsDb = new PouchDB("quasar-starintel-v09", { auto_compaction: true });
 export const stateDb = new PouchDB("quasar-ui-state-v1", { auto_compaction: true });
 
+const defaultStarIntelServerUrl = String(import.meta.env?.VITE_STARINTEL_SERVER_URL || "").trim();
+
 function newestFirst(left, right) {
   return String(right.date_updated || "").localeCompare(String(left.date_updated || ""));
 }
@@ -108,7 +110,7 @@ export async function getSettings() {
     couchDatabase: "starintel",
     couchUsername: "",
     couchPassword: "",
-    serverUrl: "",
+    serverUrl: defaultStarIntelServerUrl,
     serverUsername: "",
     serverPassword: "",
     serverToken: "",
