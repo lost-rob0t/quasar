@@ -1,8 +1,9 @@
 import { CircleAlert } from "lucide-react";
 import { Link, Navigate, Route, Routes, useSearchParams } from "react-router-dom";
-import ActorManager from "./components/ActorManager";
+import ActorHub from "./components/ActorHub";
 import AgentHub from "./components/AgentHub";
 import { AgentBubble, AgentSystemProvider } from "./components/AgentSystem";
+import CodeWorkbench from "./components/CodeWorkbench";
 import DatasetsPage from "./components/DatasetsPage";
 import DocumentEditor from "./components/DocumentEditor";
 import { DocumentPage, DocumentsPage } from "./components/Documents";
@@ -57,7 +58,8 @@ export default function App() {
           <Route path="/documents/:id/edit" element={<DocumentEditor mode="edit" />} />
           <Route path="/import" element={<ImportPage />} />
           <Route path="/agents" element={<AgentHub />} />
-          <Route path="/actors" element={<ActorManager />} />
+          <Route path="/actors" element={<ActorHub />} />
+          <Route path="/code" element={<CodeWorkbench />} />
           <Route path="/stats" element={<Navigate to="/" replace />} />
           <Route path="/settings" element={<SettingsWorkspace />} />
           <Route path="*" element={<NotFound />} />

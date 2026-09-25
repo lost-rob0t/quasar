@@ -20,6 +20,7 @@
                 (open-browser-p nil)
                 workspace-store
                 storage-path
+                (legacy-melissa-p nil)
                 (melissa-worker-count 3)
                 (melissa-license-key (uiop:getenv "QUASAR_MELISSA_LICENSE_KEY"))
                 melissa-config
@@ -28,7 +29,14 @@
 
 WORKSPACE-STORE may inject an already-created store for deployments or tests.
 Otherwise Quasar owns one full-durability Tek9 store for the process lifetime.
-STORAGE-PATH overrides the normal XDG data path when Quasar creates that store."
+STORAGE-PATH overrides the normal XDG data path when Quasar creates that store.
+
+Pro actors are the production enrichment path. Their manifests and target
+authorization commands are always installed, while access is granted per
+WebSocket session capability. The historical in-process Melissa subsystem is
+available only when LEGACY-MELISSA-P is explicitly true; it is off by default
+so Quasar does not run a second Melissa execution path beside
+starintel-pro-actors."
   (when (or *control-plane* *workspace-store*)
     (stop))
   (setf quasar.ui:*frontend-url* frontend-url
@@ -42,14 +50,16 @@ STORAGE-PATH overrides the normal XDG data path when Quasar creates that store."
   (handler-case
       (progn
         (start-control-plane *control-plane*)
+        (quasar.control-plane::install-pro-actor-commands *control-plane*)
         (install-starlang-commands *control-plane*)
-        (quasar.actors.melissa.bridge:start-melissa-integration
-         *control-plane*
-         :config (or melissa-config
-                     (quasar.actors.melissa:make-melissa-config
-                      :license-key melissa-license-key))
-         :worker-count melissa-worker-count
-         :transport melissa-transport)
+        (when legacy-melissa-p
+          (quasar.actors.melissa.bridge:start-melissa-integration
+           *control-plane*
+           :config (or melissa-config
+                       (quasar.actors.melissa:make-melissa-config
+                        :license-key melissa-license-key))
+           :worker-count melissa-worker-count
+           :transport melissa-transport))
         (setf *websocket-server*
               (make-websocket-server *control-plane* :host host :port ws-port
                                      :insecure-development-p insecure-development-p))
@@ -82,6 +92,8 @@ STORAGE-PATH overrides the normal XDG data path when Quasar creates that store."
     (setf *websocket-server* nil))
   (stop-ui)
   (when *control-plane*
+    ;; Safe for both the explicit legacy compatibility mode and the normal
+    ;; remote-pro-actor mode where no local Melissa subsystem was started.
     (quasar.actors.melissa.bridge:stop-melissa-integration *control-plane*)
     (stop-control-plane *control-plane*)
     (setf *control-plane* nil))
