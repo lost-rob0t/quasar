@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createControlPlaneClient } from "../../src/control-plane/client";
+import {
+  authenticatedWebSocketUrl,
+  createControlPlaneClient
+} from "../../src/control-plane/client";
 import { PROTOCOL_VERSION } from "../../src/control-plane/protocol";
 
 class FakeWebSocket {
@@ -58,6 +61,15 @@ async function connect(client: ReturnType<typeof createControlPlaneClient>) {
 }
 
 describe("control-plane client lifecycle", () => {
+  it("builds the configured hosted websocket endpoint", () => {
+    expect(authenticatedWebSocketUrl("/control-ws", "https://quasar.example/graph")).toBe(
+      "wss://quasar.example/control-ws"
+    );
+    expect(() =>
+      authenticatedWebSocketUrl("https://quasar.example/control-ws", "https://quasar.example/")
+    ).toThrow(/WebSocket transport/);
+  });
+
   beforeEach(() => {
     FakeWebSocket.instances = [];
     vi.stubGlobal("WebSocket", FakeWebSocket);

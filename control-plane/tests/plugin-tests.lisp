@@ -25,6 +25,12 @@
        server "expired" "alice" '("alice") :expires-at 1)
       (check (not (quasar.ws:websocket-session-active-p
                    server "expired" (get-universal-time))))))
+    (check (string= "cookie-token"
+                    (quasar.ws::handshake-token
+                     '(:headers (("cookie" . "other=x; quasar_session=cookie-token"))))))
+    (check (string= "query-token"
+                    (quasar.ws::handshake-token
+                     '(:query-string "session=query-token"))))
     (handler-case
         (quasar.plugin:authorize-actor-spawn
          "alice" '(:sandboxed-p nil :actor "unsafe"))

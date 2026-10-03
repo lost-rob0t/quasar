@@ -370,13 +370,26 @@ Expired entries are removed while holding the session-table lock."
           when (and equals (string= name (subseq part 0 equals)))
             do (return (subseq part (1+ equals))))))
 
+(defun cookie-value (env name)
+  (let ((cookie (request-header env "cookie")))
+    (when cookie
+      (loop for part in (uiop:split-string cookie :separator '(#\;))
+            for trimmed = (string-trim '(#\Space #\Tab) part)
+            for equals = (position #\= trimmed)
+            when (and equals (string= name (subseq trimmed 0 equals)))
+              do (return (subseq trimmed (1+ equals)))))))
+
+(defun handshake-token (env)
+  (or (cookie-value env "quasar_session")
+      (query-parameter env "session")))
+
 (defun handshake-session (server env)
   (if (websocket-server-insecure-development-p server)
       (list :principal "insecure-development"
             :authority-kind :internal
             :workspaces '("*")
             :capabilities (websocket-server-capabilities server))
-      (let ((token (query-parameter env "session")))
+      (let ((token (handshake-token env)))
         (when (and token (websocket-session-active-p server token))
           (bt:with-lock-held ((websocket-server-lock server))
             (gethash token (websocket-server-sessions server)))))))
@@ -410,7 +423,7 @@ Expired entries are removed while holding the session-table lock."
                                                 :ws ws
                                                 :session-id (random-session-id)
                                                 :session-token
-                                                (query-parameter env "session")
+                                                (handshake-token env)
                                                 :principal (getf session :principal)
                                                 :authority-kind
                                                 (getf session :authority-kind :internal)
