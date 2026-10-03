@@ -20,6 +20,7 @@
                (:file "persistence-plan")
                (:file "store")
                (:file "config")
+               (:file "plugin")
                ;; Logging is standalone infrastructure: configured after
                ;; config.lisp, available to every later subsystem.
                (:file "logging")

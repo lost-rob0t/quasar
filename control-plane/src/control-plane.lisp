@@ -167,6 +167,8 @@ the store has no record."
                       (cons "revision" revision)
                       (cons "workspaceId" (import-session-workspace-id session))
                       (cons "documentCount" (import-session-document-count session)))))
+        (quasar.plugin:authorize-storage-commit
+         (current-command-principal) candidate)
         (quasar.store:commit-workspace
          (control-plane-store plane) candidate
          (quasar.protocol:json-object
@@ -223,6 +225,8 @@ returns a result envelope with revision, operation ID, and canonical data."
       (quasar.protocol:object-set result-obj "revision"
                                   (quasar.workspace:workspace-revision candidate))
       (quasar.protocol:object-set result-obj "event" (applied-op-event applied)))
+    (quasar.plugin:authorize-storage-commit
+     (current-command-principal) candidate)
     (quasar.store:commit-workspace
      (control-plane-store plane) candidate
      (quasar.protocol:json-object
@@ -308,6 +312,8 @@ returns a result envelope with revision, operation ID, and canonical data."
                                (quasar.protocol:object-set result "event"
                                                            (applied-op-event applied))
                                result))))
+        (quasar.plugin:authorize-storage-commit
+         (current-command-principal) candidate)
         (quasar.store:commit-workspace
          (control-plane-store plane) candidate
          (quasar.protocol:json-object
