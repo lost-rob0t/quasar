@@ -161,10 +161,12 @@
             ];
             nativeLibs = [ pkgs.openssl ];
             systems = [
+              "starintel-license"
               "quasar-auth"
               "quasar-auth-host"
             ];
             asdFilesToKeep = [
+              "starintel-license.asd"
               "quasar-auth.asd"
               "quasar-auth-host.asd"
             ];

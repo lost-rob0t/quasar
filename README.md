@@ -47,7 +47,9 @@ See [Architecture](docs/ARCHITECTURE.md), the [Tek9 storage ADR](docs/ADR-TEK9-W
   document and graph writes never fall back to PouchDB.
 - WebSocket callbacks authenticate and validate requests, then enqueue commands
   on the Sento control-plane actor. They never mutate workspace state directly.
-- CLOG serves the production bundle and issues the browser session token.
+- Hosted deployments obtain a short-lived session through the private auth
+  bridge. The browser carries it only as an HttpOnly cookie; CLOG's explicit
+  query-token path remains available for the local desktop runtime.
 - StarLang remains a Common Lisp subsystem and `starlang.load` is excluded from
   the normal browser capability set.
 - Runtime and external-service controls discover capabilities rather than
