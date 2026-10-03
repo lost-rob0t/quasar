@@ -53,7 +53,7 @@ broke production asset serving."
         html)))
 
 (defun start-ui (plane &key (host "127.0.0.1") (port 8080) (open-browser-p t)
-                             session-token)
+                             session-token session-token-resolver)
   (let ((asset-root (frontend-asset-path)))
     (clog:initialize
      (lambda (body)
@@ -61,10 +61,12 @@ broke production asset serving."
      :host host
      :port port
      :boot-file "/index.html"
-     :boot-function (when session-token
+     :boot-function (when (or session-token session-token-resolver)
                       (lambda (url html)
-                        (declare (ignore url))
-                        (inject-session-token html session-token)))
+                        (let ((token (or (and session-token-resolver
+                                              (funcall session-token-resolver url))
+                                         session-token)))
+                          (if token (inject-session-token html token) html))))
      :extended-routing t
      :static-boot-html "<!doctype html><title>Quasar</title><p>Frontend build not present; use the Vite development server.</p>"
      :static-root (when (probe-file asset-root)

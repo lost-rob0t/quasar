@@ -57,6 +57,7 @@ configured sink."
    (ws :initarg :ws :reader ws-connection-ws)
    (workspace :initarg :workspace :initform "default" :accessor ws-connection-workspace)
    (session-id :initarg :session-id :reader ws-connection-session-id)
+   (session-token :initarg :session-token :reader ws-connection-session-token)
    (principal :initarg :principal :initform "anonymous" :reader ws-connection-principal)
    (authority-kind :initarg :authority-kind :initform :internal
                    :reader ws-connection-authority-kind)
@@ -123,15 +124,39 @@ configured sink."
 
 (defun register-websocket-session (server token principal workspaces
                                     &key (capabilities +default-capabilities+)
-                                         (authority-kind :internal))
+                                         (authority-kind :internal)
+                                         expires-at)
   (quasar.protocol:ensure-string token "session token" "security.unauthorized")
   (bt:with-lock-held ((websocket-server-lock server))
     (setf (gethash token (websocket-server-sessions server))
           (list :principal principal
                 :authority-kind authority-kind
                 :workspaces (copy-list workspaces)
-                :capabilities (copy-list capabilities))))
+                :capabilities (copy-list capabilities)
+                :expires-at expires-at)))
+  (quasar.plugin:notify-session-registered
+   principal workspaces capabilities authority-kind)
   token)
+
+(defun unregister-websocket-session (server token)
+  "Revoke TOKEN. Existing connections fail authorization before their next
+command; future handshakes are rejected."
+  (bt:with-lock-held ((websocket-server-lock server))
+    (not (null (remhash token (websocket-server-sessions server))))))
+
+(defun session-active-p (session &optional (now (get-universal-time)))
+  (and session
+       (let ((expires-at (getf session :expires-at)))
+         (or (null expires-at) (> expires-at now)))))
+
+(defun websocket-session-active-p (server token &optional (now (get-universal-time)))
+  "Return true only while TOKEN is registered and unexpired.
+Expired entries are removed while holding the session-table lock."
+  (bt:with-lock-held ((websocket-server-lock server))
+    (let ((session (gethash token (websocket-server-sessions server))))
+      (if (session-active-p session now)
+          t
+          (progn (remhash token (websocket-server-sessions server)) nil)))))
 
 (defun record-audit (server action &key principal workspace command outcome)
   (bt:with-lock-held ((websocket-server-lock server))
@@ -238,6 +263,12 @@ configured sink."
   (let ((plane (websocket-server-plane server)))
     (handler-case
         (progn
+           (unless (or (websocket-server-insecure-development-p server)
+                       (websocket-session-active-p
+                        server (ws-connection-session-token conn)))
+             (error 'quasar.protocol:quasar-error
+                    :code "security.unauthorized"
+                    :message "Session is revoked or expired."))
            (unless (message-size-ok-p server message)
              (error 'quasar.protocol:quasar-error
                     :code "protocol.invalid-envelope"
@@ -345,9 +376,10 @@ configured sink."
             :authority-kind :internal
             :workspaces '("*")
             :capabilities (websocket-server-capabilities server))
-      (bt:with-lock-held ((websocket-server-lock server))
-        (gethash (query-parameter env "session")
-                 (websocket-server-sessions server)))))
+      (let ((token (query-parameter env "session")))
+        (when (and token (websocket-session-active-p server token))
+          (bt:with-lock-held ((websocket-server-lock server))
+            (gethash token (websocket-server-sessions server)))))))
 
 (defun start-websocket-server (server)
   (unless (websocket-server-started-p server)
@@ -377,6 +409,8 @@ configured sink."
                                                 :id connection-id
                                                 :ws ws
                                                 :session-id (random-session-id)
+                                                :session-token
+                                                (query-parameter env "session")
                                                 :principal (getf session :principal)
                                                 :authority-kind
                                                 (getf session :authority-kind :internal)

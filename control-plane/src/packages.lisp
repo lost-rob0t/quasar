@@ -217,16 +217,37 @@
                 #:subscribe
                 #:unsubscribe)
   (:export
+    #:+default-allowed-origins+
     #:websocket-server
     #:make-websocket-server
     #:start-websocket-server
     #:stop-websocket-server
     #:websocket-server-started-p
     #:register-websocket-session
+    #:unregister-websocket-session
+    #:websocket-session-active-p
     #:register-autodig-worker-session
     #:websocket-audit-records
     #:attach-subscriber
     #:detach-subscriber))
+
+(defpackage #:quasar.plugin
+  (:use #:cl)
+  (:nicknames #:quasar.plugins)
+  (:export
+   #:*default-user-storage-bytes*
+   #:*shared-local-session-enabled*
+   #:*websocket-allowed-origins*
+   #:add-session-registered-hook
+   #:remove-session-registered-hook
+   #:notify-session-registered
+   #:set-request-session-resolver
+   #:resolve-request-session
+   #:set-actor-spawn-authorizer
+   #:authorize-actor-spawn
+   #:set-storage-quota-resolver
+   #:authorize-storage-commit
+   #:reset-plugin-policy))
 
 (defpackage #:quasar.ui
   (:use #:cl)
