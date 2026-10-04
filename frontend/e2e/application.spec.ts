@@ -63,12 +63,12 @@ test("creates a graph node through the compact editor and preserves its full-edi
   await compactEditor.getByRole("button", { name: "Open full editor" }).click();
 
   await expect(page).toHaveURL(/\/documents\/new\?.*draft=/);
-  await expect(page.locator(".full-document-editor")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "New Person" })).toBeVisible();
-  await expect(page.getByLabel(/^First Name/)).toHaveValue("Jane");
-  await expect(page.getByLabel(/^Last Name/)).toHaveValue("Doe");
-  await expect(page.getByLabel(/^Display Name/)).toHaveValue("Jane Doe");
-  await page.locator(".editor-save-bar .primary").click();
+  await expect(page.locator(".document-editor")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "New document" })).toBeVisible();
+  await expect(page.getByLabel("fname", { exact: true })).toHaveValue("Jane");
+  await expect(page.getByLabel("lname", { exact: true })).toHaveValue("Doe");
+  await expect(page.getByLabel("fullName", { exact: true })).toHaveValue("Jane Doe");
+  await page.getByRole("button", { name: "Save document", exact: true }).click();
 
   await expect(page).toHaveURL(/\/graph\?node=/);
   await expect(page.locator(".graph-count")).toContainText("1 nodes");
