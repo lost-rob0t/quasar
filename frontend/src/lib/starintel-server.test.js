@@ -40,36 +40,47 @@ describe("starintel-server client", () => {
     });
   });
 
-  it("discovers local Lisp and remote BBPD actor deployments", async () => {
+  it("discovers canonical registry entries with server-owned liveness", async () => {
     const fetch = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
           status: "ok",
           data: {
+            schema: "starintel-actor-registry-v1",
+            count: 2,
             actors: [
               {
-                id: "actor-event-receiver",
-                label: "actor-event-receiver",
-                description: "Local Common Lisp StarIntel actor.",
-                service: {
-                  id: "starintel-gserver",
-                  kind: "starintel-server",
-                  language: "common-lisp"
+                resourceUri: "star://local/actor/actor-event-receiver",
+                resourceKind: "actor",
+                semantic: {
+                  name: "actor-event-receiver",
+                  version: "1.0.0",
+                  digest: "sha256:local"
                 },
-                runtime: { location: "local", transport: "sento" },
-                dispatch: { dtype: "target", actor: "actor-event-receiver" }
+                accepts: { targets: ["event"], documents: [], messages: [] },
+                produces: { targets: [], documents: ["event"], messages: [] },
+                capabilities: ["receive"],
+                operatorVisible: true,
+                provenance: { sourcePackage: "starintel-gserver" },
+                status: "online",
+                ready: true,
+                observedAt: "2026-10-03T12:00:00Z"
               },
               {
-                id: "subfinder",
-                label: "Subfinder",
-                description: "Discover subdomains.",
-                service: { id: "bbp-actors", kind: "star-bbpd", language: "python" },
-                runtime: {
-                  location: "remote",
-                  transport: "rabbitmq",
-                  routing_key: "actors.subfinder.new.target"
+                resourceUri: "star://bbpd/actor/subfinder",
+                resourceKind: "actor",
+                semantic: {
+                  name: "subfinder",
+                  version: "2.1.0",
+                  digest: "sha256:remote"
                 },
-                dispatch: { dtype: "target", actor: "subfinder" }
+                accepts: { targets: ["domain"], documents: [], messages: [] },
+                produces: { targets: [], documents: ["domain"], messages: [] },
+                capabilities: ["run"],
+                operatorVisible: true,
+                provenance: { sourcePackage: "star-bbpd" },
+                status: "unavailable",
+                ready: false
               }
             ]
           }
@@ -81,24 +92,68 @@ describe("starintel-server client", () => {
 
     const actors = await listStarIntelActors({ serverUrl: "http://localhost:5000" });
 
-    expect(fetch.mock.calls[0][0]).toBe("http://localhost:5000/api/v1/actors");
+    expect(fetch.mock.calls[0][0]).toBe("http://localhost:5000/v1/actors");
     expect(actors).toHaveLength(2);
     expect(actors[0]).toMatchObject({
-      id: "star-runtime:actor-event-receiver",
+      id: "star-runtime:star://local/actor/actor-event-receiver",
       actorId: "actor-event-receiver",
       serverManaged: true,
-      origin: "local",
-      language: "common-lisp",
-      serviceId: "starintel-gserver"
+      resourceKind: "actor",
+      sourcePackage: "starintel-gserver",
+      status: "online",
+      ready: true,
+      alive: true
     });
     expect(actors[1]).toMatchObject({
-      id: "star-runtime:subfinder",
+      id: "star-runtime:star://bbpd/actor/subfinder",
       actorId: "subfinder",
       serverManaged: true,
-      origin: "remote",
-      language: "python",
-      serviceId: "bbp-actors"
+      sourcePackage: "star-bbpd",
+      status: "unavailable",
+      ready: false,
+      alive: false
     });
+  });
+
+  it("rejects unknown registry schemas and malformed liveness", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: { schema: "future", actors: [] } }), { status: 200 })
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              schema: "starintel-actor-registry-v1",
+              count: 1,
+              actors: [
+                {
+                  resourceUri: "star://local/actor/test",
+                  resourceKind: "actor",
+                  semantic: { name: "test", version: "1.0.0", digest: "sha256:test" },
+                  accepts: { targets: [], documents: [], messages: [] },
+                  produces: { targets: [], documents: [], messages: [] },
+                  capabilities: [],
+                  operatorVisible: true,
+                  provenance: { sourcePackage: "test" },
+                  status: "online",
+                  ready: "yes"
+                }
+              ]
+            }
+          }),
+          { status: 200 }
+        )
+      );
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(listStarIntelActors({ serverUrl: "http://localhost:5000" })).rejects.toThrow(
+      "unsupported actor registry schema"
+    );
+    await expect(listStarIntelActors({ serverUrl: "http://localhost:5000" })).rejects.toThrow(
+      "ready must be a boolean"
+    );
   });
 
   it("submits a v0.9 target through the v1 endpoint", async () => {

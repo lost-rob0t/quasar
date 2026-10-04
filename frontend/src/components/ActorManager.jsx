@@ -5,6 +5,7 @@ import {
   Copy,
   Play,
   Plus,
+  RefreshCw,
   Save,
   Search,
   Settings2,
@@ -37,11 +38,16 @@ function actorDraft(actor) {
 
 function actorKind(actor) {
   if (actor?.serverManaged) {
-    const origin = actor.origin === "local" ? "local" : "remote";
-    const language = actor.language === "common-lisp" ? "Lisp" : actor.language || "runtime";
-    return `${origin} · ${language}`;
+    return `${actor.resourceKind} · ${actor.alive ? "alive" : actor.status}`;
   }
   return isBuiltinActor(actor) ? "built-in" : "custom";
+}
+
+function contractSummary(contract) {
+  return (
+    ["targets", "documents", "messages"].flatMap((key) => contract?.[key] || []).join(", ") ||
+    "none"
+  );
 }
 
 function defaultActor() {
@@ -79,6 +85,7 @@ export default function ActorManager() {
   const customActors = Array.isArray(currentSettings.actors) ? currentSettings.actors : [];
   const [serverActors, setServerActors] = useState([]);
   const [serverActorState, setServerActorState] = useState({ state: "idle", message: "" });
+  const [registryRefresh, setRegistryRefresh] = useState(0);
   const allActors = useMemo(
     () => [...BUILTIN_ACTORS, ...customActors, ...serverActors],
     [customActors, serverActors]
@@ -108,8 +115,9 @@ export default function ActorManager() {
       actor.actorId,
       actor.label,
       actor.description,
-      actor.serviceId,
-      actor.language
+      actor.resourceUri,
+      actor.sourcePackage,
+      actor.status
     ].some((value) =>
       String(value || "")
         .toLowerCase()
@@ -133,9 +141,10 @@ export default function ActorManager() {
       .then((nextActors) => {
         if (cancelled) return;
         setServerActors(nextActors);
+        const alive = nextActors.filter((actor) => actor.alive).length;
         setServerActorState({
           state: "active",
-          message: `Discovered ${nextActors.length} StarIntel server actor(s).`
+          message: `Discovered ${nextActors.length} registry entries; ${alive} alive.`
         });
       })
       .catch((error) => {
@@ -150,8 +159,14 @@ export default function ActorManager() {
     currentSettings.serverPassword,
     currentSettings.serverToken,
     currentSettings.serverUrl,
-    currentSettings.serverUsername
+    currentSettings.serverUsername,
+    registryRefresh
   ]);
+
+  useEffect(() => {
+    const actor = serverActors.find((candidate) => candidate.id === selectedId);
+    if (actor) setDraft(actorDraft(actor));
+  }, [selectedId, serverActors]);
 
   useEffect(() => {
     if (selectedId === NEW_ACTOR) return;
@@ -258,7 +273,7 @@ export default function ActorManager() {
   }
 
   async function toggleCustomActors() {
-    await persistSettings({ actorsEnabled: !settings.actorsEnabled });
+    await persistSettings({ actorsEnabled: !currentSettings.actorsEnabled });
   }
 
   return (
@@ -267,9 +282,17 @@ export default function ActorManager() {
         <div>
           <p className="eyebrow">Actor system</p>
           <h1>Actor studio</h1>
-          <p>Create browser actors and inspect local or remote StarIntel actor deployments.</p>
+          <p>Create browser actors and inspect the live StarIntel actor registry.</p>
         </div>
         <div className="button-row">
+          <button
+            className="button"
+            type="button"
+            disabled={!currentSettings.serverUrl || serverActorState.state === "loading"}
+            onClick={() => setRegistryRefresh((value) => value + 1)}
+          >
+            <RefreshCw size={16} /> Refresh registry
+          </button>
           <button className="button" type="button" onClick={createActor}>
             <Plus size={16} /> Create actor
           </button>
@@ -301,11 +324,15 @@ export default function ActorManager() {
           <div className="actor-browser-summary">
             <span>{BUILTIN_ACTORS.length} built-in</span>
             <span>{customActors.length} custom</span>
-            <span>{serverActors.length} server</span>
+            <span>
+              {serverActors.length} server · {serverActors.filter((actor) => actor.alive).length}{" "}
+              alive
+            </span>
           </div>
-          <div className="actor-record-list" role="listbox" aria-label="Actors">
+          <div className="actor-record-list" role="list" aria-label="Actors">
             <button
               type="button"
+              aria-pressed={selectedId === NEW_ACTOR}
               className={selectedId === NEW_ACTOR ? "active" : ""}
               onClick={createActor}
             >
@@ -320,6 +347,7 @@ export default function ActorManager() {
               return (
                 <button
                   type="button"
+                  aria-pressed={selectedId === actor.id}
                   key={actor.id}
                   className={selectedId === actor.id ? "active" : ""}
                   onClick={() => selectActor(actor)}
@@ -329,7 +357,9 @@ export default function ActorManager() {
                     <strong>{actor.label}</strong>
                     <small>{actor.actorId || actor.id}</small>
                   </span>
-                  <em>{actorKind(actor)}</em>
+                  <em className={actor.serverManaged ? `actor-status-${actor.status}` : ""}>
+                    {actorKind(actor)}
+                  </em>
                 </button>
               );
             })}
@@ -355,10 +385,10 @@ export default function ActorManager() {
                   disabled={!canRunSelected}
                   title={
                     serverManaged
-                      ? "Server-managed actors execute through StarIntel target dispatch, not the browser sandbox"
+                      ? "Registry entries are selectable for inspection; execution remains server-owned"
                       : !selectedIds.length
                         ? "Select one or more graph documents"
-                        : !builtin && !settings.actorsEnabled
+                        : !builtin && !currentSettings.actorsEnabled
                           ? "Enable custom actor execution in Runtime"
                           : builtin
                             ? "Run trusted built-in actor against the current graph selection"
@@ -387,9 +417,9 @@ export default function ActorManager() {
           )}
           {serverManaged && (
             <div className="actor-studio-banner">
-              Server-managed actor: {selectedActor.origin} via {selectedActor.serviceId} ·{" "}
-              {selectedActor.language} · {selectedActor.runtime?.transport || "runtime"}. Deployment
-              manifests are read-only in Quasar.
+              Registry-managed {selectedActor.resourceKind}: {selectedActor.status} ·{" "}
+              {selectedActor.ready ? "ready" : "not ready"} · {selectedActor.sourcePackage}.
+              Registry entries are read-only in Quasar.
             </div>
           )}
 
@@ -416,8 +446,9 @@ export default function ActorManager() {
                 <div>
                   <strong>No browser source</strong>
                   <p>
-                    This actor is owned by the StarIntel runtime. Quasar discovers its deployment
-                    metadata but does not copy or execute its implementation in the browser.
+                    This actor is owned by the StarIntel runtime. Quasar discovers its semantic and
+                    liveness metadata but does not copy or execute its implementation in the
+                    browser.
                   </p>
                 </div>
               </div>
@@ -438,7 +469,7 @@ export default function ActorManager() {
           {editorTab === "config" && (
             <div className="actor-config-editor">
               <div className="actor-config-toolbar">
-                <span>{serverManaged ? "Deployment manifest JSON" : "Manifest JSON"}</span>
+                <span>{serverManaged ? "Actor registry entry JSON" : "Manifest JSON"}</span>
                 <button className="button small" type="button" onClick={formatConfig}>
                   Format JSON
                 </button>
@@ -447,7 +478,7 @@ export default function ActorManager() {
                 value={draft.config}
                 readOnly={!editable}
                 language="json"
-                ariaLabel={serverManaged ? "Actor deployment manifest JSON" : "Actor manifest JSON"}
+                ariaLabel={serverManaged ? "Actor registry entry JSON" : "Actor manifest JSON"}
                 onChange={(config) => setDraft((current) => ({ ...current, config }))}
               />
             </div>
@@ -458,7 +489,7 @@ export default function ActorManager() {
               <label className="actor-runtime-toggle">
                 <input
                   type="checkbox"
-                  checked={Boolean(settings.actorsEnabled)}
+                  checked={Boolean(currentSettings.actorsEnabled)}
                   onChange={toggleCustomActors}
                 />
                 <span>
@@ -489,19 +520,29 @@ export default function ActorManager() {
                 <dd>{customActors.length}</dd>
                 {serverManaged && (
                   <>
-                    <dt>Selected origin</dt>
-                    <dd>{selectedActor.origin}</dd>
-                    <dt>Selected service</dt>
-                    <dd>{selectedActor.serviceId}</dd>
-                    <dt>Selected language</dt>
-                    <dd>{selectedActor.language}</dd>
-                    <dt>Selected transport</dt>
-                    <dd>{selectedActor.runtime?.transport || "unknown"}</dd>
+                    <dt>Registry status</dt>
+                    <dd>{selectedActor.status}</dd>
+                    <dt>Ready</dt>
+                    <dd>{selectedActor.ready ? "yes" : "no"}</dd>
+                    <dt>Last observed</dt>
+                    <dd>{selectedActor.observedAt || "not reported"}</dd>
+                    <dt>Resource URI</dt>
+                    <dd>{selectedActor.resourceUri}</dd>
+                    <dt>Source package</dt>
+                    <dd>{selectedActor.sourcePackage}</dd>
+                    <dt>Semantic version</dt>
+                    <dd>{selectedActor.semantic.version}</dd>
+                    <dt>Accepts</dt>
+                    <dd>{contractSummary(selectedActor.accepts)}</dd>
+                    <dt>Produces</dt>
+                    <dd>{contractSummary(selectedActor.produces)}</dd>
+                    <dt>Capabilities</dt>
+                    <dd>{selectedActor.capabilities.join(", ") || "none"}</dd>
                   </>
                 )}
                 <dt>Runtime state</dt>
                 <dd>
-                  {settings.actorsEnabled
+                  {currentSettings.actorsEnabled
                     ? "custom execution enabled"
                     : "custom execution disabled"}
                 </dd>
