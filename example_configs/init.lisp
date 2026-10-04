@@ -19,6 +19,15 @@
 (setf *autodig-persistence-backend* :tek9
       *autodig-filesystem-path* nil)
 
+;;; Hosted multi-user mode. Keep the desktop default shared session unless a
+;;; trusted server-side auth plugin will issue one Quasar session per user.
+;;; No upstream API key or actor credential should ever be returned here.
+;;;
+;;; (setf quasar.plugin:*shared-local-session-enabled* nil
+;;;       quasar.plugin:*websocket-allowed-origins*
+;;;       '("https://quasar.starintel.actor")
+;;;       quasar.plugin:*default-user-storage-bytes* (* 5 1024 1024 1024))
+
 ;;; To persist Auto-Dig lifecycle events as ordinary local files instead:
 ;;; (setf *autodig-persistence-backend* :filesystem
 ;;;       *autodig-filesystem-path* #P"/var/lib/quasar/autodig/")

@@ -62,16 +62,19 @@ starintel-pro-actors."
            :transport melissa-transport))
         (setf *websocket-server*
               (make-websocket-server *control-plane* :host host :port ws-port
+                                     :allowed-origins quasar.plugin:*websocket-allowed-origins*
                                      :insecure-development-p insecure-development-p))
-        (setf *browser-session-token* (new-session-token))
-        (quasar.ws:register-websocket-session
-         *websocket-server* *browser-session-token* "local-user" '("default"))
+        (when quasar.plugin:*shared-local-session-enabled*
+          (setf *browser-session-token* (new-session-token))
+          (quasar.ws:register-websocket-session
+           *websocket-server* *browser-session-token* "local-user" '("default")))
         (attach-subscriber *websocket-server*)
         (start-websocket-server *websocket-server*)
         (start-ui *control-plane*
                   :host host
                   :port port
                   :session-token *browser-session-token*
+                  :session-token-resolver #'quasar.plugin:resolve-request-session
                   :open-browser-p open-browser-p)
         (quasar.log:log-event
          :info "app" "start"

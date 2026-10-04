@@ -19,6 +19,8 @@ import { initializeTheme } from "../lib/themes.js";
 import { routerBasename } from "./base-path";
 import { recordRuntimeDiagnostic, redactDiagnostic } from "./runtime-diagnostics";
 import { initializeControlPlane } from "../control-plane";
+import { configureHostedControlPlane } from "../control-plane/client";
+import { prepareHostedControlPlane } from "./hosted-session";
 import { autoDigAdapter, controlPlaneAdapter } from "../ui-core/adapters";
 import { UiRuntimeProvider } from "../ui-core/runtime";
 import "../styles.css";
@@ -114,64 +116,73 @@ if (import.meta.env.DEV) {
   }
 }
 
-initializeTheme();
-const controlPlane = initializeControlPlane();
-let lastControlPlanePhase = "connecting";
-controlPlane.onConnectionStateChange((state) => {
-  if (state.connected && state.synchronized) {
-    if (lastControlPlanePhase !== "connected") {
+async function bootstrap(): Promise<void> {
+  const hostedSession = await prepareHostedControlPlane();
+  if (hostedSession) {
+    configureHostedControlPlane(hostedSession.websocketUrl);
+  }
+
+  initializeTheme();
+  const controlPlane = initializeControlPlane();
+  let lastControlPlanePhase = "connecting";
+  controlPlane.onConnectionStateChange((state) => {
+    if (state.connected && state.synchronized) {
+      if (lastControlPlanePhase !== "connected") {
+        recordRuntimeDiagnostic({
+          level: "info",
+          source: "control-plane",
+          message: "WebSocket connected and workspace synchronized."
+        });
+      }
+      lastControlPlanePhase = "connected";
+      return;
+    }
+
+    if (
+      (state.phase === "disconnected" || state.phase === "reconnecting") &&
+      state.phase !== lastControlPlanePhase
+    ) {
       recordRuntimeDiagnostic({
-        level: "info",
+        level: "warning",
         source: "control-plane",
-        message: "WebSocket connected and workspace synchronized."
+        message: "WebSocket is not connected.",
+        details: `phase=${state.phase} attempts=${state.attempts}`
       });
     }
-    lastControlPlanePhase = "connected";
-    return;
+    lastControlPlanePhase = state.phase;
+  });
+
+  const rootElement = document.getElementById("root");
+  if (!rootElement) throw new Error("Quasar root element was not found");
+
+  const runtimeAdapter = isAutoDigEmbedded() ? autoDigAdapter : controlPlaneAdapter;
+
+  createRoot(rootElement).render(
+    <StrictMode>
+      <RuntimeErrorBoundary>
+        <BrowserRouter basename={routerBasename(import.meta.env.BASE_URL)}>
+          <UiRuntimeProvider adapter={runtimeAdapter}>
+            <QuasarProvider>
+              <App />
+              <AgentDisclosureBridge />
+              <AutoDigHostBridge />
+              <PwaInstallBridge />
+              <MelissaActorMigrationBridge />
+              <ReviewActorBridge />
+              <RunAllTransformationsBridge />
+              <MobileGraphToolTray />
+              <GraphContextRadialBridge />
+              <GraphObjectTypePickerBridge />
+            </QuasarProvider>
+          </UiRuntimeProvider>
+        </BrowserRouter>
+      </RuntimeErrorBoundary>
+    </StrictMode>
+  );
+
+  if ("serviceWorker" in navigator && import.meta.env.PROD && !isAutoDigEmbedded()) {
+    window.addEventListener("load", () => registerServiceWorker().catch(() => {}));
   }
-
-  if (
-    (state.phase === "disconnected" || state.phase === "reconnecting") &&
-    state.phase !== lastControlPlanePhase
-  ) {
-    recordRuntimeDiagnostic({
-      level: "warning",
-      source: "control-plane",
-      message: "WebSocket is not connected.",
-      details: `phase=${state.phase} attempts=${state.attempts}`
-    });
-  }
-  lastControlPlanePhase = state.phase;
-});
-
-const rootElement = document.getElementById("root");
-if (!rootElement) throw new Error("Quasar root element was not found");
-
-const runtimeAdapter = isAutoDigEmbedded() ? autoDigAdapter : controlPlaneAdapter;
-
-createRoot(rootElement).render(
-  <StrictMode>
-    <RuntimeErrorBoundary>
-      <BrowserRouter basename={routerBasename(import.meta.env.BASE_URL)}>
-        <UiRuntimeProvider adapter={runtimeAdapter}>
-          <QuasarProvider>
-            <App />
-            <AgentDisclosureBridge />
-            <AutoDigHostBridge />
-            <PwaInstallBridge />
-            <MelissaActorMigrationBridge />
-            <ReviewActorBridge />
-            <RunAllTransformationsBridge />
-            <MobileGraphToolTray />
-            <GraphContextRadialBridge />
-            <GraphObjectTypePickerBridge />
-          </QuasarProvider>
-        </UiRuntimeProvider>
-      </BrowserRouter>
-    </RuntimeErrorBoundary>
-  </StrictMode>
-);
-
-if ("serviceWorker" in navigator && import.meta.env.PROD && !isAutoDigEmbedded()) {
-  window.addEventListener("load", () => registerServiceWorker().catch(() => {}));
 }
+
+void bootstrap().catch((error) => logRuntimeFailure("bootstrap", error));

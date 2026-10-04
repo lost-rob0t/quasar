@@ -96,8 +96,28 @@ function nextId(): string {
   return `ui-${Date.now().toString(36)}-${sequence.toString(36)}`;
 }
 
+let hostedWebSocketUrl: string | null = null;
+
+export function authenticatedWebSocketUrl(websocketUrl: string, baseUrl: string): string {
+  const url = new URL(websocketUrl, baseUrl);
+  if (websocketUrl.startsWith("/")) {
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  }
+  if (url.protocol !== "wss:" && url.protocol !== "ws:") {
+    throw new Error("Hosted control-plane endpoint must use WebSocket transport.");
+  }
+  return url.toString();
+}
+
+export function configureHostedControlPlane(websocketUrl: string): void {
+  hostedWebSocketUrl = authenticatedWebSocketUrl(websocketUrl, window.location.href);
+}
+
 function defaultWebSocketUrl(): string {
   if (typeof window === "undefined") return "ws://127.0.0.1:8081";
+  if (hostedWebSocketUrl) {
+    return authenticatedWebSocketUrl(hostedWebSocketUrl, window.location.href);
+  }
   const scheme = window.location.protocol === "https:" ? "wss" : "ws";
   const token = document
     .querySelector<HTMLMetaElement>('meta[name="quasar-session-token"]')

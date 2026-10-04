@@ -179,12 +179,14 @@ replayed.
 
 ## Security
 
-Production WebSockets require a CLOG-issued session token and an allowed
-Origin. Sessions bind a principal, authorized workspaces, and per-command
-capabilities. Events are delivered only to the matching workspace. StarLang
-load is absent from the normal browser capability set. Audit records contain
-structured action/principal/workspace/command/outcome fields, never request
-payloads or credentials, and are bounded in memory.
+Production WebSockets require a private-auth-bridge session cookie and an
+allowed Origin. Hosted session values are HttpOnly and never enter frontend
+JavaScript, URLs, or storage. The local CLOG desktop runtime retains its
+explicit query-token path. Sessions bind a principal, authorized workspaces,
+and per-command capabilities. Events are delivered only to the matching
+workspace. StarLang load is absent from the normal browser capability set.
+Audit records contain structured action/principal/workspace/command/outcome
+fields, never request payloads or credentials, and are bounded in memory.
 
 Explicit insecure development mode is available only to local development and
 Playwright. It accepts isolated test workspaces but production never enables
