@@ -100,6 +100,12 @@ function Notice({ notice, onDismiss }) {
   );
 }
 
+function isFullDocumentEditorLocation({ pathname, search }) {
+  const documentEditorRoute =
+    pathname === "/documents/new" || /^\/documents\/[^/]+\/edit$/.test(pathname);
+  return documentEditorRoute && new URLSearchParams(search).get("advanced") === "1";
+}
+
 export default function QuasarShell({ children }) {
   const runtime = useUiRuntime();
   const navigate = useNavigate();
@@ -122,6 +128,7 @@ export default function QuasarShell({ children }) {
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(loadSidebarCollapsed);
   const graphRoute = location.pathname === "/graph" || location.pathname.startsWith("/graph/");
+  const fullDocumentEditor = isFullDocumentEditorLocation(location);
 
   function submitSearch(event) {
     event.preventDefault();
@@ -151,7 +158,9 @@ export default function QuasarShell({ children }) {
 
   return (
     <div
-      className={`app-shell quasar-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}`}
+      className={`app-shell quasar-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${
+        fullDocumentEditor ? " document-editor-fullscreen" : ""
+      }`}
       data-runtime={runtime.id}
     >
       <aside className="sidebar">
@@ -267,7 +276,15 @@ export default function QuasarShell({ children }) {
 
         <Notice notice={notice} onDismiss={() => setNotice(null)} />
 
-        <main className={graphRoute ? "content content-graph" : "content"}>
+        <main
+          className={
+            graphRoute
+              ? "content content-graph"
+              : fullDocumentEditor
+                ? "content content-editor-fullscreen"
+                : "content"
+          }
+        >
           {loading ? <div className="loading-panel">Opening workspace…</div> : children}
         </main>
       </section>

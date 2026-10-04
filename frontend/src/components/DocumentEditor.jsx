@@ -390,6 +390,7 @@ export default function DocumentEditor({ mode }) {
   const initialDraft = useMemo(() => readDraft(draftToken), [draftToken]);
   const initialDocument = initialDraft || existing;
   const initialDtype = initialDocument?.dtype || params.get("dtype") || "entity";
+  const fullscreen = params.get("advanced") === "1";
   const [baseDocument, setBaseDocument] = useState(initialDocument || {});
   const [rawMode, setRawMode] = useState(false);
   const [advanced, setAdvanced] = useState(params.get("advanced") === "1");
@@ -664,6 +665,16 @@ export default function DocumentEditor({ mode }) {
           <p>Full document editor.</p>
         </div>
         <div className="button-row">
+          {fullscreen && (
+            <button
+              className="button small"
+              type="button"
+              aria-label="Close full editor"
+              onClick={() => navigate(-1)}
+            >
+              <X size={14} /> Close
+            </button>
+          )}
           <button className="button small" type="button" onClick={toggleRawMode}>
             <Braces size={14} /> {rawMode ? "Basic" : "Inspect JSON"}
           </button>

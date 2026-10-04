@@ -167,6 +167,7 @@ describe("schema field controls", () => {
     const html = renderEditor("/documents/new?dtype=person&advanced=1");
     expect(html).toContain("full-document-editor");
     expect(html).toContain("Full document editor.");
+    expect(html).toContain('aria-label="Close full editor"');
     expect(html).toContain("Inspect JSON");
     expect(html).toContain("Document metadata");
     expect(html).toContain("Sources and evidence");

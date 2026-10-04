@@ -450,6 +450,56 @@ body {
   overflow: hidden;
 }
 
+html:has(.quasar-shell.document-editor-fullscreen),
+body:has(.quasar-shell.document-editor-fullscreen),
+body:has(.quasar-shell.document-editor-fullscreen) #root {
+  height: 100%;
+  overflow: hidden;
+}
+
+.quasar-shell.document-editor-fullscreen {
+  display: block;
+  width: 100vw;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.quasar-shell.document-editor-fullscreen > .sidebar,
+.quasar-shell.document-editor-fullscreen .topbar,
+.quasar-shell.document-editor-fullscreen > .mobile-nav,
+.quasar-shell.document-editor-fullscreen .agent-float {
+  display: none !important;
+}
+
+.quasar-shell.document-editor-fullscreen > .workbench {
+  width: 100vw;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.quasar-shell .content.content-editor-fullscreen {
+  width: 100%;
+  max-width: none;
+  height: 100dvh;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+}
+
+.content-editor-fullscreen .full-document-editor {
+  width: 100%;
+  max-width: none;
+  min-height: 100%;
+  margin: 0;
+  padding: clamp(1rem, 2.2vw, 2rem);
+}
+
+.content-editor-fullscreen .code-editor.tall {
+  min-height: calc(100dvh - 17rem) !important;
+}
+
 .quasar-shell .page-heading {
   margin-bottom: 1.25rem;
 }
