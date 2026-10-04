@@ -46,6 +46,14 @@ export function Report({ report }) {
           <strong>{report.skipped?.length || 0}</strong>
         </div>
         <div className="key-value">
+          <span>Source custody artifacts</span>
+          <strong>{report.sourceArtifactCount || 0}</strong>
+        </div>
+        <div className="key-value">
+          <span>Duplicate source records</span>
+          <strong>{report.skippedDuplicateCount || 0}</strong>
+        </div>
+        <div className="key-value">
           <span>Invalid/write errors</span>
           <strong>{report.errors?.length || 0}</strong>
         </div>
@@ -103,6 +111,8 @@ export function ImportPage() {
   const navigate = useNavigate();
   const { importFileSet, select, setNotice } = useQuasar();
   const [files, setFiles] = useState([]);
+  const [format, setFormat] = useState("starintel");
+  const [dataset, setDataset] = useState("wireless-import");
   const [replace, setReplace] = useState(false);
   const [resolveManifestReferences, setResolveManifestReferences] = useState(false);
   const [report, setReport] = useState(null);
@@ -112,7 +122,12 @@ export function ImportPage() {
     if (!nextFiles.length) return;
     setRunning(true);
     try {
-      const next = await importFileSet(nextFiles, { replace, resolveManifestReferences });
+      const next = await importFileSet(nextFiles, {
+        replace,
+        resolveManifestReferences,
+        format,
+        dataset
+      });
       setReport(next);
       setNotice({
         kind: next.errors?.length || next.parseErrors?.length ? "warning" : "success",
@@ -150,6 +165,34 @@ export function ImportPage() {
         </div>
       </div>
 
+      <label>
+        Source format{" "}
+        <select
+          value={format}
+          disabled={running}
+          onChange={(event) => setFormat(event.target.value)}
+        >
+          <option value="starintel">StarIntel JSON / JSONL / CSV</option>
+          <option value="wigle-csv">WiGLE CSV</option>
+          <option value="kismet-json">Kismet device JSON / JSONL</option>
+        </select>
+      </label>
+      {format !== "starintel" && (
+        <label>
+          Dataset{" "}
+          <input
+            value={dataset}
+            disabled={running}
+            onChange={(event) => setDataset(event.target.value)}
+          />
+        </label>
+      )}
+      {format !== "starintel" && (
+        <p>
+          Bounded preview: 16 MiB total, 10,000 records. Raw observations are preserved. SQLite and
+          KML files must be exported to one of the formats above.
+        </p>
+      )}
       <div className="import-grid">
         <label className="upload-card">
           <File size={28} />

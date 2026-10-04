@@ -1,4 +1,4 @@
-import { assertDocument } from "starintel_doc";
+import { toCanonicalDocument } from "./canonical-document";
 
 function serverUrl(configuration, path = "") {
   const base = String(configuration?.serverUrl || "")
@@ -182,15 +182,15 @@ export async function listStarIntelActors(configuration) {
 }
 
 export async function submitTargetToServer(configuration, target) {
-  const document = assertDocument(target);
+  const document = toCanonicalDocument(target, { allowLegacy090: true });
   if (document.dtype !== "target")
     throw new Error("Only target documents can be submitted as targets");
-  const actor = document.data?.actor;
+  const actor = document.actor;
   if (!actor) throw new Error("Target actor is required");
   try {
     return await request(configuration, "/api/v1/targets", {
       method: "POST",
-      headers: { "Idempotency-Key": document._id },
+      headers: { "Idempotency-Key": document.id },
       body: JSON.stringify(document)
     });
   } catch (error) {

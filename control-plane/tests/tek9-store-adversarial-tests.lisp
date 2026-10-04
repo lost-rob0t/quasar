@@ -16,8 +16,8 @@
                      (make-envelope
                       "document.create"
                       (quasar.protocol:json-object
-                       (cons "dtype" "person")
-                       (cons "name" "Generated ID"))
+                       (cons "dtype" "person") (cons "schemaVersion" "0.10.1") (cons "dataset" "test")
+                       (cons "displayName" "Generated ID"))
                       :id "generated-id-create")))
                   (payload (result response)))
              (check (string= "ok" (status response)))

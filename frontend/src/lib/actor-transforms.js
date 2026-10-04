@@ -1,4 +1,4 @@
-import { assertDocument } from "starintel_doc";
+import { assertDocument } from "starintel_doc/legacy";
 
 export const ACTOR_TRANSFORM_OPERATIONS = Object.freeze([
   "create_document",

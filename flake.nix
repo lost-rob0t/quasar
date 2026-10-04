@@ -112,6 +112,16 @@
             dontStrip = true;
           };
 
+          starintelCanonicalLib = pkgs.sbcl.buildASDFSystem {
+            pname = "starintel-canonical";
+            version = "0.10.1";
+            src = ./vendor/star-cl;
+            lispLibs = with pkgs.sbcl.pkgs; [ jzon cl-ppcre ];
+            systems = [ "starintel-v090" "starintel-0101" ];
+            asdFilesToKeep = [ "starintel-v090.asd" "starintel-0101.asd" ];
+            dontStrip = true;
+          };
+
           quasarLib = pkgs.sbcl.buildASDFSystem {
             pname = "quasar";
             version = "0.2.0";
@@ -127,6 +137,7 @@
               sento
               websocket-driver
               tek9Lib
+              starintelCanonicalLib
             ];
             nativeLibs = runtimeLibs;
             systems = [

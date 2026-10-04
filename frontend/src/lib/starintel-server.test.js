@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDocument } from "starintel_doc";
+import { createDocument } from "starintel_doc/legacy";
 import {
   listStarIntelActors,
   probeStarIntelServer,

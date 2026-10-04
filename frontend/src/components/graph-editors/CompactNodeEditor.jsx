@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Braces, Save, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { assertDocument, createDocument, documentLabel, touchDocument } from "starintel_doc";
+import { assertDocument, createDocument, documentLabel, touchDocument } from "starintel_doc/legacy";
 import { connectedDocumentIds } from "../../lib/document-delete";
 import { operation } from "../../lib/operations";
 import {

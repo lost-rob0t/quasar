@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Play } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useLocation } from "react-router-dom";
-import { assertDocument } from "starintel_doc";
+import { assertDocument } from "starintel_doc/legacy";
 import { isBuiltinActor } from "../lib/actors";
 import { operation } from "../lib/operations";
 import {

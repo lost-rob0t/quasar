@@ -7,7 +7,7 @@ import {
   documentLabel,
   schema,
   touchDocument
-} from "starintel_doc";
+} from "starintel_doc/legacy";
 import { operation } from "../../lib/operations";
 import { buildPredicateCatalog, rememberPredicate } from "../../lib/predicate-catalog";
 import {

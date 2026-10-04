@@ -7,6 +7,15 @@
   (:report (lambda (condition stream)
              (write-string (melissa-transport-error-message condition) stream))))
 
+(defun first-canonical-contact (entity key)
+  ;; Canonical person emails/phones contain Star references, not contact strings.
+  ;; Do not transmit a reference as if it were a phone number or email address.
+  (let* ((extensions (canonical-entity-extensions entity))
+         (observations (and extensions (json-value extensions "melissa.api"))))
+    (and observations
+         (json-value observations (if (string= key "emails")
+                                      "emailObservation" "phoneObservation")))))
+
 (defun retryable-transport-condition-p (condition)
   (and (typep condition 'melissa-transport-error)
        (melissa-transport-error-retryable-p condition)))
@@ -25,7 +34,7 @@
           when normalized return normalized)))
 
 (defun entity-name (entity)
-  (or (data-value entity "full_name" "name" "display_name" "main" "value")
+  (or (data-value entity "fullName" "displayName" "main" "value")
       (non-empty-string (canonical-entity-title entity))))
 
 (defun query-pair (key value)
@@ -69,8 +78,8 @@
    :state (data-value entity "state" "region" "admin_area")
    :postal (data-value entity "postal" "postal_code" "zip")
    :country (data-value entity "country" "country_code")
-   :email (data-value entity "email" "email_address")
-   :phone (data-value entity "phone" "phone_number" "telephone" "mobile")
+   :email (first-canonical-contact entity "emails")
+   :phone (first-canonical-contact entity "phones")
    :ip (data-value entity "ip" "ip_address")
    :mak (data-value entity "mak" "melissa_address_key" "address_key")
    :mik (data-value entity "mik" "melissa_identity_key" "identity_key")

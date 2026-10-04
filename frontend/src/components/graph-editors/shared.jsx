@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Plus, Search, X } from "lucide-react";
-import { documentLabel } from "starintel_doc";
+import { documentLabel } from "starintel_doc/legacy";
 import { fieldTypeHint } from "../../lib/schema-form";
 
 export const DRAFT_PREFIX = "quasar.editor-draft.v1:";

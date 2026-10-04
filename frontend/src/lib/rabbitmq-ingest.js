@@ -1,7 +1,8 @@
+import { parseBrowserDocumentJson } from "./canonical-document";
 import { Client } from "@stomp/stompjs";
 
 export function documentsFromQueuePayload(payload) {
-  const parsed = typeof payload === "string" ? JSON.parse(payload) : payload;
+  const parsed = typeof payload === "string" ? parseBrowserDocumentJson(payload) : payload;
   if (Array.isArray(parsed)) return parsed;
   if (Array.isArray(parsed?.documents)) return parsed.documents;
   if (parsed?.document) return [parsed.document];

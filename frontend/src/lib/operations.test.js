@@ -36,9 +36,16 @@ describe("batch operation history", () => {
     expect(controlPlane.cpTransaction).toHaveBeenCalledWith([
       {
         type: "document.create",
-        payload: expect.objectContaining({ _id: document._id, dtype: "org" })
+        payload: expect.objectContaining({
+          id: document._id,
+          dtype: "org",
+          schemaVersion: "0.10.1",
+          name: "Test"
+        })
       }
     ]);
+    expect(controlPlane.cpTransaction.mock.calls[0][0][0].payload).not.toHaveProperty("_id");
+    expect(controlPlane.cpTransaction.mock.calls[0][0][0].payload).not.toHaveProperty("data");
     expect(applied.inverse.operations).toEqual([{ type: "remove-document", id: document._id }]);
   });
 

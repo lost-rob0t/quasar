@@ -1,15 +1,7 @@
 (in-package #:quasar.store)
 
 (defun %valid-import-document (document)
-  (quasar.protocol:ensure-object document "document" "document.invalid")
-  (let ((id (quasar.protocol:json-value document "_id"))
-        (dtype (quasar.protocol:json-value document "dtype")))
-    (quasar.protocol:ensure-string id "_id" "document.invalid")
-    (unless (and (stringp dtype) (plusp (length dtype)))
-      (%stage-error
-       "document.invalid"
-       "Document dtype must be a non-empty string.")))
-  document)
+  (quasar.protocol:require-canonical-document document))
 
 (defun %generated-import-id (document)
   (format nil
@@ -52,11 +44,11 @@
 
 (defun %stage-document-create (database workspace-id stage-id payload)
   (let ((canonical (quasar.protocol:clone-json payload)))
-    (unless (quasar.protocol:json-value canonical "_id")
+    (unless (quasar.protocol:json-value canonical "id")
       (quasar.protocol:object-set
-       canonical "_id" (%generated-import-id canonical)))
+       canonical "id" (%generated-import-id canonical)))
     (%valid-import-document canonical)
-    (let ((id (quasar.protocol:json-value canonical "_id")))
+    (let ((id (quasar.protocol:json-value canonical "id")))
       (when
           (%canonical-or-staged-document
            database workspace-id stage-id id)
@@ -72,7 +64,7 @@
 (defun %stage-document-update (database workspace-id stage-id payload)
   (let ((canonical (quasar.protocol:clone-json payload)))
     (%valid-import-document canonical)
-    (let* ((id (quasar.protocol:json-value canonical "_id"))
+    (let* ((id (quasar.protocol:json-value canonical "id"))
            (previous
              (%canonical-or-staged-document
               database workspace-id stage-id id)))
@@ -297,7 +289,7 @@
       do
         (dolist (row rows)
           (let* ((document (cdr row))
-                 (id (quasar.protocol:json-value document "_id"))
+                 (id (quasar.protocol:starintel-document-id document))
                  (canonical-key
                    (%document-key workspace-id id)))
             (unless (tek9:fetch* database canonical-key)

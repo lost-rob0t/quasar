@@ -47,3 +47,7 @@ sync_dependency "tek9" "https://github.com/lost-rob0t/tek9.git" "$TEK9_SHA" "$te
 
 printf 'Pinned Common Lisp dependencies ready:\n  CLOG %s\n  Tek9 %s\n' \
   "$CLOG_SHA" "$TEK9_SHA"
+
+# The canonical StarIntel validator is vendored and source-pinned with Quasar.
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ln -sfn "$repo_root/vendor/star-cl" "$local_projects/quasar-starintel-canonical"

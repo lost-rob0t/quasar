@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../store", () => ({ useQuasar: vi.fn() }));
 
-import { Report } from "./ImportSettings";
+import { Report, ImportPage } from "./ImportSettings";
+import { MemoryRouter } from "react-router-dom";
+import { useQuasar } from "../store";
 
 describe("import report", () => {
   it("keeps per-record validation diagnostics visible after atomic rejection", () => {
@@ -49,4 +51,16 @@ describe("import report", () => {
     expect(html).toContain("0.9.0+fields.20260725.1");
     expect(html).toContain("starintel-core 0.9");
   });
+});
+
+it("exposes supported wireless formats in the actual Import page", () => {
+  useQuasar.mockReturnValue({ importFileSet: vi.fn(), select: vi.fn(), setNotice: vi.fn() });
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <ImportPage />
+    </MemoryRouter>
+  );
+  expect(html).toContain("WiGLE CSV");
+  expect(html).toContain("Kismet device JSON / JSONL");
+  expect(html).toContain('value="starintel" selected=""');
 });

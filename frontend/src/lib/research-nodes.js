@@ -1,4 +1,4 @@
-import { assertDocument } from "starintel_doc";
+import { assertDocument } from "starintel_doc/legacy";
 
 export const RESEARCH_NODE_DTYPE = "research-node";
 export const RESEARCH_NODE_STATES = Object.freeze([

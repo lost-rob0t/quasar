@@ -83,7 +83,12 @@ describe("control-plane client lifecycle", () => {
   it("rejects pending requests immediately when the socket closes", async () => {
     const client = createControlPlaneClient("ws://quasar.test");
     const socket = await connect(client);
-    const pending = client.documentCreate({ _id: "person:1", dtype: "person" });
+    const pending = client.documentCreate({
+      id: "person:1",
+      dtype: "person",
+      dataset: "test",
+      schemaVersion: "0.10.1"
+    });
 
     socket.close();
 
@@ -160,8 +165,18 @@ describe("control-plane client lifecycle", () => {
     const client = createControlPlaneClient("ws://quasar.test");
     const socket = await connect(client);
     const importing = client.importDocuments([
-      [{ type: "document.create", payload: { _id: "document:1", dtype: "note" } }],
-      [{ type: "document.create", payload: { _id: "document:2", dtype: "note" } }]
+      [
+        {
+          type: "document.create",
+          payload: { id: "document:1", dtype: "document", dataset: "test", schemaVersion: "0.10.1" }
+        }
+      ],
+      [
+        {
+          type: "document.create",
+          payload: { id: "document:2", dtype: "document", dataset: "test", schemaVersion: "0.10.1" }
+        }
+      ]
     ]);
 
     await vi.waitFor(() => expect(socket.sent).toHaveLength(2));
@@ -199,5 +214,31 @@ describe("control-plane client lifecycle", () => {
     await expect(client.snapshot()).rejects.toMatchObject({
       code: "control-plane.unavailable"
     });
+  });
+});
+
+describe("canonical control-plane wire", () => {
+  beforeEach(() => {
+    FakeWebSocket.instances = [];
+    vi.stubGlobal("WebSocket", FakeWebSocket);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+  it("rejects a falsely relabeled nested document before transmission", async () => {
+    const client = createControlPlaneClient("ws://quasar.test");
+    const socket = await connect(client);
+    const count = socket.sent.length;
+    await expect(
+      client.documentCreate({
+        id: "bad",
+        dataset: "test",
+        dtype: "person",
+        schemaVersion: "0.10.1",
+        data: {}
+      })
+    ).rejects.toThrow();
+    expect(socket.sent).toHaveLength(count);
+    client.dispose();
   });
 });

@@ -1,4 +1,4 @@
-import { assertDocument } from "starintel_doc";
+import { assertDocument } from "starintel_doc/legacy";
 import { describe, expect, it } from "vitest";
 import {
   BUILTIN_ACTORS,

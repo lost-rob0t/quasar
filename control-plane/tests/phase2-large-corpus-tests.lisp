@@ -10,10 +10,11 @@
         (setf
          (gethash id (workspace-documents workspace))
          (quasar.protocol:json-object
-          (cons "_id" id)
-          (cons "dtype" "person")
-          (cons "ordinal" index)
-          (cons "text" (format nil "fixture-~8,'0D-λ-雪" index))))))
+          (cons "id" id)
+          (cons "dtype" "person") (cons "schemaVersion" "0.10.1") (cons "dataset" "test")
+          (cons "extensions" (quasar.protocol:json-object
+            (cons "ordinal" index)
+            (cons "text" (format nil "fixture-~8,'0D-λ-雪" index))))))))
     workspace))
 
 (defun test-phase2-ten-thousand-document-direct-reads ()
@@ -51,7 +52,7 @@
              (check
               (string=
                target
-               (quasar.protocol:json-value (result response) "_id"))))
+               (quasar.protocol:json-value (result response) "id"))))
            (check
             (= 0
                (hash-table-count
@@ -142,7 +143,7 @@
                    (dolist (document documents)
                      (let ((id
                              (quasar.protocol:json-value
-                              document "_id")))
+                              document "id")))
                        (when last-id
                          (check (string< last-id id)))
                        (setf last-id id)

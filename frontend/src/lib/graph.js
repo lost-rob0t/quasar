@@ -1,4 +1,4 @@
-import { documentLabel } from "starintel_doc";
+import { documentLabel } from "starintel_doc/legacy";
 import { resolveDatasetScope } from "./dataset-url-scope";
 import { researchNodeGraphData } from "./research-node-graph";
 

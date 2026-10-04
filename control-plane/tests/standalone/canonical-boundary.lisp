@@ -1,0 +1,27 @@
+(require :asdf)
+(asdf:load-system :starintel-0101)
+(asdf:load-system :jsown)
+(load "control-plane/src/packages.lisp")
+(load "control-plane/src/protocol.lisp")
+(load "control-plane/src/starintel-contract.lisp")
+(load "control-plane/src/workspace.lisp")
+(let* ((workspace (quasar.workspace:make-workspace))
+       (doc (quasar.protocol:json-object (cons "id" "person:test")
+             (cons "dataset" "test") (cons "dtype" "person") (cons "schemaVersion" "0.10.1")
+             (cons "deleted" :false) (cons "extensions" (quasar.protocol:json-object (cons "opaque_key" :null))))))
+  (quasar.workspace:apply-document-create workspace doc)
+  (assert (equal (quasar.protocol:starintel-document-id doc) "person:test"))
+  (assert (equal (quasar.protocol:starintel-document-id
+                  (quasar.protocol:json-object (cons "_id" "legacy:1"))) "legacy:1"))
+  (handler-case
+      (progn (quasar.workspace:apply-document-create workspace
+               (quasar.protocol:json-object (cons "_id" "legacy:2") (cons "dtype" "person")))
+             (error "Accepted legacy write"))
+    (quasar.protocol:quasar-error () t))
+  (let ((invalid (jsown:parse "{\"id\":\"node:bad-time\",\"dataset\":\"test\",\"dtype\":\"research-node\",\"schemaVersion\":\"0.10.1\",\"objective\":\"Check\",\"status\":\"draft\",\"history\":[{\"to\":\"queued\",\"at\":\"2026-02-30T12:00:00Z\"}]}")))
+    (handler-case
+        (progn (quasar.workspace:apply-document-create workspace invalid)
+               (error "Accepted an impossible calendar date"))
+      (quasar.protocol:quasar-error () t))
+    (assert (null (gethash "node:bad-time" (quasar.workspace:workspace-documents workspace)))))
+  (format t "Quasar canonical write boundary and historical ID reads passed.~%"))

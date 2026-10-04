@@ -284,8 +284,9 @@ control-plane command.* events."
             (cons "type" "document.create")
             (cons "payload"
                   (quasar.protocol:json-object
-                   (cons "dtype" "note")
-                   (cons "body" "logging test"))))))
+                   (cons "dtype" "document")
+                   (cons "dataset" "test") (cons "schemaVersion" "0.10.1")
+                   (cons "notes" "logging test"))))))
     (check (capture-contains capture "workspace operation.begin"))
     (check (capture-contains capture "workspace operation.applied"))))
 

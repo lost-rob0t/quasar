@@ -23,13 +23,10 @@
                     (entity-id (format nil "person:restart-~D" iteration))
                     (entity
                       (quasar.protocol:json-object
-                       (cons "_id" entity-id)
+                       (cons "id" entity-id)
                        (cons "dataset" "test")
-                       (cons "dtype" "person")
-                       (cons "title" (format nil "Restart ~D" iteration))
-                       (cons "data"
-                             (quasar.protocol:json-object
-                              (cons "name" (format nil "Restart ~D" iteration))))
+                       (cons "dtype" "person") (cons "schemaVersion" "0.10.1")
+                       (cons "displayName" (format nil "Restart ~D" iteration))
                        (cons "extensions" (quasar.protocol:json-object))))
                     (response
                       (call-command

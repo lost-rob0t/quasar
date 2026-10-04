@@ -41,7 +41,7 @@ import {
   documentLabel,
   dtypes,
   touchDocument
-} from "starintel_doc";
+} from "starintel_doc/legacy";
 import { createGraphAdapter } from "../graph/GraphAdapter";
 import { isGraphUserNavigationActive } from "../graph/user-navigation-guard";
 import { actorApplicability, isBuiltinActor } from "../lib/actors";

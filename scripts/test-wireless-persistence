@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+work="$(mktemp -d "${TMPDIR:-/tmp}/quasar-wireless-proof.XXXXXX")"
+trap 'rm -rf -- "$work"' EXIT
+export QUASAR_IMPORT_TEST_DB="$work/db/"
+export QUASAR_IMPORT_TEST_FIXTURE="$work/fixtures.json"
+export QUASAR_IMPORT_TEST_READBACK="$work/readback.json"
+export CL_SOURCE_REGISTRY="${CL_SOURCE_REGISTRY:-(:source-registry (:tree \"${QUASAR_TEK9_PATH:-$HOME/starintel/tek9}/\") (:tree \"$HOME/quicklisp/local-projects/\") (:tree \"$HOME/quicklisp/dists/quicklisp/software/\") (:tree \"$root/systems/\") (:tree \"$root/vendor/star-cl/\") :ignore-inherited-configuration)}"
+(cd "$root/frontend" && node scripts/export-wireless-test-fixtures.mjs "$QUASAR_IMPORT_TEST_FIXTURE")
+for mode in write read; do
+  QUASAR_IMPORT_TEST_MODE="$mode" "${SBCL:-sbcl}" --noinform --script "$root/control-plane/tests/standalone/wireless-import-persistence.lisp"
+done
+
+(cd "$root/frontend" && node scripts/export-wireless-test-fixtures.mjs "$work/regenerated.json" "$QUASAR_IMPORT_TEST_READBACK")

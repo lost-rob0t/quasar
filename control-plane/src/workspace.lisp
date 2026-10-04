@@ -283,15 +283,7 @@
 
 (defun require-valid-document (workspace document)
   (declare (ignore workspace))
-  (quasar.protocol:ensure-object document "document" "document.invalid")
-  (quasar.protocol:ensure-string (quasar.protocol:json-value document "_id") "_id"
-                                 "document.invalid")
-  (let ((dtype (quasar.protocol:json-value document "dtype")))
-    (unless (and dtype (stringp dtype) (plusp (length dtype)))
-      (error 'quasar.protocol:quasar-error
-             :code "document.invalid"
-             :message "Document dtype must be a non-empty string.")))
-  document)
+  (quasar.protocol:require-canonical-document document))
 
 (defun require-valid-node (workspace node)
   (quasar.protocol:ensure-object node "node" "document.invalid")
@@ -389,12 +381,12 @@
 (defun apply-document-create (workspace payload)
   (quasar.protocol:ensure-object payload "document" "document.invalid")
   (let ((canonical (quasar.protocol:clone-json payload)))
-    (unless (quasar.protocol:json-value canonical "_id")
+    (unless (quasar.protocol:json-value canonical "id")
       (quasar.protocol:object-set
-       canonical "_id"
+       canonical "id"
        (generated-id (or (quasar.protocol:json-value canonical "dtype") "document"))))
     (require-valid-document workspace canonical)
-    (let ((id (quasar.protocol:json-value canonical "_id")))
+    (let ((id (quasar.protocol:json-value canonical "id")))
       (when (gethash id (workspace-documents workspace))
         (error 'quasar.protocol:quasar-error
                :code "document.duplicate-id"
@@ -411,7 +403,7 @@
                  (cons "payload" (quasar.protocol:json-object (cons "id" id))))))))
 
 (defun apply-document-update (workspace payload)
-  (let ((id (quasar.protocol:json-value payload "_id")))
+  (let ((id (quasar.protocol:json-value payload "id")))
     (require-valid-document workspace payload)
     (let ((previous (require-document workspace id)))
       (let ((canonical (quasar.protocol:clone-json payload))
@@ -481,7 +473,7 @@
                      (quasar.protocol:json-value payload "graphIds")
                      "graphIds" "graph.invalid-reference"))
          (applied (apply-document-create workspace document))
-         (document-id (quasar.protocol:json-value document "_id")))
+         (document-id (quasar.protocol:starintel-document-id document)))
     (dolist (graph-id (if (eq (car graph-ids) :array)
                           (rest graph-ids)
                           graph-ids))

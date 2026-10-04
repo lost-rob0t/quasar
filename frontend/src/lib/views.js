@@ -1,6 +1,22 @@
-export const VIEW_VERSION = 1;
+export const VIEW_VERSION = 2;
 
-const map = (source) => `function (doc) {${source}}`;
+// Legacy view keys are a query compatibility projection; stored bodies remain flat.
+const map = (source) => `function (doc) {
+  if (doc.schemaVersion === '0.10.1') {
+    var wire = doc;
+    var fields = {};
+    Object.keys(wire).forEach(function (key) {
+      fields[key.replace(/[A-Z]/g, function (c) { return '_' + c.toLowerCase(); })] = wire[key];
+    });
+    if (wire.dtype === 'relation') {
+      fields.subject = wire.source && wire.source.id;
+      fields.object = wire.destination && wire.destination.id;
+      fields.directed = wire.direction !== 'symmetric';
+    }
+    doc = Object.assign({}, (wire.extensions || {}).quasarLegacy090 || {}, wire, { data: fields, _id: wire.id });
+  }
+  ${source}
+}`;
 
 export const STARINTEL_VIEW_MANIFEST = Object.freeze([
   {

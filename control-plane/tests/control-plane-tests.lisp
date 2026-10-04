@@ -66,9 +66,15 @@
   (jsown:val (jsown:val (parsed response) "error") "code"))
 
 (defun make-doc (id &optional (dtype "person"))
-  (quasar.protocol:json-object
-   (cons "_id" id)
-   (cons "dtype" dtype)))
+  (let ((document (quasar.protocol:json-object
+                   (cons "id" id) (cons "dtype" dtype)
+                   (cons "dataset" "test") (cons "schemaVersion" "0.10.1"))))
+    (when (string= dtype "relation")
+      (dolist (field '("source" "destination"))
+        (quasar.protocol:object-set document field
+          (quasar.protocol:json-object (cons "schema" "person") (cons "id" "person:fixture"))))
+      (quasar.protocol:object-set document "predicate" "related-to"))
+    document))
 
 (defun make-node (graph-id node-id &optional document-id)
   (let ((node (quasar.protocol:json-object
@@ -234,15 +240,11 @@ downstream membership reconciliation sees a uniform representation."
     (check (gethash "person:crud" (workspace-documents workspace)))
     (let ((applied (quasar.workspace:apply-document-update
                     workspace (quasar.protocol:json-object
-                               (cons "_id" "person:crud")
-                               (cons "dtype" "person")
-                               (cons "data" (quasar.protocol:json-object (cons "note" "updated")))))))
+                               (cons "id" "person:crud")
+                               (cons "dtype" "person") (cons "schemaVersion" "0.10.1") (cons "dataset" "test")
+                               (cons "notes" "updated")))))
       (check (string= "updated"
-                      (jsown:val
-                       (jsown:val
-                        (gethash "person:crud" (workspace-documents workspace))
-                        "data")
-                       "note")))
+                      (jsown:val (gethash "person:crud" (workspace-documents workspace)) "notes")))
       (check (quasar.protocol:json-value (applied-op-result applied) "previous")))
     (let ((applied (quasar.workspace:apply-document-delete
                     workspace (quasar.protocol:json-object (cons "id" "person:crud")))))
@@ -264,12 +266,12 @@ downstream membership reconciliation sees a uniform representation."
 (defun test-document-invalid ()
   (let ((workspace (make-workspace :id "inv-test")))
     (let* ((applied (quasar.workspace:apply-document-create
-                     workspace (quasar.protocol:json-object (cons "dtype" "person"))))
+                     workspace (quasar.protocol:json-object (cons "dtype" "person") (cons "schemaVersion" "0.10.1") (cons "dataset" "test"))))
            (created (quasar.protocol:json-value (applied-op-result applied) "created")))
-      (check (quasar.protocol:json-value created "_id")))
+      (check (quasar.protocol:json-value created "id")))
     (handler-case
         (quasar.workspace:apply-document-create
-         workspace (quasar.protocol:json-object (cons "_id" "x")))
+         workspace (quasar.protocol:json-object (cons "id" "x")))
       (quasar.protocol:quasar-error (c)
         (check (string= (quasar.protocol:quasar-error-code c) "document.invalid")))
       (:no-error (&rest args)
@@ -585,15 +587,15 @@ downstream membership reconciliation sees a uniform representation."
     (let ((original (make-doc "person:upd")))
       (quasar.workspace:apply-document-create workspace original)
       (let ((updated (quasar.protocol:json-object
-                      (cons "_id" "person:upd")
-                      (cons "dtype" "person")
-                      (cons "data" (quasar.protocol:json-object (cons "note" "changed"))))))
+                      (cons "id" "person:upd")
+                      (cons "dtype" "person") (cons "schemaVersion" "0.10.1") (cons "dataset" "test")
+                      (cons "notes" "changed"))))
         (let ((applied (quasar.workspace:apply-document-update workspace updated)))
           (let ((inverse (applied-op-inverse applied)))
             (quasar.workspace:dispatch-operation workspace inverse))
           (check (null (quasar.protocol:json-value
                         (gethash "person:upd" (workspace-documents workspace))
-                        "data"))))))))
+                        "notes"))))))))
 
 ;;; --- Persistence / store tests ---
 
@@ -917,7 +919,7 @@ downstream membership reconciliation sees a uniform representation."
          (progn
            (dotimes (index 5)
              (let ((document (make-doc (format nil "page-~D" index))))
-               (quasar.protocol:object-set document "padding"
+               (quasar.protocol:object-set document "notes"
                                            (make-string 200 :initial-element #\x))
                (call-command plane
                              (make-envelope "document.create" document

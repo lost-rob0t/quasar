@@ -61,16 +61,17 @@ canonical target through the configured StarIntel server contract afterwards."
       (pro-actor-error "pro-actors.invalid-target" "A target document is required."))
     (unless (string= (or (quasar.protocol:json-value target "dtype") "") "target")
       (pro-actor-error "pro-actors.invalid-target" "The document must have dtype target."))
-    (let* ((data (quasar.protocol:json-value target "data"))
+    (quasar.protocol:require-canonical-document target)
+    (let* ((data target)
            (actor (and data (quasar.protocol:json-value data "actor")))
            (target-value (and data (quasar.protocol:json-value data "target")))
-           (target-id (quasar.protocol:json-value target "_id")))
+           (target-id (quasar.protocol:json-value target "id")))
       (unless (and (stringp actor) (plusp (length actor)))
-        (pro-actor-error "pro-actors.invalid-target" "Target data.actor is required."))
+        (pro-actor-error "pro-actors.invalid-target" "Target actor is required."))
       (unless (and (stringp target-value) (plusp (length target-value)))
-        (pro-actor-error "pro-actors.invalid-target" "Target data.target is required."))
+        (pro-actor-error "pro-actors.invalid-target" "Target target is required."))
       (unless (and (stringp target-id) (plusp (length target-id)))
-        (pro-actor-error "pro-actors.invalid-target" "Target _id is required."))
+        (pro-actor-error "pro-actors.invalid-target" "Target id is required."))
       (let ((manifest (find-pro-actor-manifest plane envelope actor)))
         (unless manifest
           (pro-actor-error
@@ -80,7 +81,7 @@ canonical target through the configured StarIntel server contract afterwards."
          (cons "authorized" t)
          (cons "actor" actor)
          (cons "targetId" target-id)
-         (cons "manifestId" (quasar.protocol:json-value manifest "_id")))))))
+         (cons "manifestId" (quasar.protocol:starintel-document-id manifest)))))))
 
 (defun install-pro-actor-commands (plane)
   "Register paid pro-actor discovery and target authorization commands.

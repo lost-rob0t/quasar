@@ -58,14 +58,14 @@
     (cond
       ((null text) nil)
       ((and (= (length text) 8) (every #'digit-char-p text))
-       (format nil "~A-~A-~AT00:00:00.000Z"
+       (format nil "~A-~A-~A"
                (subseq text 0 4)
                (subseq text 4 6)
                (subseq text 6 8)))
       ((and (= (length text) 10)
             (char= (char text 4) #\-)
             (char= (char text 7) #\-))
-       (concatenate 'string text "T00:00:00.000Z"))
+       text)
       (t text))))
 
 (defun maybe-put (object key value)
@@ -78,22 +78,21 @@
          (first-name (find-text record "NameFirst" "FirstName" "GivenName"))
          (middle-name (find-text record "NameMiddle" "MiddleName"))
          (last-name (find-text record "NameLast" "LastName" "FamilyName" "Surname"))
-         (email (find-text record "EmailAddress" "Email" "NewEmail"))
-         (phone (find-text record "PhoneNumber" "Phone" "NewPhone" "InternationalPhoneNumber"))
          (dob (normalized-date (find-json-key record "DateOfBirth"))))
-    (setf data (maybe-put data "full_name" full-name)
-          data (maybe-put data "name" full-name)
+    (setf data (maybe-put data "fullName" full-name)
+          data (maybe-put data "displayName" full-name)
           data (maybe-put data "fname" first-name)
           data (maybe-put data "mname" middle-name)
           data (maybe-put data "lname" last-name)
-          data (maybe-put data "email" email)
-          data (maybe-put data "phone" phone)
           data (maybe-put data "dob" dob))
     data))
 
 (defun enrichment-summary (record provenance)
   (json-object
    (cons "service" (json-value provenance "service" "personator-search"))
+   ;; Values returned by a provider are observations, not document references.
+   (cons "emailObservation" (or (find-text record "EmailAddress" "Email" "NewEmail") ""))
+   (cons "phoneObservation" (or (find-text record "PhoneNumber" "Phone" "NewPhone") ""))
    (cons "http_status" (json-value provenance "http_status" 200))
    (cons "results" (or (find-text record "Results" "ResultCodes") ""))
    (cons "melissa_address_key"

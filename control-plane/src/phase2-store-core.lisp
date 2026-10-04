@@ -62,7 +62,7 @@
        #'string<
        :key
        (lambda (document)
-         (quasar.protocol:json-value document "_id"))))))
+         (quasar.protocol:starintel-document-id document))))))
 
 (defmethod direct-workspace-snapshot-page
     ((store memory-store) workspace-id offset byte-limit)

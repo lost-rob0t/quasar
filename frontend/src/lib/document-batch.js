@@ -1,4 +1,4 @@
-import { assertDocument } from "starintel_doc";
+import { toCanonicalDocument, toPouchDocument } from "./canonical-document";
 
 export class PartialBatchCommitError extends Error {
   constructor(report) {
@@ -12,10 +12,17 @@ export class PartialBatchCommitError extends Error {
 
 function incomingWins(incoming, existing, replace) {
   if (replace) return true;
-  const incomingVersion = Number(incoming.version || 0);
-  const existingVersion = Number(existing.version || 0);
+  const incomingVersion = Number(
+    incoming.extensions?.quasarLegacy090?.version || incoming.version || 0
+  );
+  const existingVersion = Number(
+    existing.extensions?.quasarLegacy090?.version || existing.version || 0
+  );
   if (incomingVersion !== existingVersion) return incomingVersion > existingVersion;
-  return String(incoming.date_updated || "") > String(existing.date_updated || "");
+  return (
+    String(incoming.updatedAt ?? incoming.date_updated ?? "") >
+    String(existing.updatedAt ?? existing.date_updated ?? "")
+  );
 }
 
 function originFields(origins, index) {
@@ -42,7 +49,9 @@ export function validateDocumentBatch(inputs, { origins = [] } = {}) {
 
   for (let index = 0; index < inputs.length; index += 1) {
     try {
-      const document = assertDocument(inputs[index]);
+      const document = toPouchDocument(
+        toCanonicalDocument(inputs[index], { allowLegacy090: true })
+      );
       const previousIndex = ids.get(document._id);
       if (previousIndex !== undefined) {
         errors.push({

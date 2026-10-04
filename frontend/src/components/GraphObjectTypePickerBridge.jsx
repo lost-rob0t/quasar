@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
-import { dtypes } from "starintel_doc";
+import { dtypes } from "starintel_doc/legacy";
 import { dtypeLabel } from "../lib/schema-form";
 import { CompactNodeEditor, CompactResearchNodeEditor, GraphModalShell } from "./GraphEditors";
 

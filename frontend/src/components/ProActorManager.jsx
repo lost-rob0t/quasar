@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Crown, LockKeyhole, RefreshCw, Send, ServerCog } from "lucide-react";
-import { assertDocument, createDocument, documentLabel } from "starintel_doc";
+import { assertDocument, createDocument, documentLabel } from "starintel_doc/legacy";
 import {
   cpAuthorizeProActorTarget,
   cpProActorManifests,
