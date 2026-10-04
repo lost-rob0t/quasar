@@ -54,7 +54,7 @@ test("desktop graph canvas pans and zooms", async ({ page }) => {
     .toBeGreaterThan(beforeZoom.zoom);
 });
 
-test("full viewport expands the canvas without replacing the global shell", async ({ page }) => {
+test("full viewport replaces global chrome with the graph editor", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/graph");
 
@@ -76,9 +76,7 @@ test("full viewport expands the canvas without replacing the global shell", asyn
   await expect(canvas).toBeVisible();
 
   const canvasBefore = await canvas.boundingBox();
-  const sidebarBefore = await sidebar.boundingBox();
   expect(canvasBefore).not.toBeNull();
-  expect(sidebarBefore).not.toBeNull();
 
   const dismissNotice = page.getByRole("button", { name: "Dismiss notification" });
   if (await dismissNotice.isVisible()) await dismissNotice.click();
@@ -86,8 +84,8 @@ test("full viewport expands the canvas without replacing the global shell", asyn
   await page.getByRole("button", { name: "Enter full viewport" }).click();
 
   await expect(body).toHaveClass(/graph-viewport-full/);
-  await expect(sidebar).toBeVisible();
-  await expect(topbar).toBeVisible();
+  await expect(sidebar).toBeHidden();
+  await expect(topbar).toBeHidden();
   await expect(metrics).toBeVisible();
   await expect(dock).toBeHidden();
   await expect(inspector).toBeHidden();
@@ -95,11 +93,8 @@ test("full viewport expands the canvas without replacing the global shell", asyn
   await expect(page.getByRole("button", { name: "Exit full viewport" })).toBeVisible();
 
   const canvasAfter = await canvas.boundingBox();
-  const sidebarAfter = await sidebar.boundingBox();
   expect(canvasAfter).not.toBeNull();
-  expect(sidebarAfter).not.toBeNull();
-  if (canvasBefore && canvasAfter && sidebarBefore && sidebarAfter) {
-    expect(sidebarAfter.width).toBe(sidebarBefore.width);
+  if (canvasBefore && canvasAfter) {
     expect(canvasAfter.width).toBeGreaterThan(canvasBefore.width + 120);
     expect(canvasAfter.height).toBeGreaterThan(canvasBefore.height + 35);
   }
