@@ -20,7 +20,14 @@ import {
 import { useQuasar } from "../../store";
 import { SchemaField } from "../DocumentEditor";
 import PredicateAutocomplete from "./PredicateAutocomplete";
-import { DocumentSelect, FieldPicker, GraphModalShell, parseJson, saveEditorDraft } from "./shared";
+import {
+  DocumentSelect,
+  FieldPicker,
+  GraphModalShell,
+  parseJson,
+  prepareNewGraphDraft,
+  saveEditorDraft
+} from "./shared";
 
 const SOURCE_FIELDS = ["subject", "source"];
 const TARGET_FIELDS = ["object", "target"];
@@ -426,12 +433,16 @@ export default function CompactRelationEditor({
 
   function openFullEditor() {
     try {
-      const token = saveEditorDraft(buildDraft(), {
-        kind: "relation",
-        documentId: relationDocument?._id || "",
-        sourceId,
-        targetId
-      });
+      const draft = buildDraft();
+      const token = saveEditorDraft(
+        !relationDocument && !rawMode ? prepareNewGraphDraft("relation", draft) : draft,
+        {
+          kind: "relation",
+          documentId: relationDocument?._id || "",
+          sourceId,
+          targetId
+        }
+      );
       const path = relationDocument
         ? `/documents/${encodeURIComponent(relationDocument._id)}/edit`
         : "/documents/new";

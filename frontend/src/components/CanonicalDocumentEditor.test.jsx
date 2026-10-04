@@ -65,3 +65,38 @@ it("opens an existing graph draft through the canonical field mapping", () => {
     vi.unstubAllGlobals();
   }
 });
+
+it("opens a newly authored compact person draft without weakening historical validation", async () => {
+  const { prepareNewGraphDraft } = await import("./graph-editors/shared");
+  const draft = prepareNewGraphDraft("person", {
+    dataset: "test",
+    dtype: "person",
+    data: { fname: "Jane", lname: "Doe", full_name: "Jane Doe" }
+  });
+  expect(draft.schema_version).toBe("0.9.0");
+  expect(draft._id).toBeTruthy();
+  const { toCanonicalDocument } = await import("../lib/canonical-document");
+  expect(toCanonicalDocument(draft, { allowLegacy090: true })).toMatchObject({
+    id: draft._id,
+    schemaVersion: "0.10.1",
+    fname: "Jane",
+    lname: "Doe",
+    fullName: "Jane Doe"
+  });
+  expect(() => prepareNewGraphDraft("person", { schema_version: "0.8.0" })).toThrow();
+  expect(() => prepareNewGraphDraft("person", { schemaVersion: "0.10.1" })).toThrow();
+  vi.stubGlobal("sessionStorage", { getItem: () => JSON.stringify(draft) });
+  try {
+    const html = renderToStaticMarkup(
+      <MemoryRouter initialEntries={["/documents/new?draft=person&returnTo=graph"]}>
+        <Editor mode="create" />
+      </MemoryRouter>
+    );
+    expect(html).toContain("Jane Doe");
+    expect(html).toContain("fullName");
+    expect(html).toContain("Save document");
+    expect(html).not.toContain("requires explicit migration");
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

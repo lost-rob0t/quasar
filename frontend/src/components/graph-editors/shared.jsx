@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Plus, Search, X } from "lucide-react";
-import { documentLabel } from "starintel_doc/legacy";
+import { createDocument, documentLabel } from "starintel_doc/legacy";
 import { fieldTypeHint } from "../../lib/schema-form";
 
 export const DRAFT_PREFIX = "quasar.editor-draft.v1:";
@@ -19,6 +19,14 @@ function draftToken() {
   return (
     globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`
   );
+}
+
+// Only field-mode drafts authored by the historical compact editors use this.
+// Raw/imported documents must retain their declared version and strict validation.
+export function prepareNewGraphDraft(dtype, document) {
+  if (document.schemaVersion || (document.schema_version && document.schema_version !== "0.9.0"))
+    throw new TypeError("Expected a historical compact-editor draft");
+  return createDocument(dtype, document);
 }
 
 export function saveEditorDraft(document, metadata = {}) {
