@@ -132,6 +132,19 @@
   text-transform: uppercase;
 }
 
+.actor-record-list em.actor-status-online {
+  color: #86efac;
+}
+
+.actor-record-list em.actor-status-degraded {
+  color: #facc15;
+}
+
+.actor-record-list em.actor-status-declared-offline,
+.actor-record-list em.actor-status-unavailable {
+  color: #fda4af;
+}
+
 .actor-editor-heading {
   align-items: flex-start;
 }

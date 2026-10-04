@@ -41,40 +41,105 @@ async function request(configuration, path, options = {}) {
   return body;
 }
 
-function deploymentString(object, key, fallback = "") {
+const ACTOR_REGISTRY_SCHEMA = "starintel-actor-registry-v1";
+const ACTOR_RUNTIME_STATUSES = new Set(["online", "declared-offline", "degraded", "unavailable"]);
+
+function registryString(object, key, context) {
   const value = object && typeof object === "object" ? object[key] : null;
-  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`StarIntel server: ${context}.${key} must be a non-empty string`);
+  }
+  return value.trim();
 }
 
-function normalizeActorDeployment(manifest) {
-  if (!manifest || typeof manifest !== "object") return null;
-  const actorId = deploymentString(manifest, "id");
-  if (!actorId) return null;
-  const service = manifest.service && typeof manifest.service === "object" ? manifest.service : {};
-  const runtime = manifest.runtime && typeof manifest.runtime === "object" ? manifest.runtime : {};
-  const dispatch =
-    manifest.dispatch && typeof manifest.dispatch === "object" ? manifest.dispatch : {};
-  const location = deploymentString(runtime, "location", "remote");
-  const language = deploymentString(service, "language", "unknown");
-  const serviceId = deploymentString(service, "id", "starintel-server");
+function registryStringList(object, key, context) {
+  const value = object && typeof object === "object" ? object[key] : null;
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim())) {
+    throw new Error(`StarIntel server: ${context}.${key} must be an array of non-empty strings`);
+  }
+  return [...new Set(value.map((item) => item.trim()))];
+}
+
+function normalizeActorContract(contract, context) {
   return {
-    id: `star-runtime:${actorId}`,
-    actorId,
-    label: deploymentString(manifest, "label", actorId),
-    description: deploymentString(
-      manifest,
-      "description",
-      "StarIntel server-managed actor deployment."
-    ),
+    targets: registryStringList(contract, "targets", context),
+    documents: registryStringList(contract, "documents", context),
+    messages: registryStringList(contract, "messages", context)
+  };
+}
+
+function normalizeActorRegistryEntry(manifest, index = 0) {
+  const context = `actor registry entry ${index}`;
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+    throw new Error(`StarIntel server: ${context} must be an object`);
+  }
+  const resourceUri = registryString(manifest, "resourceUri", context);
+  const resourceKind = registryString(manifest, "resourceKind", context);
+  if (!["actor", "service"].includes(resourceKind)) {
+    throw new Error(`StarIntel server: ${context}.resourceKind is unsupported`);
+  }
+  let parsedResource;
+  try {
+    parsedResource = new URL(resourceUri);
+  } catch {
+    throw new Error(`StarIntel server: ${context}.resourceUri is not a canonical STAR URI`);
+  }
+  if (
+    parsedResource.protocol !== "star:" ||
+    !parsedResource.hostname ||
+    parsedResource.username ||
+    parsedResource.password ||
+    parsedResource.port ||
+    parsedResource.search ||
+    parsedResource.hash ||
+    !parsedResource.pathname.startsWith(`/${resourceKind}/`) ||
+    parsedResource.pathname.length <= `/${resourceKind}/`.length ||
+    parsedResource.pathname.includes("//") ||
+    parsedResource.pathname.includes("/./") ||
+    parsedResource.pathname.includes("/../")
+  ) {
+    throw new Error(`StarIntel server: ${context}.resourceUri is not a canonical STAR URI`);
+  }
+  const semantic = manifest.semantic;
+  const provenance = manifest.provenance;
+  const name = registryString(semantic, "name", `${context}.semantic`);
+  const version = registryString(semantic, "version", `${context}.semantic`);
+  const digest = registryString(semantic, "digest", `${context}.semantic`);
+  const sourcePackage = registryString(provenance, "sourcePackage", `${context}.provenance`);
+  const status = registryString(manifest, "status", context);
+  if (!ACTOR_RUNTIME_STATUSES.has(status)) {
+    throw new Error(`StarIntel server: ${context}.status is unsupported`);
+  }
+  if (typeof manifest.ready !== "boolean") {
+    throw new Error(`StarIntel server: ${context}.ready must be a boolean`);
+  }
+  if (manifest.operatorVisible !== true) {
+    throw new Error(`StarIntel server: ${context}.operatorVisible must be true`);
+  }
+  const observedAt =
+    manifest.observedAt == null ? null : registryString(manifest, "observedAt", context);
+  const accepts = normalizeActorContract(manifest.accepts, `${context}.accepts`);
+  const produces = normalizeActorContract(manifest.produces, `${context}.produces`);
+  const capabilities = registryStringList(manifest, "capabilities", context);
+  return {
+    id: `star-runtime:${resourceUri}`,
+    actorId: name,
+    label: name,
+    description: `${resourceKind} ${name}@${version} from ${sourcePackage}`,
     source: "",
     serverManaged: true,
     readOnly: true,
-    origin: location,
-    language,
-    serviceId,
-    service: { ...service },
-    runtime: { ...runtime, location },
-    dispatch: { ...dispatch, actor: deploymentString(dispatch, "actor", actorId) },
+    resourceUri,
+    resourceKind,
+    semantic: { name, version, digest },
+    accepts,
+    produces,
+    capabilities,
+    sourcePackage,
+    status,
+    ready: manifest.ready,
+    alive: status === "online" && manifest.ready,
+    observedAt,
     manifest: structuredClone(manifest)
   };
 }
@@ -102,12 +167,18 @@ export async function probeStarIntelServer(configuration) {
 }
 
 export async function listStarIntelActors(configuration) {
-  const response = await request(configuration, "/api/v1/actors");
+  const response = await request(configuration, "/v1/actors");
+  if (response?.data?.schema !== ACTOR_REGISTRY_SCHEMA) {
+    throw new Error(`StarIntel server: unsupported actor registry schema`);
+  }
   const actors = response?.data?.actors;
   if (!Array.isArray(actors)) {
     throw new Error("StarIntel server: actor discovery response did not contain data.actors");
   }
-  return actors.map(normalizeActorDeployment).filter(Boolean);
+  if (!Number.isInteger(response.data.count) || response.data.count !== actors.length) {
+    throw new Error("StarIntel server: actor registry count did not match data.actors");
+  }
+  return actors.map(normalizeActorRegistryEntry);
 }
 
 export async function submitTargetToServer(configuration, target) {
@@ -134,5 +205,5 @@ export async function submitTargetToServer(configuration, target) {
 export const starIntelServerInternals = Object.freeze({
   serverUrl,
   authorization,
-  normalizeActorDeployment
+  normalizeActorRegistryEntry
 });
