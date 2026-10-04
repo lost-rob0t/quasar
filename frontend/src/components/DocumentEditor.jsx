@@ -390,6 +390,7 @@ export default function DocumentEditor({ mode }) {
   const initialDraft = useMemo(() => readDraft(draftToken), [draftToken]);
   const initialDocument = initialDraft || existing;
   const initialDtype = initialDocument?.dtype || params.get("dtype") || "entity";
+  const fullscreen = params.get("advanced") === "1";
   const [baseDocument, setBaseDocument] = useState(initialDocument || {});
   const [rawMode, setRawMode] = useState(false);
   const [advanced, setAdvanced] = useState(params.get("advanced") === "1");
@@ -652,18 +653,37 @@ export default function DocumentEditor({ mode }) {
     });
 
   return (
-    <section className="simple-document-editor full-document-editor">
-      <div className="page-heading simple-editor-heading">
-        <div>
-          <span className="eyebrow">{mode === "edit" ? "Edit" : "Create"}</span>
+    <section
+      className={`simple-document-editor full-document-editor${fullscreen ? " is-fullscreen" : ""}`}
+    >
+      <header className="page-heading simple-editor-heading editor-workspace-header">
+        <div className="editor-title-block">
+          <span className="eyebrow editor-breadcrumb">
+            Documents / {mode === "edit" ? "Edit record" : "New record"}
+          </span>
           <h1>
             {mode === "edit"
               ? `Edit ${documentLabel(existing || initialDraft)}`
               : `New ${objectType}`}
           </h1>
-          <p>Full document editor.</p>
+          <p>Build a schema-valid record with focused fields, metadata, and provenance.</p>
+          <div className="editor-title-meta" aria-label="Document editor context">
+            <span>{mode === "edit" ? "Existing record" : "Unsaved record"}</span>
+            <span>{form.dtype}</span>
+            <span>{renderedFields.length} active fields</span>
+          </div>
         </div>
-        <div className="button-row">
+        <div className="button-row editor-header-actions">
+          {fullscreen && (
+            <button
+              className="button small"
+              type="button"
+              aria-label="Close full editor"
+              onClick={() => navigate(-1)}
+            >
+              <X size={14} /> Close
+            </button>
+          )}
           <button className="button small" type="button" onClick={toggleRawMode}>
             <Braces size={14} /> {rawMode ? "Basic" : "Inspect JSON"}
           </button>
@@ -673,213 +693,257 @@ export default function DocumentEditor({ mode }) {
             </button>
           )}
         </div>
-      </div>
+      </header>
 
-      <form className="editor-form simple-editor-form" onSubmit={submit}>
+      <form
+        className={`editor-form simple-editor-form ${rawMode ? "is-raw" : "is-structured"}`}
+        onSubmit={submit}
+      >
         {rawMode ? (
-          <section className="simple-editor-section">
-            <label className="field full">
-              <span>Complete document JSON</span>
-              <small>object · all schema keys available</small>
-              <textarea
-                className="code-editor tall"
-                value={form.raw}
-                onChange={(event) => {
-                  setForm((current) => ({ ...current, raw: event.target.value }));
-                  setRawValidation("");
-                }}
-              />
-            </label>
-            {rawValidation && <p className="validation-error">{rawValidation}</p>}
-          </section>
-        ) : (
-          <>
-            <section className="simple-editor-section">
-              <div className="form-grid editor-basics-grid">
-                {!existing && (
-                  <label className="field">
-                    <span>Object type</span>
-                    <small>enum · required</small>
-                    <select
-                      value={form.dtype}
-                      onChange={(event) => {
-                        const next = event.target.value;
-                        setBaseDocument((current) => ({
-                          ...current,
-                          dtype: next,
-                          data: current.dtype === next ? current.data : {}
-                        }));
-                        setForm((current) => ({ ...current, dtype: next }));
-                      }}
-                    >
-                      {dtypes.map((name) => (
-                        <option key={name} value={name}>
-                          {dtypeLabel(name)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-                <label className="field">
-                  <span>Dataset</span>
-                  <small>string · required</small>
-                  <input required value={form.dataset} onChange={update("dataset")} />
-                </label>
-              </div>
-            </section>
-
-            <section className="simple-editor-section object-fields-section">
-              <div className="simple-editor-section-heading">
-                <h2>Fields for {form.dtype}</h2>
-                <span className={`dtype dtype-${form.dtype}`}>{form.dtype}</span>
-              </div>
-              <div className="form-grid dtype-field-grid">{renderFields(renderedFields)}</div>
-              {!essentialFields.length && (
-                <p className="muted">No essential fields are defined for this object type.</p>
-              )}
-              {availableFields.length > 0 && (
-                <div
-                  className="field-picker"
-                  onBlur={(event) => {
-                    if (!event.currentTarget.contains(event.relatedTarget))
-                      setFieldPickerOpen(false);
-                  }}
-                >
-                  <button
-                    className="button small"
-                    type="button"
-                    aria-expanded={fieldPickerOpen}
-                    onClick={() => setFieldPickerOpen((value) => !value)}
-                  >
-                    <Plus size={14} /> Add field
-                  </button>
-                  {fieldPickerOpen && (
-                    <div className="field-picker-options" id="schema-field-options" role="listbox">
-                      <label className="field-picker-search">
-                        <input
-                          role="combobox"
-                          aria-autocomplete="list"
-                          aria-controls="schema-field-options"
-                          aria-expanded={fieldPickerOpen}
-                          value={fieldPickerQuery}
-                          placeholder={`Search ${availableFields.length} fields`}
-                          autoFocus
-                          onChange={(event) => setFieldPickerQuery(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" && matchingAvailableFields[0]) {
-                              event.preventDefault();
-                              addField(matchingAvailableFields[0]);
-                            }
-                            if (event.key === "Escape") setFieldPickerOpen(false);
-                          }}
-                        />
-                      </label>
-                      {matchingAvailableFields.map((name) => {
-                        const descriptor = descriptorByName.get(name);
-                        return (
-                          <button
-                            key={name}
-                            type="button"
-                            role="option"
-                            aria-selected="false"
-                            onClick={() => addField(name)}
-                          >
-                            <code>{name}</code>
-                            <small>
-                              {fieldTypeHint(descriptor?.schema || {}, descriptor?.required)}
-                            </small>
-                          </button>
-                        );
-                      })}
-                      {!matchingAvailableFields.length && (
-                        <span className="field-picker-empty">No matching fields</span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </section>
-
-            <button
-              className="button small advanced-editor-toggle"
-              type="button"
-              aria-expanded={advanced}
-              onClick={() => setAdvanced((value) => !value)}
-            >
-              {advanced ? "Basic" : "Advanced"}
-            </button>
-
-            {advanced && (
-              <section className="simple-editor-section advanced-editor-section">
+          <div className="editor-workspace-body is-raw">
+            <main className="editor-workspace-main">
+              <section className="simple-editor-section editor-raw-section">
                 <div className="simple-editor-section-heading">
-                  <h2>Advanced</h2>
+                  <div>
+                    <span className="editor-section-index">JSON</span>
+                    <h2>Complete document</h2>
+                    <p>Edit the canonical object directly. Validation still runs before save.</p>
+                  </div>
                 </div>
-                <h3>Document metadata</h3>
-                <div className="form-grid details-field-grid">
-                  <label className="field full">
-                    <span>Title</span>
-                    <small>string · optional</small>
-                    <input value={form.title} onChange={update("title")} />
-                  </label>
-                  <label className="field">
-                    <span>Document ID</span>
-                    <small>string · optional until save</small>
-                    <input value={form.id} onChange={update("id")} disabled={Boolean(existing)} />
-                  </label>
-                  <label className="field">
-                    <span>Status</span>
-                    <small>string · optional</small>
-                    <input value={form.status} onChange={update("status")} />
-                  </label>
-                  <label className="field full">
-                    <span>Summary</span>
-                    <small>string · long text · optional</small>
-                    <textarea value={form.summary} onChange={update("summary")} />
-                  </label>
-                  <label className="field full">
-                    <span>Description</span>
-                    <small>string · long text · optional</small>
-                    <textarea value={form.description} onChange={update("description")} />
-                  </label>
-                  <label className="field full">
-                    <span>Tags</span>
-                    <small>string[] · comma separated</small>
-                    <input value={form.tags} onChange={update("tags")} />
-                  </label>
+                <label className="field full">
+                  <span>Complete document JSON</span>
+                  <small>object · all schema keys available</small>
+                  <textarea
+                    className="code-editor tall"
+                    value={form.raw}
+                    onChange={(event) => {
+                      setForm((current) => ({ ...current, raw: event.target.value }));
+                      setRawValidation("");
+                    }}
+                  />
+                </label>
+                {rawValidation && <p className="validation-error">{rawValidation}</p>}
+              </section>
+            </main>
+          </div>
+        ) : (
+          <div className="editor-workspace-body">
+            <aside className="editor-context-panel">
+              <section className="simple-editor-section editor-setup-section">
+                <div className="simple-editor-section-heading">
+                  <div>
+                    <span className="editor-section-index">Setup</span>
+                    <h2>Record context</h2>
+                    <p>Choose the schema and destination before shaping the record.</p>
+                  </div>
                 </div>
-
-                <h3>Sources and evidence</h3>
-                <div className="form-grid dtype-field-grid details-field-grid">
-                  <SchemaField
-                    name="sources"
-                    fieldSchema={
-                      schema.properties?.sources || { type: "array", items: { type: "string" } }
-                    }
-                    value={form.sources}
-                    referenceOptions={referenceOptions}
-                    onChange={(value) => setForm((current) => ({ ...current, sources: value }))}
-                  />
-                  <SchemaField
-                    name="evidence"
-                    fieldSchema={
-                      schema.properties?.evidence || { type: "array", items: { type: "string" } }
-                    }
-                    value={form.evidence}
-                    referenceOptions={referenceOptions}
-                    onChange={(value) => setForm((current) => ({ ...current, evidence: value }))}
-                  />
+                <div className="form-grid editor-basics-grid">
+                  {!existing && (
+                    <label className="field">
+                      <span>Object type</span>
+                      <small>enum · required</small>
+                      <select
+                        value={form.dtype}
+                        onChange={(event) => {
+                          const next = event.target.value;
+                          setBaseDocument((current) => ({
+                            ...current,
+                            dtype: next,
+                            data: current.dtype === next ? current.data : {}
+                          }));
+                          setForm((current) => ({ ...current, dtype: next }));
+                        }}
+                      >
+                        {dtypes.map((name) => (
+                          <option key={name} value={name}>
+                            {dtypeLabel(name)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  <label className="field">
+                    <span>Dataset</span>
+                    <small>string · required</small>
+                    <input required value={form.dataset} onChange={update("dataset")} />
+                  </label>
                 </div>
               </section>
-            )}
-          </>
+            </aside>
+
+            <main className="editor-workspace-main">
+              <section className="simple-editor-section object-fields-section editor-fields-section">
+                <div className="simple-editor-section-heading">
+                  <div>
+                    <span className="editor-section-index">01</span>
+                    <h2>Fields for {form.dtype}</h2>
+                    <p>Start with the essential identity fields, then add only what you need.</p>
+                  </div>
+                  <span className={`dtype dtype-${form.dtype}`}>{form.dtype}</span>
+                </div>
+                <div className="form-grid dtype-field-grid">{renderFields(renderedFields)}</div>
+                {!essentialFields.length && (
+                  <p className="muted">No essential fields are defined for this object type.</p>
+                )}
+                {availableFields.length > 0 && (
+                  <div
+                    className="field-picker"
+                    onBlur={(event) => {
+                      if (!event.currentTarget.contains(event.relatedTarget))
+                        setFieldPickerOpen(false);
+                    }}
+                  >
+                    <button
+                      className="button small"
+                      type="button"
+                      aria-expanded={fieldPickerOpen}
+                      onClick={() => setFieldPickerOpen((value) => !value)}
+                    >
+                      <Plus size={14} /> Add field
+                    </button>
+                    {fieldPickerOpen && (
+                      <div
+                        className="field-picker-options"
+                        id="schema-field-options"
+                        role="listbox"
+                      >
+                        <label className="field-picker-search">
+                          <input
+                            role="combobox"
+                            aria-autocomplete="list"
+                            aria-controls="schema-field-options"
+                            aria-expanded={fieldPickerOpen}
+                            value={fieldPickerQuery}
+                            placeholder={`Search ${availableFields.length} fields`}
+                            autoFocus
+                            onChange={(event) => setFieldPickerQuery(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" && matchingAvailableFields[0]) {
+                                event.preventDefault();
+                                addField(matchingAvailableFields[0]);
+                              }
+                              if (event.key === "Escape") setFieldPickerOpen(false);
+                            }}
+                          />
+                        </label>
+                        {matchingAvailableFields.map((name) => {
+                          const descriptor = descriptorByName.get(name);
+                          return (
+                            <button
+                              key={name}
+                              type="button"
+                              role="option"
+                              aria-selected="false"
+                              onClick={() => addField(name)}
+                            >
+                              <code>{name}</code>
+                              <small>
+                                {fieldTypeHint(descriptor?.schema || {}, descriptor?.required)}
+                              </small>
+                            </button>
+                          );
+                        })}
+                        {!matchingAvailableFields.length && (
+                          <span className="field-picker-empty">No matching fields</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+
+              <button
+                className="button small advanced-editor-toggle"
+                type="button"
+                aria-expanded={advanced}
+                onClick={() => setAdvanced((value) => !value)}
+              >
+                <span>{advanced ? "Hide Advanced details" : "Show Advanced details"}</span>
+                <small>Metadata, sources, and evidence</small>
+              </button>
+
+              {advanced && (
+                <section className="simple-editor-section advanced-editor-section">
+                  <div className="simple-editor-section-heading">
+                    <div>
+                      <span className="editor-section-index">02</span>
+                      <h2>Advanced</h2>
+                      <p>Optional lifecycle details and provenance for deeper investigations.</p>
+                    </div>
+                  </div>
+                  <h3>Document metadata</h3>
+                  <div className="form-grid details-field-grid">
+                    <label className="field full">
+                      <span>Title</span>
+                      <small>string · optional</small>
+                      <input value={form.title} onChange={update("title")} />
+                    </label>
+                    <label className="field">
+                      <span>Document ID</span>
+                      <small>string · optional until save</small>
+                      <input value={form.id} onChange={update("id")} disabled={Boolean(existing)} />
+                    </label>
+                    <label className="field">
+                      <span>Status</span>
+                      <small>string · optional</small>
+                      <input value={form.status} onChange={update("status")} />
+                    </label>
+                    <label className="field full">
+                      <span>Summary</span>
+                      <small>string · long text · optional</small>
+                      <textarea value={form.summary} onChange={update("summary")} />
+                    </label>
+                    <label className="field full">
+                      <span>Description</span>
+                      <small>string · long text · optional</small>
+                      <textarea value={form.description} onChange={update("description")} />
+                    </label>
+                    <label className="field full">
+                      <span>Tags</span>
+                      <small>string[] · comma separated</small>
+                      <input value={form.tags} onChange={update("tags")} />
+                    </label>
+                  </div>
+
+                  <h3>Sources and evidence</h3>
+                  <div className="form-grid dtype-field-grid details-field-grid">
+                    <SchemaField
+                      name="sources"
+                      fieldSchema={
+                        schema.properties?.sources || { type: "array", items: { type: "string" } }
+                      }
+                      value={form.sources}
+                      referenceOptions={referenceOptions}
+                      onChange={(value) => setForm((current) => ({ ...current, sources: value }))}
+                    />
+                    <SchemaField
+                      name="evidence"
+                      fieldSchema={
+                        schema.properties?.evidence || { type: "array", items: { type: "string" } }
+                      }
+                      value={form.evidence}
+                      referenceOptions={referenceOptions}
+                      onChange={(value) => setForm((current) => ({ ...current, evidence: value }))}
+                    />
+                  </div>
+                </section>
+              )}
+            </main>
+          </div>
         )}
         <div className="form-actions editor-save-bar">
-          <button type="button" className="button" onClick={() => navigate(-1)}>
-            Cancel
-          </button>
-          <button className="button primary" disabled={saving}>
-            <Save size={16} /> {saving ? "Validating…" : "Save"}
-          </button>
+          <div className="editor-save-copy">
+            <strong>{mode === "edit" ? "Update record" : `Create ${objectType}`}</strong>
+            <span>Schema validation runs before anything is written.</span>
+          </div>
+          <div className="editor-save-actions">
+            <button type="button" className="button" onClick={() => navigate(-1)}>
+              Cancel
+            </button>
+            <button className="button primary" disabled={saving}>
+              <Save size={16} /> {saving ? "Validating…" : "Save record"}
+            </button>
+          </div>
         </div>
       </form>
     </section>

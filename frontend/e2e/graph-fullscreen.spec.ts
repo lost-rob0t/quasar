@@ -1,6 +1,6 @@
 import { expect, test } from "./fixtures";
 
-test("expands only the graph workspace while preserving the global shell", async ({ page }) => {
+test("gives the graph editor the complete viewport", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/graph");
 
@@ -24,8 +24,8 @@ test("expands only the graph workspace while preserving the global shell", async
 
   await page.getByRole("button", { name: "Enter full viewport" }).click();
   await expect(page.locator("body")).toHaveClass(/graph-viewport-full/);
-  await expect(sidebar).toBeVisible();
-  await expect(topbar).toBeVisible();
+  await expect(sidebar).toBeHidden();
+  await expect(topbar).toBeHidden();
   await expect(metrics).toBeVisible();
   await expect(inspector).toBeHidden();
   await expect(dock).toBeHidden();
@@ -46,10 +46,9 @@ test("expands only the graph workspace while preserving the global shell", async
       height: window.innerHeight
     };
   });
-  expect(viewport.left).toBeGreaterThanOrEqual(0);
-  expect(viewport.top).toBeGreaterThanOrEqual(0);
-  expect(viewport.right).toBeLessThanOrEqual(viewport.width);
-  expect(viewport.bottom).toBeLessThanOrEqual(viewport.height);
+  expect(viewport.left).toBe(0);
+  expect(viewport.right).toBe(viewport.width);
+  expect(viewport.bottom).toBe(viewport.height);
 
   await page.keyboard.press("Escape");
   await expect(page.locator("body")).not.toHaveClass(/graph-viewport-full/);

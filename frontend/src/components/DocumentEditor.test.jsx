@@ -166,7 +166,10 @@ describe("schema field controls", () => {
   it("keeps the complete editor full-screen with raw JSON access", () => {
     const html = renderEditor("/documents/new?dtype=person&advanced=1");
     expect(html).toContain("full-document-editor");
-    expect(html).toContain("Full document editor.");
+    expect(html).toContain("Build a schema-valid record");
+    expect(html).toContain("Record context");
+    expect(html).toContain("Schema validation runs before anything is written.");
+    expect(html).toContain('aria-label="Close full editor"');
     expect(html).toContain("Inspect JSON");
     expect(html).toContain("Document metadata");
     expect(html).toContain("Sources and evidence");
