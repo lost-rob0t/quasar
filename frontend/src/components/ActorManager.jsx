@@ -329,11 +329,10 @@ export default function ActorManager() {
               alive
             </span>
           </div>
-          <div className="actor-record-list" role="listbox" aria-label="Actors">
+          <div className="actor-record-list" role="list" aria-label="Actors">
             <button
               type="button"
-              role="option"
-              aria-selected={selectedId === NEW_ACTOR}
+              aria-pressed={selectedId === NEW_ACTOR}
               className={selectedId === NEW_ACTOR ? "active" : ""}
               onClick={createActor}
             >
@@ -348,8 +347,7 @@ export default function ActorManager() {
               return (
                 <button
                   type="button"
-                  role="option"
-                  aria-selected={selectedId === actor.id}
+                  aria-pressed={selectedId === actor.id}
                   key={actor.id}
                   className={selectedId === actor.id ? "active" : ""}
                   onClick={() => selectActor(actor)}

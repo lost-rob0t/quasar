@@ -19,7 +19,7 @@ test.describe("live StarIntel actor discovery", () => {
     await page.goto("/actors");
     await expect(page.getByText(/Discovered \d+ registry entries; \d+ alive\./)).toBeVisible();
 
-    const actors = page.getByRole("listbox", { name: "Actors" });
+    const actors = page.getByRole("list", { name: "Actors" });
     const local = actors.locator("button").filter({ hasText: "actor · alive" }).first();
     await expect(local).toBeVisible();
     await local.click();

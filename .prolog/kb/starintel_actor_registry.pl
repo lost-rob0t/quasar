@@ -15,6 +15,11 @@ actor_registry_alive(online, true).
 quasar_actor_registry_responsibility(projection_only).
 quasar_actor_registry_invariant(no_parallel_registry).
 quasar_actor_registry_invariant(no_browser_execution_of_server_actors).
+quasar_actor_registry_invariant(selectable_rows_remain_buttons).
+
+actor_registry_ui_accessibility(
+    labeled_list_of_buttons,
+    'Actor rows use button semantics with aria-pressed; role=option would hide the existing New actor action from button-based editor interactions.').
 
 verified_against(
     actor_registry_http_contract,
