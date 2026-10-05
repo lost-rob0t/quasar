@@ -74,7 +74,6 @@ for (const existing of [false, true]) {
           )
         };
       } finally {
-        await second.close();
         await first.destroy();
       }
     }, existing);
