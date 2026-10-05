@@ -1,4 +1,5 @@
 import { expect, test } from "./fixtures";
+import { expectCleanStartup, observeStartupErrors } from "./startup-evidence";
 
 test("opens the local workspace through the control plane", async ({ page }) => {
   const failedApplicationRequests: string[] = [];
@@ -8,7 +9,9 @@ test("opens the local workspace through the control plane", async ({ page }) => 
     }
   });
 
+  await observeStartupErrors(page);
   await page.goto("/");
+  await expectCleanStartup(page);
 
   await expect(page).toHaveTitle("Quasar");
   await expect(page.getByRole("heading", { name: "Statistics dashboard" })).toBeVisible();

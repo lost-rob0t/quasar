@@ -1,4 +1,5 @@
 import { expect, test } from "./fixtures";
+import { expectCleanStartup, observeStartupErrors } from "./startup-evidence";
 
 for (const existing of [false, true]) {
   test(`concurrent view installation is idempotent with ${existing ? "outdated" : "missing"} designs`, async ({
@@ -85,3 +86,79 @@ for (const existing of [false, true]) {
     expect(result.installed.every(Boolean)).toBe(true);
   });
 }
+
+test("a competing different definition remains intact and its conflict is reported", async ({
+  page
+}) => {
+  await page.goto("/");
+  const result = await page.evaluate(async () => {
+    const dbModule = "/src/lib/db.js";
+    const viewsModule = "/src/lib/views.js";
+    const { documentsDb } = await import(/* @vite-ignore */ dbModule);
+    const { installStarIntelViews, STARINTEL_VIEW_MANIFEST } = await import(
+      /* @vite-ignore */ viewsModule
+    );
+    const database = new documentsDb.constructor(`view-competing-${crypto.randomUUID()}`);
+    const id = STARINTEL_VIEW_MANIFEST[0].id;
+    const competing = {
+      _id: id,
+      language: "javascript",
+      quasar_view_version: 999,
+      views: { custom: { map: "function (doc) { emit(doc._id); }" } },
+      owner: "concurrent writer"
+    };
+    let puts = 0;
+    try {
+      let failure;
+      try {
+        await installStarIntelViews({
+          get: (key: string) => database.get(key),
+          async put(document: object) {
+            puts++;
+            await database.put(competing);
+            return database.put(document);
+          }
+        });
+      } catch (error) {
+        failure = error as { status: number };
+      }
+      const saved = await database.get(id);
+      return { status: failure?.status, puts, saved, competing };
+    } finally {
+      await database.destroy();
+    }
+  });
+  expect(result.status).toBe(409);
+  expect(result.puts).toBe(1);
+  expect(result.saved).toMatchObject(result.competing);
+  expect(result.saved._rev).toMatch(/^1-/);
+});
+
+test("failed startup view installation remains visible to the user", async ({ page }) => {
+  // Fault injection is limited to this negative UI test. The concurrency tests
+  // above exercise real IndexedDB conflicts without injecting a failure.
+  await page.route("**/src/lib/views.js", async (route) => {
+    const response = await route.fetch();
+    const source = await response.text();
+    const entry = "export async function installStarIntelViews(database) {";
+    expect(source).toContain(entry);
+    await route.fulfill({
+      response,
+      body: source.replace(entry, `${entry}\nthrow new Error("View storage unavailable");`)
+    });
+  });
+  await page.goto("/");
+  await expect(page.locator(".notice-error span")).toHaveText("View storage unavailable");
+});
+
+test("fresh and repeated StrictMode startup never reports an initialization error", async ({
+  page
+}) => {
+  await observeStartupErrors(page);
+  await page.goto("/");
+  await expectCleanStartup(page);
+  for (let mount = 0; mount < 2; mount++) {
+    await page.reload();
+    await expectCleanStartup(page);
+  }
+});

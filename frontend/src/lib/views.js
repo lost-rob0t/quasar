@@ -180,11 +180,21 @@ export async function installStarIntelViews(database) {
       results.push({ id: entry.id, status: "current" });
       continue;
     }
-    const result = await database.put({
-      ...next,
-      ...(current?._rev ? { _rev: current._rev } : {})
-    });
-    results.push({ id: entry.id, status: current ? "updated" : "installed", rev: result.rev });
+    try {
+      const result = await database.put({
+        ...next,
+        ...(current?._rev ? { _rev: current._rev } : {})
+      });
+      results.push({ id: entry.id, status: current ? "updated" : "installed", rev: result.rev });
+    } catch (error) {
+      if (error?.status !== 409) throw error;
+      // StrictMode, another tab, or another initializer may have won the same
+      // write. Reconcile once, without overwriting a competing definition or
+      // retrying indefinitely. Other read/write failures still reach the UI.
+      const winner = await database.get(entry.id);
+      if (!sameDefinition(winner, next)) throw error;
+      results.push({ id: entry.id, status: "current" });
+    }
   }
   return results;
 }
