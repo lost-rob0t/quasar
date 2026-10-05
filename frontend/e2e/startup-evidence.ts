@@ -17,22 +17,31 @@ export async function observeStartupErrors(page: Page) {
 }
 
 export async function expectCleanStartup(page: Page) {
-  // A rendered route alone can precede the asynchronous view installation.
+  // A rendered route alone can precede asynchronous views and actor migrations.
   await expect
     .poll(() =>
       page.evaluate(async () => {
         const dbModule = "/src/lib/db.js";
         const viewsModule = "/src/lib/views.js";
-        const { documentsDb } = await import(/* @vite-ignore */ dbModule);
+        const { documentsDb, stateDb } = await import(/* @vite-ignore */ dbModule);
         const { STARINTEL_VIEW_MANIFEST } = await import(/* @vite-ignore */ viewsModule);
         const result = await documentsDb.allDocs({
           keys: STARINTEL_VIEW_MANIFEST.map((entry: { id: string }) => entry.id),
           include_docs: true
         });
-        return result.rows.every(
-          (row: { doc?: { quasar_view_version: number; views: object } }, index: number) =>
-            row.doc?.quasar_view_version === STARINTEL_VIEW_MANIFEST[index].version &&
-            JSON.stringify(row.doc?.views) === JSON.stringify(STARINTEL_VIEW_MANIFEST[index].views)
+        const settings = await stateDb.get("settings").catch((error: { status?: number }) => {
+          if (error.status === 404) return null;
+          throw error;
+        });
+        const actorsReady = Number(settings?.quasarActorSettingsVersion || 0) >= 1;
+        return (
+          actorsReady &&
+          result.rows.every(
+            (row: { doc?: { quasar_view_version: number; views: object } }, index: number) =>
+              row.doc?.quasar_view_version === STARINTEL_VIEW_MANIFEST[index].version &&
+              JSON.stringify(row.doc?.views) ===
+                JSON.stringify(STARINTEL_VIEW_MANIFEST[index].views)
+          )
         );
       })
     )

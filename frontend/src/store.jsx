@@ -11,7 +11,7 @@ import {
 import {
   databaseInfo,
   ensureStarIntelViews,
-  getSettings,
+  initializeSettings,
   listDocuments,
   replaceDocumentProjection,
   saveSettings,
@@ -136,7 +136,7 @@ export function QuasarProvider({ children }) {
       if (eventRefreshSuspensions.current) return;
       void refresh().catch((error) => setNotice({ kind: "error", message: error.message }));
     });
-    Promise.all([getSettings(), ensureStarIntelViews()])
+    Promise.all([initializeSettings(), ensureStarIntelViews()])
       .then(([nextSettings]) => {
         if (!active) return;
         applyTheme(nextSettings.theme);

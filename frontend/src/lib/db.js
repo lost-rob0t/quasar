@@ -1,4 +1,5 @@
 import PouchDB from "pouchdb-browser";
+import { initializeActorSettings } from "./actor-settings";
 import { isStarIntelDocument } from "starintel_doc/legacy";
 import {
   fromPouchDocument,
@@ -140,6 +141,11 @@ export async function getSettings() {
     _id: undefined,
     _rev: undefined
   };
+}
+
+export async function initializeSettings() {
+  await initializeActorSettings(stateDb);
+  return getSettings();
 }
 
 export function saveSettings(settings) {

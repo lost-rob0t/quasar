@@ -13,7 +13,7 @@ vi.mock("./control-plane/client", () => ({ getControlPlane: () => null }));
 vi.mock("./lib/db", () => ({
   databaseInfo: vi.fn(),
   ensureStarIntelViews: vi.fn(),
-  getSettings: vi.fn(),
+  initializeSettings: vi.fn(),
   listDocuments: vi.fn(),
   replaceDocumentProjection: vi.fn(),
   saveSettings: vi.fn(),
