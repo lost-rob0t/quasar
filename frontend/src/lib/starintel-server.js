@@ -187,11 +187,26 @@ export async function submitTargetToServer(configuration, target) {
     throw new Error("Only target documents can be submitted as targets");
   const actor = document.actor;
   if (!actor) throw new Error("Target actor is required");
+  // The server target command is distinct from a canonical Target document.
+  // 0.10.1 options are a map; v1 currently accepts an array. Only the empty
+  // case has a lossless meaning until the server defines a map adapter.
+  if (document.options && Object.keys(document.options).length) {
+    throw new Error("Target options map has no defined server v1 array mapping");
+  }
+  const command = {
+    actor,
+    target: document.target,
+    dataset: document.dataset,
+    delay: document.delay ?? 1,
+    recurring: document.recurring ?? false,
+    options: [],
+    idempotency_key: document.id
+  };
   try {
     return await request(configuration, "/api/v1/targets", {
       method: "POST",
       headers: { "Idempotency-Key": document.id },
-      body: JSON.stringify(document)
+      body: JSON.stringify(command)
     });
   } catch (error) {
     if (!/404|not found/i.test(error.message)) throw error;
