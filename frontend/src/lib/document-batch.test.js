@@ -68,7 +68,7 @@ describe("atomic document batches", () => {
     expect(report.saved).toEqual([]);
     expect(report.errors).toHaveLength(1);
     expect(report.errors[0]).toMatchObject({ file: "records.json", record: 2, id: "invalid" });
-    expect(report.errors[0].validation[0]).toMatchObject({ path: "/dtype", keyword: "enum" });
+    expect(report.errors[0].message).toMatch(/historical|canonical|dtype/i);
     expect(database.bulkCalls).toBe(0);
     expect(database.documents.size).toBe(0);
 

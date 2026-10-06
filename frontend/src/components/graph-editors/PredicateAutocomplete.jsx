@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Plus, X } from "lucide-react";
-import { dtypes, schema } from "starintel_doc";
+import { dtypes, schema } from "starintel_doc/legacy";
 import {
   buildPredicateCatalog,
   recentPredicateIds,

@@ -1,4 +1,4 @@
-import { assertDocument } from "starintel_doc";
+import { assertDocument } from "starintel_doc/legacy";
 import { operation } from "./operations";
 
 export const AGENT_GRAPH_OPERATIONS = Object.freeze([

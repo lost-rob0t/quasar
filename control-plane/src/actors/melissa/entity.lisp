@@ -11,31 +11,24 @@
     kind))
 
 (defun canonical-entity-from-json (object)
+  (quasar.protocol:require-canonical-document object)
   (let* ((kind (normalize-entity-kind (json-value object "dtype")))
-         (id (json-value object "_id"))
-         (dataset (json-value object "dataset" "melissa"))
-         (title (json-value object "title" id))
-         (data (json-value object "data" (json-object)))
-         (extensions (json-value object "extensions" (json-object))))
-    (unless (non-empty-string-p id)
-      (error "Melissa entity _id must be a non-empty string."))
+         (id (json-value object "id")))
     (make-canonical-entity
-     :kind kind
-     :id id
-     :dataset dataset
-     :title title
-     :data data
-     :extensions extensions)))
+     :kind kind :id id :dataset (json-value object "dataset")
+     :title (json-value object "displayName" id)
+     :data (quasar.protocol:clone-json object)
+     :extensions (json-value object "extensions" (json-object)))))
 
 (defun canonical-entity-to-json (entity)
-  (json-object
-   (cons "_id" (canonical-entity-id entity))
-   (cons "dataset" (or (canonical-entity-dataset entity) "melissa"))
-   (cons "dtype" (canonical-entity-kind entity))
-   (cons "title" (or (canonical-entity-title entity)
-                      (canonical-entity-id entity)))
-   (cons "data" (or (canonical-entity-data entity) (json-object)))
-   (cons "extensions" (or (canonical-entity-extensions entity) (json-object)))))
+  (let ((document (quasar.protocol:clone-json (canonical-entity-data entity))))
+    (setf document (json-object-put document "id" (canonical-entity-id entity))
+          document (json-object-put document "dtype" (canonical-entity-kind entity))
+          document (json-object-put document "dataset" (canonical-entity-dataset entity))
+          document (json-object-put document "schemaVersion" "0.10.1")
+          document (json-object-put document "extensions"
+                     (or (canonical-entity-extensions entity) (json-object))))
+    (quasar.protocol:require-canonical-document document)))
 
 (defun json-object-pairs (object)
   (if (and (consp object) (eq (car object) :obj))

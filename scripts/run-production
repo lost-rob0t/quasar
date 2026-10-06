@@ -21,7 +21,7 @@ if [[ "$(uname -s)" == "Linux" \
   exec nix develop -c env QUASAR_PRODUCTION_NIX_READY=1 bash scripts/run-production "$@"
 fi
 
-export CL_SOURCE_REGISTRY="(:source-registry (:tree \"$tek9_path/\") (:tree \"$HOME/quicklisp/local-projects/\") (:tree \"$HOME/quicklisp/dists/quicklisp/software/\") (:tree \"$repo_root/systems/\") :ignore-inherited-configuration)"
+export CL_SOURCE_REGISTRY="(:source-registry (:tree \"$tek9_path/\") (:tree \"$HOME/quicklisp/local-projects/\") (:tree \"$HOME/quicklisp/dists/quicklisp/software/\") (:tree \"$repo_root/systems/\") (:tree \"$repo_root/vendor/star-cl/\") :ignore-inherited-configuration)"
 
 # A single root install is the supported monorepo dependency path.
 cd "$repo_root"
@@ -34,7 +34,7 @@ npm run build
 sbcl --non-interactive \
   --eval '(setf asdf:*central-registry* nil)' \
   --eval '(asdf:clear-configuration)' \
-  --eval '(ql:quickload (list :babel :bordeaux-threads :clack :clog :dexador :jsown :log4cl :quri :sento :tek9 :websocket-driver) :silent t)' \
+  --eval '(ql:quickload (list :starintel-0101 :babel :bordeaux-threads :clack :clog :dexador :jsown :log4cl :quri :sento :tek9 :websocket-driver) :silent t)' \
   --eval '(asdf:load-asd (truename "systems/quasar-control.asd"))' \
   --eval '(asdf:load-asd (truename "systems/quasar-starlang.asd"))' \
   --eval '(asdf:load-asd (truename "systems/quasar-web.asd"))' \

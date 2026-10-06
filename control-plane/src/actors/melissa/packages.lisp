@@ -111,6 +111,7 @@
                 #:canonical-entity-kind
                 #:canonical-entity-title
                 #:canonical-entity-data
+                #:canonical-entity-extensions
                 #:melissa-config
                 #:melissa-config-license-key
                 #:melissa-config-transmission-reference

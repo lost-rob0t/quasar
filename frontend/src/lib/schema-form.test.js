@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { schema } from "starintel_doc";
+import { schema } from "starintel_doc/legacy";
 import {
   dataFieldsForDtype,
   dataSchemaForDtype,

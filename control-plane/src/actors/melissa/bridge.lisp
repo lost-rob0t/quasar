@@ -55,7 +55,8 @@
 
 (defun make-http-bridge-actor (subsystem)
   (let ((pending (make-hash-table :test #'eq))
-        (bridge nil))
+        (bridge nil)
+        (closed-p nil))
     (setf bridge
           (sento.actor-context:actor-of
            (quasar.actors.melissa:melissa-subsystem-actor-system subsystem)
@@ -63,6 +64,14 @@
            :receive
            (lambda (message)
              (cond
+               ((and closed-p (typep message 'melissa-http-request))
+                (funcall (melissa-http-request-on-error message)
+                         (quasar.actors.melissa:make-melissa-error
+                          :request-id (melissa-http-request-request-id message)
+                          :stage :bridge
+                          :condition "Melissa integration has stopped."
+                          :retryable-p t))
+                t)
                ((typep message 'melissa-http-request)
                 (let ((reply-actor (make-http-reply-actor subsystem bridge message)))
                   (setf (gethash reply-actor pending) t)
@@ -81,11 +90,11 @@
                 (let ((actors
                         (loop for actor being the hash-keys of pending
                               collect actor)))
-                  (dolist (actor actors)
-                    (ignore-errors
-                      (sento.actor:ask-s actor :shutdown :time-out 1)))
+                  ;; Never synchronously ask another actor from this dispatcher.
+                  ;; The external stop caller drains these replies before teardown.
+                  (setf closed-p t)
                   (clrhash pending)
-                  t))))))
+                  (cons :pending actors)))))))
     bridge))
 
 (defun error-details (condition)
@@ -154,8 +163,10 @@
     (when subsystem
       (let ((bridge (melissa-subsystem-http-bridge subsystem)))
         (when bridge
-          (ignore-errors
-            (sento.actor:ask-s bridge :shutdown :time-out 2))))
+          (let ((response (sento.actor:ask-s bridge :shutdown :time-out 2)))
+            (when (and (consp response) (eq (car response) :pending))
+              (dolist (actor (cdr response))
+                (sento.actor:ask-s actor :shutdown :time-out 2))))))
       (unregister-command plane "melissa.request")
       (unregister-command plane "melissa.status")
       (stop-melissa-subsystem subsystem)

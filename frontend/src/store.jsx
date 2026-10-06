@@ -1,3 +1,4 @@
+import { fromPouchDocument } from "./lib/canonical-document";
 import {
   createContext,
   useCallback,
@@ -10,7 +11,7 @@ import {
 import {
   databaseInfo,
   ensureStarIntelViews,
-  getSettings,
+  initializeSettings,
   listDocuments,
   replaceDocumentProjection,
   saveSettings,
@@ -135,7 +136,7 @@ export function QuasarProvider({ children }) {
       if (eventRefreshSuspensions.current) return;
       void refresh().catch((error) => setNotice({ kind: "error", message: error.message }));
     });
-    Promise.all([getSettings(), ensureStarIntelViews()])
+    Promise.all([initializeSettings(), ensureStarIntelViews()])
       .then(([nextSettings]) => {
         if (!active) return;
         applyTheme(nextSettings.theme);
@@ -164,7 +165,8 @@ export function QuasarProvider({ children }) {
     async (command, label = command.type, { recordHistory = true } = {}) => {
       if (command?.type === "save-document") {
         const doc = command.document;
-        const existing = documentsRef.current.find((item) => item._id === doc._id) || null;
+        const existing =
+          documentsRef.current.find((item) => item._id === (doc.id || doc._id)) || null;
         let result;
         if (existing) {
           result = await cpDocumentUpdate(doc);
@@ -172,7 +174,7 @@ export function QuasarProvider({ children }) {
           result = await cpDocumentCreate(doc);
         }
         await refresh();
-        const inverse = existing ? operation.save(existing) : operation.remove(doc._id);
+        const inverse = existing ? operation.save(existing) : operation.remove(doc.id || doc._id);
         if (recordHistory) record({ label, inverse, redo: command });
         return result;
       }
@@ -185,16 +187,20 @@ export function QuasarProvider({ children }) {
         return result;
       }
       if (command?.type === "batch") {
-        const known = new Map(documentsRef.current.map((document) => [document._id, document]));
+        const known = new Map(
+          documentsRef.current.map((document) => [document.id || document._id, document])
+        );
         const inverses = [];
         const ops = (command.operations || []).map((op) => {
           if (op.type === "save-document") {
-            const previous = known.get(op.document._id);
+            const previous = known.get(op.document.id || op.document._id);
             if (recordHistory)
               inverses.push(
-                previous ? operation.save(previous) : operation.remove(op.document._id)
+                previous
+                  ? operation.save(previous)
+                  : operation.remove(op.document.id || op.document._id)
               );
-            known.set(op.document._id, op.document);
+            known.set(op.document.id || op.document._id, op.document);
             return {
               type: previous ? "document.update" : "document.create",
               payload: op.document
@@ -272,15 +278,17 @@ export function QuasarProvider({ children }) {
         throw error;
       }
       const replace = options.replace !== false;
-      const existing = new Map(documentsRef.current.map((document) => [document._id, document]));
+      const existing = new Map(
+        documentsRef.current.map((document) => [document.id || document._id, document])
+      );
       const savedDocuments = [];
       const skipped = [];
       let atomicCommit = true;
       for (const { document } of preflight.validated) {
-        if (existing.has(document._id) && !replace) {
-          skipped.push({ id: document._id, reason: "exists" });
+        if (existing.has(document.id || document._id) && !replace) {
+          skipped.push({ id: document.id || document._id, reason: "exists" });
         } else {
-          savedDocuments.push(document);
+          savedDocuments.push(fromPouchDocument(document));
         }
       }
       if (savedDocuments.length) {
@@ -297,14 +305,14 @@ export function QuasarProvider({ children }) {
           const committed = Number(error.committedOperationCount || 0);
           error.report = {
             saved: savedDocuments.slice(0, committed).map((document) => ({
-              id: document._id,
+              id: document.id || document._id,
               ok: true
             })),
             skipped,
             errors: [
               {
                 index: committed,
-                id: savedDocuments[committed]?._id || null,
+                id: savedDocuments[committed]?.id || savedDocuments[committed]?._id || null,
                 message: error.message,
                 phase: "write"
               }
@@ -317,7 +325,7 @@ export function QuasarProvider({ children }) {
         atomicCommit = execution.atomic;
       }
       const report = {
-        saved: savedDocuments.map((document) => ({ id: document._id, ok: true })),
+        saved: savedDocuments.map((document) => ({ id: document.id || document._id, ok: true })),
         skipped,
         errors: preflight.errors,
         atomic: options.atomic !== false && atomicCommit,

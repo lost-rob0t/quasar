@@ -1,3 +1,4 @@
+import { toCanonicalDocument, toLegacyUiDocument } from "../lib/canonical-document";
 import {
   PROTOCOL_VERSION,
   ControlPlaneError,
@@ -355,6 +356,23 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
         reject(new ControlPlaneError("control-plane.unavailable", "WebSocket is not connected."));
         return;
       }
+      const canonicalWrite = (value: unknown) =>
+        toCanonicalDocument(value, { allowLegacy090: true });
+      const canonicalOperations = (values: unknown) =>
+        Array.isArray(values)
+          ? values.map((value) => {
+              const operation = value as Record<string, unknown>;
+              return operation &&
+                ["document.create", "document.update"].includes(String(operation.type))
+                ? { ...operation, payload: canonicalWrite(operation.payload) }
+                : operation;
+            })
+          : values;
+      if (["document.create", "document.update"].includes(command))
+        payload = canonicalWrite(payload);
+      if (["workspace.transaction", "document.import.chunk"].includes(command)) {
+        payload = { ...payload, operations: canonicalOperations(payload.operations) };
+      }
       const id = nextId();
       const envelope: CommandEnvelope = {
         protocol: PROTOCOL_VERSION,
@@ -407,10 +425,13 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
       }
       metadata ??= page;
       if (Array.isArray(page.documents)) {
-        for (const document of page.documents) documents.push(document);
+        for (const document of page.documents)
+          documents.push(
+            document?.schemaVersion === "0.10.1" ? toLegacyUiDocument(document) : document
+          );
       }
       const documentPage = page.documentPage as Record<string, unknown> | undefined;
-      if (!documentPage) return page;
+      if (!documentPage) return { ...page, documents };
       if (documentPage?.complete === true) {
         const complete: Record<string, unknown> = { ...metadata, documents };
         delete complete.documentPage;

@@ -11,7 +11,6 @@ import GraphObjectTypePickerBridge from "../components/GraphObjectTypePickerBrid
 import MelissaActorMigrationBridge from "../components/MelissaActorMigrationBridge.jsx";
 import MobileGraphToolTray from "../components/MobileGraphToolTray.jsx";
 import PwaInstallBridge from "../components/PwaInstallBridge.jsx";
-import ReviewActorBridge from "../components/ReviewActorBridge.jsx";
 import RunAllTransformationsBridge from "../components/RunAllTransformationsBridge.jsx";
 import { QuasarProvider } from "../store.jsx";
 import { registerServiceWorker } from "../lib/service-worker-registration.js";
@@ -168,7 +167,6 @@ async function bootstrap(): Promise<void> {
               <AutoDigHostBridge />
               <PwaInstallBridge />
               <MelissaActorMigrationBridge />
-              <ReviewActorBridge />
               <RunAllTransformationsBridge />
               <MobileGraphToolTray />
               <GraphContextRadialBridge />

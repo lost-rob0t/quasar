@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
+import { expectCleanStartup, observeStartupErrors } from "./startup-evidence";
 
 const ROUTES = [
   { slug: "home", path: "/" },
@@ -63,6 +64,7 @@ for (const viewport of VIEWPORTS) {
           }
         });
 
+        await observeStartupErrors(page);
         await page.setViewportSize({ width: viewport.width, height: viewport.height });
         await page.goto(route.path, { waitUntil: "domcontentloaded" });
 
@@ -94,6 +96,7 @@ for (const viewport of VIEWPORTS) {
           content:
             "*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}"
         });
+        await expectCleanStartup(page);
         await captureEvidence(page, viewport.name, route.slug);
 
         expect(pageErrors).toEqual([]);

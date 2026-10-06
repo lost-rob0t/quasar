@@ -34,7 +34,9 @@
     #:ensure-object
     #:ensure-array
     #:ensure-object-id
-    #:clone-json))
+    #:clone-json
+    #:starintel-document-id
+    #:require-canonical-document))
 
 (defpackage #:quasar.store
   (:use #:cl)

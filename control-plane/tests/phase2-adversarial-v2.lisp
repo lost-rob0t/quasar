@@ -343,7 +343,7 @@
 (defun phase2-v2-page-document-ids (snapshot)
   (mapcar
    (lambda (document)
-     (quasar.protocol:json-value document "_id"))
+     (quasar.protocol:json-value document "id"))
    (array-elements-for-test
     (quasar.protocol:json-value snapshot "documents"))))
 
@@ -361,8 +361,8 @@
                (setf
                 (gethash id (workspace-documents workspace))
                 (quasar.protocol:json-object
-                 (cons "_id" id)
-                 (cons "dtype" "person")
+                 (cons "id" id)
+                 (cons "dtype" "person") (cons "schemaVersion" "0.10.1") (cons "dataset" "test")
                  (cons "text"
                        (format nil
                                "unicode-~D-λ-雪-~A"
@@ -496,10 +496,10 @@
         (cons
          "payload"
          (quasar.protocol:json-object
-          (cons "_id" id)
-          (cons "dtype" "person")
+          (cons "id" id)
+          (cons "dtype" "person") (cons "schemaVersion" "0.10.1") (cons "dataset" "test")
           (cons
-           "padding"
+           "notes"
            (make-string padding-size :initial-element #\m))))))))
 
 (defun test-phase2-v2-bounded-retained-memory ()

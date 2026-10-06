@@ -3,10 +3,15 @@ import { expect, test } from "./fixtures";
 
 async function createPerson(page: Page, name: string) {
   await page.goto("/documents/new?dtype=person&returnTo=graph");
-  await page.getByLabel(/^First Name/).fill(name);
-  await page.getByLabel(/^Last Name/).fill("Test");
-  await page.getByLabel(/^Display Name/).fill(`${name} Test`);
-  await page.locator(".editor-save-bar .primary").click();
+  for (const [field, value] of [
+    ["fname", name],
+    ["lname", "Test"],
+    ["fullName", `${name} Test`]
+  ]) {
+    await page.getByLabel("Add optional field").selectOption(field);
+    await page.getByLabel(field, { exact: true }).fill(value);
+  }
+  await page.getByRole("button", { name: "Save document", exact: true }).click();
   await expect(page).toHaveURL(/\/graph\?node=/);
 }
 

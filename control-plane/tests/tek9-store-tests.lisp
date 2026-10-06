@@ -213,9 +213,9 @@
                  plane
                  "document.create"
                  (quasar.protocol:json-object
-                  (cons "_id" "same")
-                  (cons "dtype" "person")
-                  (cons "workspaceValue" workspace-id))
+                  (cons "id" "same")
+                  (cons "dtype" "person") (cons "schemaVersion" "0.10.1") (cons "dataset" "test")
+                  (cons "notes" workspace-id))
                  :id (format nil "create-~A" workspace-id)
                  :workspace workspace-id)))
              (let ((alpha (quasar.store:load-workspace store "alpha"))
@@ -223,11 +223,11 @@
                (check (string= "alpha"
                                (quasar.protocol:json-value
                                 (gethash "same" (workspace-documents alpha))
-                                "workspaceValue")))
+                                "notes")))
                (check (string= "beta"
                                (quasar.protocol:json-value
                                 (gethash "same" (workspace-documents beta))
-                                "workspaceValue")))))
+                                "notes")))))
         (quasar.control-plane:stop-control-plane plane)))))
 
 (defun failing-mixed-transaction-payload (base-revision)
@@ -310,8 +310,8 @@
                 (cons "type" "document.create")
                 (cons "payload"
                       (quasar.protocol:json-object
-                       (cons "_id" (format nil "doc:~D" n))
-                       (cons "dtype" "person")))))))
+                       (cons "id" (format nil "doc:~D" n))
+                       (cons "dtype" "person") (cons "schemaVersion" "0.10.1") (cons "dataset" "test")))))))
 
 (defun test-tek9-single-record-update-does-not-rewrite-corpus ()
   (with-temporary-tek9-store (store path "bounded-write")
@@ -332,9 +332,9 @@
                plane
                "document.update"
                (quasar.protocol:json-object
-                (cons "_id" "doc:17")
-                (cons "dtype" "person")
-                (cons "updated" :true))
+                (cons "id" "doc:17")
+                (cons "dtype" "person") (cons "schemaVersion" "0.10.1") (cons "dataset" "test")
+                (cons "extensions" (quasar.protocol:json-object (cons "updated" :true))))
                :id "single-update"))
              (let ((stats (quasar.store:tek9-store-last-commit-stats store)))
                (check (= 1 (getf stats :document-upserts)))

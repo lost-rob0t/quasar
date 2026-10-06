@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { validateDocumentBatch } from "../lib/document-batch";
 import { buildGraph } from "../lib/graph";
 import { normalizeGraphWorkspace } from "../lib/graph-workspaces";
-import { collectImportDocuments, documentsToJsonl } from "../lib/importer";
+import {
+  collectImportDocuments,
+  documentsToJsonl,
+  documentsToHistoricalJsonl
+} from "../lib/importer";
 import {
   FIXTURE_SCHEMA_VERSION,
   blankGraphFixture,
@@ -63,7 +67,8 @@ describe("deterministic graph fixtures", () => {
   it("preserves unknown types and extension fields through JSON and JSONL", () => {
     const fixture = unknownTypeGraphFixture();
     const fromJson = JSON.parse(stableSerialize(fixture));
-    const fromJsonl = JSON.parse(documentsToJsonl(fixture.documents).trim());
+    const fromJsonl = JSON.parse(documentsToHistoricalJsonl(fixture.documents).trim());
+    expect(() => documentsToJsonl(fixture.documents)).toThrow(/Unknown canonical document type/);
     const graph = buildGraph(fromJson.documents);
 
     expect(fromJson.documents[0].fixture_extension).toBe("preserve-me");

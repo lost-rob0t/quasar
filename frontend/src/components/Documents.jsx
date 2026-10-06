@@ -13,10 +13,11 @@ import {
   X
 } from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { dtypes, documentLabel } from "starintel_doc";
+import { dtypes } from "starintel_doc";
+import { documentLabel } from "starintel_doc/legacy";
 import { connectedDocumentIds } from "../lib/document-delete";
 import { graphRenderDecision } from "../lib/graph-scale";
-import { documentsToJsonl, downloadText } from "../lib/importer";
+import { documentsToJsonl, documentsToHistoricalJsonl, downloadText } from "../lib/importer";
 import { operation } from "../lib/operations";
 import { useQuasar } from "../store";
 
@@ -306,9 +307,30 @@ export function DocumentsPage() {
           </button>
           <button
             className="button"
-            onClick={() => downloadText("starintel-documents.jsonl", documentsToJsonl(visible))}
+            onClick={() => {
+              try {
+                downloadText("starintel-documents.jsonl", documentsToJsonl(visible));
+              } catch (error) {
+                setNotice({
+                  kind: "error",
+                  message: `Canonical export blocked: ${error.message}. Use historical archive export to preserve unsupported records.`
+                });
+              }
+            }}
           >
             <Download size={16} /> Export results
+          </button>
+          <button
+            type="button"
+            className="button"
+            onClick={() =>
+              downloadText(
+                "starintel-historical-archive.jsonl",
+                documentsToHistoricalJsonl(visible)
+              )
+            }
+          >
+            Export historical archive
           </button>
           <Link className="button primary" to="/documents/new">
             <Plus size={16} /> Add document

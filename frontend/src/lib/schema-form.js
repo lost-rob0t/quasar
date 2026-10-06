@@ -1,4 +1,4 @@
-import { schema } from "starintel_doc";
+import { schema } from "starintel_doc/legacy";
 
 const DTYPE_LABELS = {
   person: "Person",

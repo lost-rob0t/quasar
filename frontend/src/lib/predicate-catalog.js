@@ -1,4 +1,4 @@
-import { schema } from "starintel_doc";
+import { schema } from "starintel_doc/legacy";
 
 const STORAGE_KEY = "quasar.custom-predicates.v1";
 const RECENT_KEY = "quasar.recent-predicates.v1";

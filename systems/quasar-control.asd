@@ -5,7 +5,8 @@
   :version "0.2.0"
   :serial t
   :pathname "../control-plane/src/"
-  :depends-on ("babel"
+  :depends-on ("starintel-0101"
+               "babel"
                "bordeaux-threads"
                "dexador"
                "jsown"
@@ -16,6 +17,7 @@
   :components ((:file "packages")
                (:file "protocol")
                (:file "phase2-protocol")
+               (:file "starintel-contract")
                (:file "workspace")
                (:file "persistence-plan")
                (:file "store")

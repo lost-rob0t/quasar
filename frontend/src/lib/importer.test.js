@@ -162,7 +162,7 @@ describe("browser imports", () => {
   it("exports canonical JSONL with a terminating newline", () => {
     const output = documentsToJsonl([document]);
     expect(output.endsWith("\n")).toBe(true);
-    expect(JSON.parse(output.trim())._id).toBe(document._id);
+    expect(JSON.parse(output.trim()).id).toBe(document._id);
   });
 
   it("rejects an atomic import before saving when any line fails to parse", async () => {
@@ -202,8 +202,8 @@ describe("browser imports", () => {
     expect(result.errors).toEqual([]);
     expect(result.importedIds).toEqual([relation._id]);
     expect(result.validator).toMatchObject({
-      schemaVersion: "0.9.0",
-      profile: "starintel-core"
+      schemaVersion: "0.10.1",
+      profile: "org.starintel/core@1"
     });
   });
 
@@ -216,6 +216,8 @@ describe("browser imports", () => {
       data: {
         ...relation.data,
         subject: endpointB._id,
+        source: endpointB._id,
+        target: endpointA._id,
         predicate: "parent-of",
         object: endpointA._id,
         inverse_predicate: "subsidiary-of"

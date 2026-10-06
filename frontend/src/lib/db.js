@@ -1,5 +1,14 @@
 import PouchDB from "pouchdb-browser";
-import { assertDocument, isStarIntelDocument } from "starintel_doc";
+import { initializeActorSettings } from "./actor-settings";
+import { isStarIntelDocument } from "starintel_doc/legacy";
+import {
+  fromPouchDocument,
+  toCanonicalDocument,
+  toLegacyUiDocument,
+  toPouchDocument
+} from "./canonical-document";
+const uiDocument = (input) =>
+  input?.schemaVersion === "0.10.1" ? toLegacyUiDocument(fromPouchDocument(input)) : input;
 import { commitDocumentBatch } from "./document-batch";
 import { normalizeGraphWorkspace } from "./graph-workspaces";
 import { installStarIntelViews, queryCountView, queryStarIntelView } from "./views";
@@ -14,7 +23,7 @@ function newestFirst(left, right) {
 export async function listDocuments() {
   const result = await documentsDb.allDocs({ include_docs: true });
   return result.rows
-    .map((row) => row.doc)
+    .map((row) => uiDocument(row.doc))
     .filter(
       (document) =>
         document && !document._id.startsWith("_design/") && isStarIntelDocument(document)
@@ -23,7 +32,9 @@ export async function listDocuments() {
 }
 
 export async function replaceDocumentProjection(inputs) {
-  const documents = inputs.map((input) => assertDocument(input));
+  const documents = inputs.map((input) =>
+    toPouchDocument(toCanonicalDocument(input, { allowLegacy090: true }))
+  );
   const existing = await documentsDb.allDocs({ include_docs: true });
   const current = new Map(
     existing.rows
@@ -45,7 +56,7 @@ export async function replaceDocumentProjection(inputs) {
 
 export async function getDocument(id) {
   try {
-    return await documentsDb.get(id);
+    return uiDocument(await documentsDb.get(id));
   } catch (error) {
     if (error?.status === 404) return null;
     throw error;
@@ -53,17 +64,20 @@ export async function getDocument(id) {
 }
 
 export async function saveDocument(input, { replace = true } = {}) {
-  const document = assertDocument(input);
+  const document = toPouchDocument(toCanonicalDocument(input, { allowLegacy090: true }));
   const existing = await getDocument(document._id);
   if (existing && !replace) {
     const error = new Error(`Document already exists: ${document._id}`);
     error.code = "DOCUMENT_EXISTS";
     throw error;
   }
+  if (existing && document._rev && document._rev !== existing._rev) {
+    throw new Error("Document changed since editing began; reload it before saving");
+  }
   if (existing) document._rev = existing._rev;
   else delete document._rev;
   const result = await documentsDb.put(document);
-  return { ...document, _rev: result.rev };
+  return uiDocument({ ...document, _rev: result.rev });
 }
 
 export function bulkSaveDocuments(inputs, options = {}) {
@@ -127,6 +141,11 @@ export async function getSettings() {
     _id: undefined,
     _rev: undefined
   };
+}
+
+export async function initializeSettings() {
+  await initializeActorSettings(stateDb);
+  return getSettings();
 }
 
 export function saveSettings(settings) {

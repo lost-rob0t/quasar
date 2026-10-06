@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDocument } from "starintel_doc";
+import { createDocument } from "starintel_doc/legacy";
+import { createDocument as createCanonicalDocument } from "starintel_doc";
+import { targetV1FixtureResponse } from "./starintel-target-v1.fixture";
 import {
   listStarIntelActors,
   probeStarIntelServer,
@@ -90,7 +92,9 @@ describe("starintel-server client", () => {
     );
     vi.stubGlobal("fetch", fetch);
 
-    const actors = await listStarIntelActors({ serverUrl: "http://localhost:5000" });
+    const actors = await listStarIntelActors({
+      serverUrl: "http://localhost:5000"
+    });
 
     expect(fetch.mock.calls[0][0]).toBe("http://localhost:5000/v1/actors");
     expect(actors).toHaveLength(2);
@@ -131,7 +135,11 @@ describe("starintel-server client", () => {
                 {
                   resourceUri: "star://local/actor/test",
                   resourceKind: "actor",
-                  semantic: { name: "test", version: "1.0.0", digest: "sha256:test" },
+                  semantic: {
+                    name: "test",
+                    version: "1.0.0",
+                    digest: "sha256:test"
+                  },
                   accepts: { targets: [], documents: [], messages: [] },
                   produces: { targets: [], documents: [], messages: [] },
                   capabilities: [],
@@ -156,8 +164,13 @@ describe("starintel-server client", () => {
     );
   });
 
-  it("submits a v0.9 target through the v1 endpoint", async () => {
-    const fetch = vi.fn().mockResolvedValue(new Response("{}", { status: 202 }));
+  it("adapts a historical target to the server v1 command DTO", async () => {
+    const fetch = vi.fn(async (_url, options) => {
+      const result = targetV1FixtureResponse(JSON.parse(options.body));
+      return new Response(JSON.stringify(result.body), {
+        status: result.status
+      });
+    });
     vi.stubGlobal("fetch", fetch);
     const target = createDocument("target", {
       dataset: "test",
@@ -168,5 +181,110 @@ describe("starintel-server client", () => {
 
     expect(fetch.mock.calls[0][0]).toBe("http://localhost:5000/api/v1/targets");
     expect(fetch.mock.calls[0][1].headers.get("Idempotency-Key")).toBe(target._id);
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({
+      actor: "actor-1",
+      target: "starintel:person:one",
+      dataset: "test",
+      delay: 1,
+      recurring: false,
+      options: [],
+      idempotency_key: target._id
+    });
+  });
+
+  it("preserves canonical target scheduling and reuses the key after an ambiguous failure", async () => {
+    const target = createCanonicalDocument("target", {
+      id: "target:retry-fixture",
+      dataset: "test",
+      actor: "actor-1",
+      target: "example.test",
+      delay: 30,
+      recurring: true,
+      options: {}
+    });
+    const accepted = new Map();
+    const fetch = vi.fn(async (_url, options) => {
+      const command = JSON.parse(options.body);
+      const result = targetV1FixtureResponse(command);
+      if (result.status !== 201)
+        return new Response(JSON.stringify(result.body), {
+          status: result.status
+        });
+      if (!accepted.has(command.idempotency_key)) {
+        accepted.set(command.idempotency_key, command);
+        throw new TypeError("Network outcome unknown");
+      }
+      expect(command).toEqual(accepted.get(command.idempotency_key));
+      return new Response(JSON.stringify({ ...result.body, status: "duplicate" }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetch);
+    await expect(
+      submitTargetToServer({ serverUrl: "http://localhost:5000" }, target)
+    ).rejects.toThrow("Network outcome unknown");
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await expect(
+      submitTargetToServer({ serverUrl: "http://localhost:5000" }, target)
+    ).resolves.toMatchObject({ status: "duplicate" });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({
+      actor: "actor-1",
+      target: "example.test",
+      dataset: "test",
+      delay: 30,
+      recurring: true,
+      options: [],
+      idempotency_key: target.id
+    });
+    expect(accepted.size).toBe(1);
+  });
+
+  it("rejects non-empty canonical option maps rather than inventing an array mapping", async () => {
+    const target = createCanonicalDocument("target", {
+      id: "target:options-fixture",
+      dataset: "test",
+      actor: "actor-1",
+      target: "example.test",
+      options: { depth: 2 }
+    });
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    await expect(
+      submitTargetToServer({ serverUrl: "http://localhost:5000" }, target)
+    ).rejects.toThrow("Target options map has no defined server v1 array mapping");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("does not treat an idempotency body error as an unsupported endpoint", async () => {
+    const target = createDocument("target", {
+      dataset: "test",
+      data: { actor: "actor-1", target: "example.test" }
+    });
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ message: "idempotency_key is required" }), { status: 400 })
+      );
+    vi.stubGlobal("fetch", fetch);
+    await expect(
+      submitTargetToServer({ serverUrl: "http://localhost:5000" }, target)
+    ).rejects.toThrow("idempotency_key is required");
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not relabel historical option arrays as canonical maps", async () => {
+    const target = createDocument("target", {
+      dataset: "test",
+      data: {
+        actor: "actor-1",
+        target: "example.test",
+        options: ["--fixture"]
+      }
+    });
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    await expect(
+      submitTargetToServer({ serverUrl: "http://localhost:5000" }, target)
+    ).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

@@ -1,3 +1,4 @@
+import { fromPouchDocument, toLegacyUiDocument } from "./canonical-document";
 import {
   cpDocumentCreate,
   cpDocumentDelete,
@@ -21,7 +22,9 @@ export const operation = Object.freeze({
 
 async function applySave(command) {
   const snapshot = await cpSnapshot();
-  const previous = snapshot.documents?.find((document) => document._id === command.document._id);
+  const previous = snapshot.documents?.find(
+    (document) => (document.id || document._id) === (command.document.id || command.document._id)
+  );
   const saved = previous
     ? await cpDocumentUpdate(command.document)
     : await cpDocumentCreate(command.document);
@@ -29,13 +32,15 @@ async function applySave(command) {
     result: saved,
     inverse: previous
       ? operation.save(previous)
-      : operation.remove(saved.created?._id || command.document._id)
+      : operation.remove(saved.created?._id || command.document.id || command.document._id)
   };
 }
 
 async function applyRemove(command) {
   const snapshot = await cpSnapshot();
-  const previous = snapshot.documents?.find((document) => document._id === command.id);
+  const previous = snapshot.documents?.find(
+    (document) => (document.id || document._id) === command.id
+  );
   if (!previous) return { result: null, inverse: null };
   await cpDocumentDelete(command.id);
   return { result: previous, inverse: operation.save(previous) };
@@ -43,13 +48,19 @@ async function applyRemove(command) {
 
 async function applyBatch(command) {
   const snapshot = await cpSnapshot();
-  const known = new Map((snapshot.documents || []).map((document) => [document._id, document]));
+  const known = new Map(
+    (snapshot.documents || []).map((document) => [document.id || document._id, document])
+  );
   const inverses = [];
   const commands = (command.operations || []).map((child) => {
     if (child.type === "save-document") {
-      const previous = known.get(child.document._id);
-      inverses.unshift(previous ? operation.save(previous) : operation.remove(child.document._id));
-      known.set(child.document._id, child.document);
+      const previous = known.get(child.document.id || child.document._id);
+      inverses.unshift(
+        previous
+          ? operation.save(previous)
+          : operation.remove(child.document.id || child.document._id)
+      );
+      known.set(child.document.id || child.document._id, child.document);
       return {
         type: previous ? "document.update" : "document.create",
         payload: child.document
@@ -92,24 +103,30 @@ export async function saveDocumentBatch(
   }
 
   const snapshot = await cpSnapshot();
-  const previous = new Map((snapshot.documents || []).map((document) => [document._id, document]));
+  const previous = new Map(
+    (snapshot.documents || []).map((document) => [document.id || document._id, document])
+  );
   const savedDocuments = [];
   const skipped = [];
   for (const { document } of preflight.validated) {
-    if (previous.has(document._id) && !replace)
-      skipped.push({ id: document._id, reason: "exists" });
-    else savedDocuments.push(document);
+    if (previous.has(document.id || document._id) && !replace)
+      skipped.push({ id: document.id || document._id, reason: "exists" });
+    else savedDocuments.push(fromPouchDocument(document));
   }
   if (savedDocuments.length) {
     await cpTransaction(
       savedDocuments.map((document) => ({
-        type: previous.has(document._id) ? "document.update" : "document.create",
+        type: previous.has(document.id || document._id) ? "document.update" : "document.create",
         payload: document
       }))
     );
   }
   const report = {
-    saved: savedDocuments.map((document, index) => ({ index, id: document._id, ok: true })),
+    saved: savedDocuments.map((document, index) => ({
+      index,
+      id: document.id || document._id,
+      ok: true
+    })),
     skipped,
     errors: preflight.errors,
     atomic,
@@ -117,13 +134,13 @@ export async function saveDocumentBatch(
   };
   const inverse = savedDocuments
     .map((document) => {
-      const old = previous.get(document._id);
-      return old ? operation.save(old) : operation.remove(document._id);
+      const old = previous.get(document.id || document._id);
+      return old ? operation.save(old) : operation.remove(document.id || document._id);
     })
     .reverse();
   const applied = {
     result: report,
-    savedDocuments,
+    savedDocuments: savedDocuments.map(toLegacyUiDocument),
     inverse: inverse.length ? operation.batch(inverse, `Undo ${label}`) : null
   };
   if (report.errors.length) {

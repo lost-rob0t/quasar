@@ -52,9 +52,9 @@
       plane
       "document.create"
       (quasar.protocol:json-object
-       (cons "_id" (format nil "seed:~8,'0D" index))
-       (cons "dtype" "person")
-       (cons "ordinal" index))
+       (cons "id" (format nil "seed:~8,'0D" index))
+       (cons "dtype" "person") (cons "schemaVersion" "0.10.1") (cons "dataset" "test")
+       (cons "extensions" (quasar.protocol:json-object (cons "ordinal" index))))
       :id (format nil "phase2-seed-~D" index)))))
 
 (defun phase2-spec-reopen (path)
@@ -98,7 +98,7 @@
                      :id "phase2-red-get"))))
              (check (string= "ok" (status response)))
              (check (string= "seed:00000063"
-                             (quasar.protocol:json-value (result response) "_id"))))
+                             (quasar.protocol:json-value (result response) "id"))))
            (check (= 0 (hash-table-count
                         (quasar.control-plane:control-plane-workspaces plane-2)))))
       (when plane-1 (ignore-errors (quasar.control-plane:stop-control-plane plane-1)))

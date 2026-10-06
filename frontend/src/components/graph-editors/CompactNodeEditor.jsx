@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Braces, Save, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { assertDocument, createDocument, documentLabel, touchDocument } from "starintel_doc";
+import { assertDocument, createDocument, documentLabel, touchDocument } from "starintel_doc/legacy";
 import { connectedDocumentIds } from "../../lib/document-delete";
 import { operation } from "../../lib/operations";
 import {
@@ -14,7 +14,13 @@ import {
 } from "../../lib/schema-form";
 import { useQuasar } from "../../store";
 import { SchemaField } from "../DocumentEditor";
-import { FieldPicker, GraphModalShell, parseJson, saveEditorDraft } from "./shared";
+import {
+  FieldPicker,
+  GraphModalShell,
+  parseJson,
+  prepareNewGraphDraft,
+  saveEditorDraft
+} from "./shared";
 
 function initialValues(document, descriptors, names) {
   return Object.fromEntries(
@@ -183,11 +189,14 @@ export default function CompactNodeEditor({
   function openFullEditor() {
     try {
       const draft = buildDraft();
-      const token = saveEditorDraft(draft, {
-        kind: "node",
-        objectType: dtype,
-        documentId: document?._id || ""
-      });
+      const token = saveEditorDraft(
+        !document && !rawMode ? prepareNewGraphDraft(dtype, draft) : draft,
+        {
+          kind: "node",
+          objectType: dtype,
+          documentId: document?._id || ""
+        }
+      );
       const path = document
         ? `/documents/${encodeURIComponent(document._id)}/edit`
         : "/documents/new";

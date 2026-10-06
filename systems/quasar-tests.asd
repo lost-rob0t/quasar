@@ -52,4 +52,9 @@
              (funcall (find-symbol "RUN-MELISSA-TESTS" "QUASAR.TESTS"))
              (funcall (find-symbol "RUN-MELISSA-RESTART-TESTS" "QUASAR.TESTS"))
              (funcall (find-symbol "RUN-DEBUG-LOGGING-TESTS" "QUASAR.TESTS"))
-             (funcall (find-symbol "RUN-LOGGING-TESTS" "QUASAR.TESTS"))))
+             (funcall (find-symbol "RUN-LOGGING-TESTS" "QUASAR.TESTS"))
+             ;; Later suites use the same CHECK accumulator. Their failures
+             ;; must fail ASDF too, not disappear behind a successful return.
+             (let ((failures (symbol-value (find-symbol "*FAILURES*" "QUASAR.TESTS"))))
+               (unless (zerop failures)
+                 (error "~D Quasar test checks failed across all suites." failures)))))

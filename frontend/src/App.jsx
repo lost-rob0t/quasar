@@ -5,7 +5,7 @@ import AgentHub from "./components/AgentHub";
 import { AgentBubble, AgentSystemProvider } from "./components/AgentSystem";
 import CodeWorkbench from "./components/CodeWorkbench";
 import DatasetsPage from "./components/DatasetsPage";
-import DocumentEditor from "./components/DocumentEditor";
+import DocumentEditor from "./components/CanonicalDocumentEditor";
 import { DocumentPage, DocumentsPage } from "./components/Documents";
 import GraphLayoutControl from "./components/GraphLayoutControl";
 import GraphPage from "./components/GraphPage";

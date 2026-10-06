@@ -1,4 +1,5 @@
 import { expect, test } from "./fixtures";
+import { expectCleanStartup, observeStartupErrors } from "./startup-evidence";
 
 test("opens the local workspace through the control plane", async ({ page }) => {
   const failedApplicationRequests: string[] = [];
@@ -8,7 +9,9 @@ test("opens the local workspace through the control plane", async ({ page }) => 
     }
   });
 
+  await observeStartupErrors(page);
   await page.goto("/");
+  await expectCleanStartup(page);
 
   await expect(page).toHaveTitle("Quasar");
   await expect(page.getByRole("heading", { name: "Statistics dashboard" })).toBeVisible();
@@ -63,17 +66,32 @@ test("creates a graph node through the compact editor and preserves its full-edi
   await compactEditor.getByRole("button", { name: "Open full editor" }).click();
 
   await expect(page).toHaveURL(/\/documents\/new\?.*draft=/);
-  await expect(page.locator(".full-document-editor")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "New Person" })).toBeVisible();
-  await expect(page.getByLabel(/^First Name/)).toHaveValue("Jane");
-  await expect(page.getByLabel(/^Last Name/)).toHaveValue("Doe");
-  await expect(page.getByLabel(/^Display Name/)).toHaveValue("Jane Doe");
-  await page.locator(".editor-save-bar .primary").click();
+  await expect(page.locator(".document-editor")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "New document" })).toBeVisible();
+  await expect(page.getByLabel("fname", { exact: true })).toHaveValue("Jane");
+  await expect(page.getByLabel("lname", { exact: true })).toHaveValue("Doe");
+  await expect(page.getByLabel("fullName", { exact: true })).toHaveValue("Jane Doe");
+  const draftId = await page.getByLabel("id", { exact: true }).inputValue();
+  expect(draftId).not.toBe("");
+  const sourceDraft = await page.evaluate(() => {
+    const token = new URL(window.location.href).searchParams.get("draft");
+    return JSON.parse(sessionStorage.getItem(`quasar.editor-draft.v1:${token}`)!);
+  });
+  expect(sourceDraft._id).toBe(draftId);
+  expect(sourceDraft.schema_version).toBe("0.9.0");
+  expect(sourceDraft.data).toMatchObject({ fname: "Jane", lname: "Doe", full_name: "Jane Doe" });
+  await page.getByRole("button", { name: "Save document", exact: true }).click();
 
   await expect(page).toHaveURL(/\/graph\?node=/);
   await expect(page.locator(".graph-count")).toContainText("1 nodes");
+  expect(new URL(page.url()).searchParams.get("node")).toBe(draftId);
   await page.reload();
   await expect(page.locator(".graph-count")).toContainText("1 nodes");
+  await page.goto(`/documents/${encodeURIComponent(draftId)}/edit`);
+  await expect(page.getByLabel("id", { exact: true })).toHaveValue(draftId);
+  await expect(page.getByLabel("fname", { exact: true })).toHaveValue("Jane");
+  await expect(page.getByLabel("lname", { exact: true })).toHaveValue("Doe");
+  await expect(page.getByLabel("fullName", { exact: true })).toHaveValue("Jane Doe");
 });
 
 test.describe("responsive application shell", () => {

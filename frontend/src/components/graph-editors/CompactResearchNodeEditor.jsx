@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ExternalLink, Pause, Play, RotateCcw, Save, Square } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { touchDocument } from "starintel_doc";
+import { touchDocument } from "starintel_doc/legacy";
 import { operation } from "../../lib/operations";
 import { createResearchNode, normalizeResearchNode } from "../../lib/research-nodes";
 import { useQuasar } from "../../store";

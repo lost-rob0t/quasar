@@ -23,9 +23,9 @@
          (nested-document (quasar.protocol:json-value payload "document"))
          (document-id
            (or (quasar.protocol:json-value payload "documentId")
-               (quasar.protocol:json-value payload "_id")
+               (quasar.protocol:starintel-document-id payload)
                (and nested-document
-                    (quasar.protocol:json-value nested-document "_id"))))
+                    (quasar.protocol:starintel-document-id nested-document))))
          (dtype
            (or (quasar.protocol:json-value payload "dtype")
                (and nested-document

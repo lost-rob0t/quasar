@@ -1,3 +1,4 @@
+import { migrateLegacy090Document, toLegacyUiDocument } from "./canonical-document";
 import { describe, expect, it, vi } from "vitest";
 import { createResearchNode } from "./research-nodes";
 import { createResearchNodeRunner } from "./research-node-runner";
@@ -59,8 +60,10 @@ function harness({ node = researchNode(), runActor, actors, now } = {}) {
         return { documents: [document], newDocumentIds: [document._id], metrics: { requests: 1 } };
       }),
     saveNode: vi.fn(async (document) => {
-      documents.set(document._id, document);
-      saves.push(document);
+      const persisted = migrateLegacy090Document(document);
+      const restored = toLegacyUiDocument(persisted);
+      documents.set(restored._id, restored);
+      saves.push(restored);
     }),
     createRunId: (_node, actor) => `run:${actor.id}`,
     now: now || (() => Date.parse(stamp))

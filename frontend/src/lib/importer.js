@@ -1,18 +1,13 @@
-import {
-  isStarIntelDocument,
-  SCHEMA_PROFILE,
-  SCHEMA_PROFILE_VERSION,
-  SCHEMA_REVISION,
-  SCHEMA_URI,
-  SCHEMA_VERSION
-} from "starintel_doc";
+import { parseWirelessFile } from "./wireless-import";
+import { toCanonicalDocument, parseBrowserDocumentJson } from "./canonical-document";
+import { isStarIntelDocument } from "starintel_doc/legacy";
 
 export const validatorInfo = Object.freeze({
-  schemaVersion: SCHEMA_VERSION,
-  schemaRevision: SCHEMA_REVISION,
-  schemaUri: SCHEMA_URI,
-  profile: SCHEMA_PROFILE,
-  profileVersion: SCHEMA_PROFILE_VERSION
+  schemaVersion: "0.10.1",
+  schemaRevision: "0.10.1",
+  schemaUri: "https://schemas.starintel.actor/org.starintel/core@1/0.10.1/schema.json",
+  profile: "org.starintel/core@1",
+  profileVersion: "0.10.1"
 });
 
 export const IMPORT_LIMITS = Object.freeze({
@@ -44,7 +39,7 @@ async function parseJsonLines(file, sourceName, limits) {
       }
       if (!rawLine.trim()) continue;
       try {
-        documents.push(JSON.parse(rawLine));
+        documents.push(parseBrowserDocumentJson(rawLine));
         origins.push({ file: sourceName, line, record: documents.length });
       } catch (error) {
         if (errors.length < limits.maxErrors) {
@@ -73,7 +68,7 @@ async function parseJsonLines(file, sourceName, limits) {
           throw new RangeError(`Record ${line} exceeds the import record limit`);
         if (!raw.trim()) continue;
         try {
-          documents.push(JSON.parse(raw));
+          documents.push(parseBrowserDocumentJson(raw));
           origins.push({ file: sourceName, line, record: documents.length });
         } catch (error) {
           if (errors.length < limits.maxErrors)
@@ -91,7 +86,7 @@ async function parseJsonLines(file, sourceName, limits) {
       line += 1;
 
       try {
-        documents.push(JSON.parse(buffer));
+        documents.push(parseBrowserDocumentJson(buffer));
 
         origins.push({ file: sourceName, line, record: documents.length });
       } catch (error) {
@@ -138,7 +133,7 @@ function parseCsv(text, sourceName) {
     const values = parseCsvLine(line);
     const raw = Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""]));
     try {
-      const data = raw.data ? JSON.parse(raw.data) : {};
+      const data = raw.data ? parseBrowserDocumentJson(raw.data) : {};
       for (const [key, value] of Object.entries(raw)) {
         if (!key.startsWith("data.") || value === "") continue;
         data[key.slice(5)] = value;
@@ -156,8 +151,8 @@ function parseCsv(text, sourceName) {
               .map((tag) => tag.trim())
               .filter(Boolean)
           : [],
-        sources: raw.sources ? JSON.parse(raw.sources) : [],
-        evidence: raw.evidence ? JSON.parse(raw.evidence) : [],
+        sources: raw.sources ? parseBrowserDocumentJson(raw.sources) : [],
+        evidence: raw.evidence ? parseBrowserDocumentJson(raw.evidence) : [],
         data
       });
       origins.push({ file: sourceName, line: rowIndex + 2, record: rowIndex + 1 });
@@ -183,7 +178,7 @@ async function parseFile(file, limits) {
   const text = await file.text();
   if (kind === "csv") return parseCsv(text, file.name);
   try {
-    const documents = unwrapJson(JSON.parse(text));
+    const documents = unwrapJson(parseBrowserDocumentJson(text));
     return {
       documents,
       origins: documents.map((_, index) => ({ file: file.name, record: index + 1 })),
@@ -205,6 +200,11 @@ function manifestReferences(document) {
 export async function collectImportDocuments(fileList, options = {}) {
   const files = Array.from(fileList || []);
   const limits = { ...IMPORT_LIMITS, ...(options.limits || {}) };
+  const wireless = options.format && options.format !== "starintel";
+  if (wireless) {
+    limits.maxTotalBytes = Math.min(limits.maxTotalBytes, 16 * 1024 * 1024);
+    limits.maxDocuments = Math.min(limits.maxDocuments, 10000);
+  }
   if (files.length > limits.maxFiles)
     throw new RangeError(`Import file limit exceeded: ${limits.maxFiles}`);
   const totalBytes = files.reduce((total, file) => total + Number(file.size || 0), 0);
@@ -214,9 +214,18 @@ export async function collectImportDocuments(fileList, options = {}) {
   const byName = new Map(files.map((file) => [file.name, file]));
   const parsed = new Map();
   const errors = [];
+  let skippedDuplicates = 0;
+  let parsedCount = 0;
 
   for (const file of files) {
-    const result = await parseFile(file, limits);
+    const result =
+      options.format && options.format !== "starintel"
+        ? await parseWirelessFile(file, options.format, options.dataset, limits)
+        : await parseFile(file, limits);
+    if (parsed.has(file.name)) throw new TypeError(`Duplicate input filename: ${file.name}`);
+    parsedCount += result.documents.length;
+    if (parsedCount > limits.maxDocuments) throw new RangeError("Import document limit exceeded");
+    skippedDuplicates += result.skippedDuplicates || 0;
     parsed.set(file.name, result);
     errors.push(...result.errors);
   }
@@ -224,12 +233,21 @@ export async function collectImportDocuments(fileList, options = {}) {
   const documents = [];
   const origins = [];
   const includedFiles = new Set();
+  const wirelessIds = new Set();
   const include = (name) => {
     if (includedFiles.has(name)) return;
     includedFiles.add(name);
     const result = parsed.get(name) || { documents: [], origins: [] };
-    for (const document of result.documents) documents.push(document);
-    for (const origin of result.origins) origins.push(origin);
+    for (let index = 0; index < result.documents.length; index++) {
+      const document = result.documents[index];
+      if (wireless && wirelessIds.has(document.id)) {
+        skippedDuplicates++;
+        continue;
+      }
+      if (wireless) wirelessIds.add(document.id);
+      documents.push(document);
+      origins.push(result.origins[index]);
+    }
     if (resolveManifestReferences) {
       for (const document of result.documents) {
         for (const reference of manifestReferences(document)) {
@@ -245,7 +263,25 @@ export async function collectImportDocuments(fileList, options = {}) {
   };
 
   files.forEach((file) => include(file.name));
-  return { documents, origins, errors, files: [...includedFiles] };
+  const artifactIds = new Set();
+  for (const [name, result] of parsed) {
+    for (const artifact of result.sourceArtifacts || []) {
+      if (artifactIds.has(artifact.id)) continue;
+      artifactIds.add(artifact.id);
+      documents.push(artifact);
+      origins.push({ file: name, record: 0 });
+    }
+  }
+  if (documents.length > limits.maxDocuments)
+    throw new RangeError("Import document limit exceeded including source custody artifacts");
+  return {
+    documents,
+    origins,
+    errors,
+    skippedDuplicates,
+    sourceArtifactCount: artifactIds.size,
+    files: [...includedFiles]
+  };
 }
 
 export async function importFiles(fileList, saveBatch, options = {}) {
@@ -272,9 +308,13 @@ export async function importFiles(fileList, saveBatch, options = {}) {
   ];
   const summary = {
     parseErrors,
+    skippedDuplicateCount: collected.skippedDuplicates,
+    sourceArtifactCount: collected.sourceArtifactCount,
     fileCount: collected.files.length,
     candidateCount: candidates.length,
-    recognizedCount: candidates.filter(isStarIntelDocument).length,
+    recognizedCount: candidates.filter(
+      (document) => document?.schemaVersion === "0.10.1" || isStarIntelDocument(document)
+    ).length,
     manifestMode: options.resolveManifestReferences === true ? "bundle" : "documents"
   };
   const decorate = (report = {}) => ({
@@ -306,7 +346,7 @@ export async function importFiles(fileList, saveBatch, options = {}) {
 }
 
 export function documentsToJsonl(documents) {
-  return `${documents.map((document) => JSON.stringify(document)).join("\n")}\n`;
+  return `${documents.map((document) => JSON.stringify(toCanonicalDocument(document, { allowLegacy090: true }))).join("\n")}\n`;
 }
 
 export function downloadText(filename, text, type = "application/x-ndjson") {
@@ -316,4 +356,9 @@ export function downloadText(filename, text, type = "application/x-ndjson") {
   anchor.download = filename;
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+// Raw archive export preserves unsupported historical records for manual migration.
+export function documentsToHistoricalJsonl(documents) {
+  return `${documents.map((document) => JSON.stringify(document)).join("\n")}\n`;
 }

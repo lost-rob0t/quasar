@@ -74,7 +74,9 @@
    :id id
    :dataset "test"
    :title title
-   :data (quasar.protocol:json-object (cons "name" title))
+   :data (if (string= kind "target")
+             (quasar.protocol:json-object (cons "actor" "melissa") (cons "target" title))
+             (quasar.protocol:json-object (cons "displayName" title)))
    :extensions (quasar.protocol:json-object)))
 
 (defun melissa-completed-message (request-id messages)
@@ -234,12 +236,10 @@
             :transport #'fake-melissa-transport)
            (let* ((entity
                     (quasar.protocol:json-object
-                     (cons "_id" "person:http")
+                     (cons "id" "person:http")
                      (cons "dataset" "test")
-                     (cons "dtype" "person")
-                     (cons "title" "HTTP Person")
-                     (cons "data" (quasar.protocol:json-object
-                                   (cons "name" "HTTP Person")))
+                     (cons "dtype" "person") (cons "schemaVersion" "0.10.1")
+                     (cons "displayName" "HTTP Person")
                      (cons "extensions" (quasar.protocol:json-object))))
                   (response
                     (call-command

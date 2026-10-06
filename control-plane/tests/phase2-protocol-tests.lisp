@@ -87,7 +87,7 @@
                   (quasar.protocol:json-object
                    (cons "type" "document.create")
                    (cons "payload"
-                         (quasar.protocol:json-object (cons "_id" "missing-dtype")))))
+                         (quasar.protocol:json-object (cons "id" "missing-dtype")))))
                  :id "missing-dtype")
                 "document.invalid")
                (let ((oversized
@@ -96,9 +96,9 @@
                          (cons "type" "document.create")
                          (cons "payload"
                                (quasar.protocol:json-object
-                                (cons "_id" "oversized")
-                                (cons "dtype" "person")
-                                (cons "data"
+                                (cons "id" "oversized")
+                                (cons "dtype" "person") (cons "schemaVersion" "0.10.1") (cons "dataset" "test")
+                                (cons "notes"
                                       (make-string
                                        (+ (* 1024 1024) 1024)
                                        :initial-element #\x))))))))
@@ -115,8 +115,8 @@
                                  (cons "type" "document.create")
                                  (cons "payload"
                                        (quasar.protocol:json-object
-                                        (cons "_id" "unused")
-                                        (cons "dtype" "person"))))))))
+                                        (cons "id" "unused")
+                                        (cons "dtype" "person") (cons "schemaVersion" "0.10.1") (cons "dataset" "test"))))))))
                  (expect-error
                   (phase2-protocol-chunk-response
                    plane session-id 0 too-many :id "too-many-operations")
@@ -142,7 +142,7 @@
                        (cons "type" "document.create")
                        (cons "payload"
                              (quasar.protocol:json-object
-                              (cons "_id" "never-canonical")))))
+                              (cons "id" "never-canonical")))))
                      :id "invalid-stage-chunk")))
              (check (string= "error" (status bad)))
              (check (string= "document.invalid" (error-code bad)))

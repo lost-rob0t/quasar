@@ -35,6 +35,66 @@ describe("StarIntel map-reduce views", () => {
     expect(database.put).toHaveBeenCalledTimes(STARINTEL_VIEW_MANIFEST.length);
   });
 
+  it("reconciles a conflict only when the winning definition is current", async () => {
+    const first = STARINTEL_VIEW_MANIFEST[0];
+    const current = (id) => {
+      const entry = STARINTEL_VIEW_MANIFEST.find((item) => item.id === id);
+      return { _id: id, _rev: "2-winner", quasar_view_version: entry.version, views: entry.views };
+    };
+    const database = {
+      get: vi
+        .fn()
+        .mockRejectedValueOnce({ status: 404 })
+        .mockImplementation(async (id) => current(id)),
+      put: vi.fn().mockRejectedValue({ status: 409 })
+    };
+    await expect(installStarIntelViews(database)).resolves.toContainEqual({
+      id: first.id,
+      status: "current"
+    });
+    expect(database.put).toHaveBeenCalledTimes(1);
+    expect(database.get).toHaveBeenCalledTimes(STARINTEL_VIEW_MANIFEST.length + 1);
+  });
+
+  it("does not overwrite a different concurrent definition or retry its conflict", async () => {
+    const conflict = Object.assign(new Error("Document update conflict"), { status: 409 });
+    const database = {
+      get: vi
+        .fn()
+        .mockRejectedValueOnce({ status: 404 })
+        .mockResolvedValue({
+          _rev: "1-other",
+          quasar_view_version: 999,
+          views: { custom: { map: "function (doc) { emit(doc._id); }" } }
+        }),
+      put: vi.fn().mockRejectedValue(conflict)
+    };
+    await expect(installStarIntelViews(database)).rejects.toBe(conflict);
+    expect(database.put).toHaveBeenCalledTimes(1);
+    expect(database.get).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([401, 403, 500])("preserves a genuine %s installation failure", async (status) => {
+    const failure = Object.assign(new Error("Installation unavailable"), { status });
+    const database = {
+      get: vi.fn().mockRejectedValue({ status: 404 }),
+      put: vi.fn().mockRejectedValue(failure)
+    };
+    await expect(installStarIntelViews(database)).rejects.toBe(failure);
+    expect(database.put).toHaveBeenCalledTimes(1);
+    expect(database.get).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves a failed reconciliation read", async () => {
+    const failure = Object.assign(new Error("Read unavailable"), { status: 503 });
+    const database = {
+      get: vi.fn().mockRejectedValueOnce({ status: 404 }).mockRejectedValue(failure),
+      put: vi.fn().mockRejectedValue({ status: 409 })
+    };
+    await expect(installStarIntelViews(database)).rejects.toBe(failure);
+    expect(database.put).toHaveBeenCalledTimes(1);
+  });
+
   it("normalizes grouped count rows", async () => {
     const database = {
       query: vi.fn(async () => ({ rows: [{ key: "person", value: 4 }] }))
