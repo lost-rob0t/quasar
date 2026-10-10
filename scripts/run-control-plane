@@ -15,7 +15,7 @@ tek9_path="${QUASAR_TEK9_PATH:-$HOME/starintel/tek9}"
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
 
 # Isolate ASDF source registry from user-local CL projects
-export CL_SOURCE_REGISTRY="(:source-registry (:tree \"$tek9_path/\") (:tree \"$HOME/quicklisp/local-projects/\") (:tree \"$HOME/quicklisp/dists/quicklisp/software/\") (:tree \"$repo_root/systems/\") (:tree \"$repo_root/vendor/star-cl/\") :ignore-inherited-configuration)"
+export CL_SOURCE_REGISTRY="(:source-registry (:tree \"$repo_root/systems/\") (:tree \"$repo_root/vendor/star-cl/\") (:tree \"$tek9_path/\") (:tree \"$HOME/quicklisp/local-projects/\") (:tree \"$HOME/quicklisp/dists/quicklisp/software/\") :ignore-inherited-configuration)"
 
 # Best-effort support for direct invocation on Nix hosts outside nix develop.
 # npm run dev normally enters the flake shell first; this fallback must cover
@@ -47,4 +47,4 @@ if [[ "${LOAD_ONLY:-0}" != "1" ]]; then
   sbcl_args+=(--eval '(quasar.app:main :open-browser-p nil :insecure-development-p t)')
 fi
 
-sbcl "${sbcl_args[@]}"
+exec sbcl "${sbcl_args[@]}"

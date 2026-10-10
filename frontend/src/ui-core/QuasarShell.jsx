@@ -91,7 +91,11 @@ function SidebarGraphs({ graphs, activeGraph, switchGraph, createGraph }) {
 function Notice({ notice, onDismiss }) {
   if (!notice) return null;
   return (
-    <div className={`notice notice-${notice.kind || "info"}`} role="status">
+    <div
+      className={`notice notice-${notice.kind || "info"}`}
+      role="status"
+      data-notice-code={notice.code}
+    >
       <span>{notice.message}</span>
       <button type="button" onClick={onDismiss} aria-label="Dismiss notification">
         ×
@@ -106,6 +110,7 @@ export default function QuasarShell({ children }) {
   const location = useLocation();
   const {
     loading,
+    controlPlaneStatus,
     notice,
     setNotice,
     canUndo,
@@ -122,6 +127,8 @@ export default function QuasarShell({ children }) {
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(loadSidebarCollapsed);
   const graphRoute = location.pathname === "/graph" || location.pathname.startsWith("/graph/");
+  const workspacePending = runtime.capabilities.controlPlane && !controlPlaneStatus?.synchronized;
+  const progress = controlPlaneStatus?.progress;
 
   function submitSearch(event) {
     event.preventDefault();
@@ -268,7 +275,40 @@ export default function QuasarShell({ children }) {
         <Notice notice={notice} onDismiss={() => setNotice(null)} />
 
         <main className={graphRoute ? "content content-graph" : "content"}>
-          {loading ? <div className="loading-panel">Opening workspace…</div> : children}
+          {workspacePending ? (
+            <div className="loading-panel" role="status" aria-live="polite">
+              <strong>
+                {controlPlaneStatus?.phase === "synchronizing"
+                  ? "Loading workspace…"
+                  : controlPlaneStatus?.phase === "reconnecting" ||
+                      controlPlaneStatus?.phase === "disconnected"
+                    ? "Reconnecting to Quasar…"
+                    : "Connecting to Quasar…"}
+              </strong>
+              <p>
+                {controlPlaneStatus?.phase === "synchronizing"
+                  ? "The WebSocket is connected. Your documents are being loaded."
+                  : "Waiting for the control plane. Retrying automatically."}
+              </p>
+              {progress && (
+                <>
+                  <progress
+                    aria-label="Workspace loading progress"
+                    value={progress.received}
+                    max={Math.max(1, progress.total)}
+                  />
+                  <p>
+                    {progress.received.toLocaleString()} / {progress.total.toLocaleString()}{" "}
+                    documents
+                  </p>
+                </>
+              )}
+            </div>
+          ) : loading ? (
+            <div className="loading-panel">Opening workspace…</div>
+          ) : (
+            children
+          )}
         </main>
       </section>
 

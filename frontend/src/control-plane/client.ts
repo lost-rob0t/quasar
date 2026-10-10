@@ -18,13 +18,14 @@ const MAX_SNAPSHOT_PAGES = 10_000;
 const CONTROL_PLANE_ERROR_EVENT = "quasar:control-plane-error";
 
 export type ConnectionPhase =
-  "connecting" | "connected" | "reconnecting" | "disconnected" | "disposed";
+  "connecting" | "synchronizing" | "connected" | "reconnecting" | "disconnected" | "disposed";
 
 export interface ConnectionState {
   phase: ConnectionPhase;
   connected: boolean;
   synchronized: boolean;
   attempts: number;
+  progress?: { received: number; total: number };
 }
 
 type ConnectionListener = (state: ConnectionState) => void;
@@ -67,7 +68,7 @@ export interface ControlPlaneClient {
 let sequence = 0;
 
 function diagnosticsEnabled(): boolean {
-  if (!import.meta.env.DEV || typeof window === "undefined") return false;
+  if (typeof window === "undefined") return false;
   try {
     const requested = new URLSearchParams(window.location.search).get("debug");
     if (requested === "1") window.localStorage.setItem("quasar-debug", "1");
@@ -118,6 +119,9 @@ function defaultWebSocketUrl(): string {
   if (typeof window === "undefined") return "ws://127.0.0.1:8081";
   if (hostedWebSocketUrl) {
     return authenticatedWebSocketUrl(hostedWebSocketUrl, window.location.href);
+  }
+  if (import.meta.env.DEV && import.meta.env.VITE_CONTROL_PLANE_URL) {
+    return authenticatedWebSocketUrl(import.meta.env.VITE_CONTROL_PLANE_URL, window.location.href);
   }
   const scheme = window.location.protocol === "https:" ? "wss" : "ws";
   const token = document
@@ -235,10 +239,21 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
 
   async function synchronize(): Promise<void> {
     const attempt = ++synchronization;
+    const synchronizingSocket = socket;
     const synchronizedWorkspace = workspaceId;
+    publishState({
+      phase: "synchronizing",
+      connected: false,
+      synchronized: false,
+      progress: undefined
+    });
     traceTransport("synchronize-start", { attempt, workspace: synchronizedWorkspace });
     try {
-      const current = await snapshot();
+      const current = await snapshot((progress) => {
+        if (attempt === synchronization && socket === synchronizingSocket && !disposed) {
+          publishState({ progress });
+        }
+      });
       if (
         disposed ||
         socket?.readyState !== WebSocket.OPEN ||
@@ -259,13 +274,20 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
       }
       reconnect.markConnected();
       openedOnce = true;
-      publishState({ phase: "connected", connected: true, synchronized: true, attempts: 0 });
+      publishState({
+        phase: "connected",
+        connected: true,
+        synchronized: true,
+        attempts: 0,
+        progress: undefined
+      });
       traceTransport("synchronize-complete", {
         attempt,
         workspace: synchronizedWorkspace,
         revision: current.revision
       });
     } catch (error) {
+      if (disposed || attempt !== synchronization || socket !== synchronizingSocket) return;
       const code =
         error instanceof ControlPlaneError
           ? error.code
@@ -282,7 +304,8 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
         workspace: synchronizedWorkspace,
         attempt
       });
-      socket?.close();
+      traceTransport("client-close", { cause: "synchronize-failed", code, attempt });
+      synchronizingSocket?.close(4000, "Workspace synchronization failed");
     }
   }
 
@@ -297,7 +320,8 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
     publishState({
       phase: openedOnce ? "reconnecting" : "connecting",
       connected: false,
-      synchronized: false
+      synchronized: false,
+      progress: undefined
     });
     traceTransport("connect", { workspace: workspaceId, openedOnce });
     let nextSocket: WebSocket;
@@ -314,7 +338,10 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
     socket = nextSocket;
     nextSocket.onopen = () => {
       traceTransport("open", { workspace: workspaceId });
-      if (socket === nextSocket) void synchronize();
+      if (socket === nextSocket) {
+        openedOnce = true;
+        void synchronize();
+      }
     };
     nextSocket.onmessage = (event) => {
       try {
@@ -325,14 +352,27 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
         });
       }
     };
-    nextSocket.onclose = () => {
+    nextSocket.onclose = (event) => {
       if (socket !== nextSocket) return;
       socket = null;
-      traceTransport("close", { workspace: workspaceId, disposed, pending: pending.size });
+      const closeDetails = {
+        workspace: workspaceId,
+        disposed,
+        pending: pending.size,
+        code: event.code,
+        reason: event.reason,
+        wasClean: event.wasClean
+      };
+      traceTransport("close", closeDetails);
       synchronization += 1;
       rejectAllPending("WebSocket connection closed.");
       if (disposed) return;
-      publishState({ phase: "disconnected", connected: false, synchronized: false });
+      publishState({
+        phase: "disconnected",
+        connected: false,
+        synchronized: false,
+        progress: undefined
+      });
       reconnect.markDisconnected();
     };
     nextSocket.onerror = () => {
@@ -403,7 +443,9 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
     });
   }
 
-  async function snapshot(): Promise<Record<string, unknown>> {
+  async function snapshot(
+    onProgress?: (progress: { received: number; total: number }) => void
+  ): Promise<Record<string, unknown>> {
     let offset = 0;
     let revision: number | null = null;
     let metadata: Record<string, unknown> | null = null;
@@ -431,6 +473,10 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
           );
       }
       const documentPage = page.documentPage as Record<string, unknown> | undefined;
+      onProgress?.({
+        received: documents.length,
+        total: Number(documentPage?.total ?? documents.length)
+      });
       if (!documentPage) return { ...page, documents };
       if (documentPage?.complete === true) {
         const complete: Record<string, unknown> = { ...metadata, documents };
