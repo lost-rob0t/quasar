@@ -230,6 +230,118 @@
     (check (bounded-error-p "query.invalid"
                             (lambda () (quasar.store:fetch-document-batch store "bounded" (quasar.protocol:empty-object)))))))
 
+(defun test-bounded-workspace-admission-types ()
+  "Admission and dispatch must agree on the exact typed workspace identity."
+  (with-temporary-tek9-store (store path "bounded-workspace-types")
+    (check (probe-file path))
+    (seed-bounded-fixture store 3 "default")
+    (seed-bounded-fixture store 2 "NULL")
+    (seed-bounded-fixture store 1 "FALSE")
+    (let* ((plane (quasar.control-plane:start-control-plane
+                   (quasar.control-plane:make-control-plane :store store)))
+           (server (quasar.ws:make-websocket-server plane :insecure-development-p t))
+           (send-original (symbol-function 'quasar.ws::send-connection-text))
+           (originals nil) (reads 0) (response nil))
+      (labels ((wire (command workspace-json)
+                 (format nil "{\"protocol\":\"quasar.control.v1\",\"id\":\"bounded-types\",\"command\":~S,\"payload\":~A~A}"
+                         command
+                         (if (string= command "document.batch")
+                             "{\"ids\":[\"bounded:00000000\"]}" "{}")
+                         (if workspace-json
+                             (format nil ",\"metadata\":{\"workspace\":~A}" workspace-json) "")))
+               (exchange (command workspace-json &optional (authorized "default"))
+                 (let ((connection (make-instance 'quasar.ws::ws-connection
+                                                  :id "bounded-types" :ws nil
+                                                  :session-id "bounded-types" :session-token "bounded-types"
+                                                  :principal "bounded-reader"
+                                                  :authorized-workspaces (list authorized)
+                                                  :capabilities (list command))))
+                   (setf response nil reads 0)
+                   (quasar.ws::handle-text-message server connection (wire command workspace-json))
+                   (loop until response repeat 1000 do (sleep 0.01))
+                   (check response)
+                   response))
+               (response-code ()
+                 (quasar.protocol:json-value
+                  (quasar.protocol:json-value (jsown:parse response) "error") "code")))
+        (unwind-protect
+             (progn
+               (setf (symbol-function 'quasar.ws::send-connection-text)
+                     (lambda (connection encoded) (declare (ignore connection)) (setf response encoded)))
+               ;; Count calls but execute the actual Tek9-backed generic methods.
+               (dolist (symbol '(quasar.store:workspace-bootstrap quasar.store:search-documents
+                                 quasar.store:fetch-document-batch))
+                 (let ((original (symbol-function symbol)))
+                   (push (cons symbol original) originals)
+                   (setf (symbol-function symbol)
+                         (lambda (&rest arguments) (incf reads) (apply original arguments)))))
+               (dolist (command '("workspace.bootstrap" "document.search" "document.batch"))
+                 (dolist (literal '("null" "false" "true" "0" "1" "[]" "{}" "\"\""))
+                   (format t "~&Workspace admission regression: ~A workspace=~A~%" command literal)
+                   (check (bounded-error-p "protocol.invalid-envelope"
+                                           (lambda () (quasar.protocol:decode-command (wire command literal)))))
+                   (exchange command literal)
+                   (check (equal "protocol.invalid-envelope" (response-code)))
+                   (check (zerop reads)))
+                 (dolist (literal '("\"NULL\"" "\"FALSE\""))
+                   (exchange command literal)
+                   (check (equal "security.forbidden" (response-code)))
+                   (check (zerop reads)))
+                 ;; Omission and an explicit valid string still reach the real store.
+                 (dolist (literal '(nil "\"default\""))
+                   (exchange command literal)
+                   (check (equal "ok" (status response)))
+                   (check (= 1 reads)))
+                 (dolist (workspace '("NULL" "FALSE"))
+                   (exchange command (quasar.protocol:encode workspace) workspace)
+                   (check (equal "ok" (status response)))
+                   (check (= 1 reads)))))
+          (dolist (pair originals) (setf (symbol-function (car pair)) (cdr pair)))
+          (setf (symbol-function 'quasar.ws::send-connection-text) send-original)
+          (quasar.control-plane:stop-control-plane plane))))))
+
+(defun test-bounded-numeric-filter-continuations ()
+  "Oversized filter values cannot make a server cursor its own reader rejects."
+  (with-temporary-tek9-store (store path "bounded-numeric-filters")
+    (check (probe-file path))
+    (seed-bounded-fixture store 3)
+    (let ((huge (expt 10 16999)))
+      (dolist (pair (list (cons "fields" (quasar.protocol:json-object (cons "n" huge)))
+                          (cons "fields" (quasar.protocol:json-object (cons "n" (- huge))))
+                          (cons "updatedAfter" huge) (cons "updatedBefore" (- huge))))
+        (format t "~&Numeric filter regression: reject oversized ~A~%" (car pair))
+        (check (bounded-error-p "query.invalid"
+                                (lambda () (bounded-query store pair (cons "scanLimit" 1)))))))
+    (let ((fields (cons :obj (loop for index below 16
+                                  collect (cons (format nil "f~D" index)
+                                                (make-string 256 :initial-element #\\))))))
+      (check (bounded-error-p "query.invalid"
+                              (lambda () (bounded-query store (cons "fields" fields) (cons "scanLimit" 1))))))
+    ;; Large but supported exact integers survive token encoding and re-admission.
+    (dolist (pair (list (cons "fields" (quasar.protocol:json-object (cons "n" (expt 10 100))))
+                        (cons "updatedAfter" (- (expt 10 100)))
+                        (cons "updatedBefore" (expt 10 100))))
+      (let ((cursor nil) (complete nil) (pages 0) (seen 0))
+        (loop until complete
+              while (< pages 8)
+              do (let* ((request (quasar.protocol:json-object pair (cons "scanLimit" 1)))
+                        (page (progn (when cursor (quasar.protocol:object-set request "cursor" cursor))
+                                     (quasar.store:search-documents store "bounded" request))))
+                   (incf pages)
+                   (incf seen (length (array-elements-for-test (quasar.protocol:json-value page "documents"))))
+                   (setf complete (eq t (quasar.protocol:json-value page "complete"))
+                         cursor (quasar.protocol:json-value page "cursor"))
+                   (unless complete (check (and (stringp cursor) (<= (length cursor) 16000))))))
+        (check complete)
+        (check (> pages 1))
+        (check (= seen (if (string= (car pair) "fields") 0 3)))))
+    ;; Even an unusually long stored key must never produce an unusable token.
+    (check (bounded-error-p "query.invalid"
+                            (lambda () (quasar.store::%search-cursor
+                                        "bounded" 0
+                                        (quasar.store::%search-scope (quasar.protocol:empty-object))
+                                        (make-string 16000 :initial-element #\x)))))))
+
 (defun run-bounded-read-tests ()
   (let ((*failures* 0))
     (test-bounded-reads-and-continuations)
@@ -237,5 +349,7 @@
     (test-bounded-command-registration)
     (test-bounded-websocket-authorization)
     (test-bounded-byte-pagination-and-typed-projections)
+    (test-bounded-workspace-admission-types)
+    (test-bounded-numeric-filter-continuations)
     (when (plusp *failures*) (error "~D bounded-read test checks failed." *failures*))
     t))
