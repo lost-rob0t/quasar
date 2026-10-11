@@ -34,6 +34,9 @@ python3 vendor/star-cl/bin/sync-starintel-schema.py \
 All commands retain the existing envelope's authenticated workspace isolation and
 WebSocket capability gate. Dataset names never select a different workspace.
 An omitted dataset filter searches every dataset in that authorized workspace.
+Omitted `metadata.workspace` selects `default`; a present value must be a
+non-empty string. Admission and dispatch share the same envelope decoder, so
+JSON `null`, booleans, numbers, arrays, and objects cannot select a workspace.
 
 ### `workspace.bootstrap`
 
@@ -90,6 +93,13 @@ inclusive Unix timestamps on canonical `updatedAt`. `fields` matches exact
 top-level scalar fields. `q` is a case-insensitive substring match on top-level
 string fields; this first version is not nested-field or full-text search.
 Unsupported options fail rather than pretending to apply a filter.
+Exact integer and timestamp filters are bounded to 4,096 bits (Common Lisp
+`integer-length`). The normalized filter scope must encode to at most 8,192
+UTF-8 bytes, including JSON escaping and field names. Oversized values or scopes
+fail with `query.invalid` before reading the store. Continuations are limited to
+16,000 characters on both output and input; if a stored key or workspace identity
+would exceed that output bound, the query fails with `query.invalid` rather than
+returning a token that continuation intake would reject.
 
 Response fields:
 

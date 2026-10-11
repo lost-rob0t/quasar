@@ -4,6 +4,9 @@
 (defparameter *query-max-bytes* (* 512 1024))
 (defparameter *query-max-scanned* 1000)
 (defparameter *query-max-milliseconds* 50)
+(defparameter *query-max-filter-integer-bits* 4096)
+(defparameter *query-max-scope-bytes* 8192)
+(defparameter *query-max-cursor-characters* 16000)
 (defparameter *query-clock* #'get-internal-real-time)
 
 (dolist (code '("query.invalid" "query.invalid-cursor" "query.stale-cursor"
@@ -69,6 +72,10 @@
     (unless (member (car pair) allowed :test #'string=)
       (%query-error "query.invalid" (format nil "Unsupported query option ~A." (car pair))))))
 
+(defun %bounded-filter-integer-p (value)
+  ;; Bound magnitude before converting arbitrary-precision integers to JSON.
+  (and (integerp value) (<= (integer-length value) *query-max-filter-integer-bits*)))
+
 (defun %search-scope (request)
   (let* ((q (%query-string (quasar.protocol:json-value request "q" "") "q" 256))
          (dtype (%query-string (quasar.protocol:json-value request "dtype" "") "dtype" 64))
@@ -88,7 +95,7 @@
     (dolist (pair (rest fields))
       (%query-string (car pair) "field" 64)
       (unless (or (and (stringp (cdr pair)) (<= (length (cdr pair)) 256))
-                  (integerp (cdr pair)) (member (cdr pair) '(t :true :false :null)))
+                  (%bounded-filter-integer-p (cdr pair)) (member (cdr pair) '(t :true :false :null)))
         (%query-error "query.invalid" "Field filters must be bounded scalar values.")))
     (let ((scope (quasar.protocol:json-object
                   (cons "q" (string-downcase q)) (cons "dtype" dtype)
@@ -97,9 +104,11 @@
                   (cons "fields" (cons :obj (sort (copy-list (rest fields)) #'string< :key #'car))))))
       (dolist (field '("updatedAfter" "updatedBefore"))
         (let ((value (quasar.protocol:json-value request field :null)))
-          (unless (or (eq value :null) (integerp value))
-            (%query-error "query.invalid" "Time filters must be Unix timestamps."))
+          (unless (or (eq value :null) (%bounded-filter-integer-p value))
+            (%query-error "query.invalid" "Time filters must be bounded integer Unix timestamps."))
           (quasar.protocol:object-set scope field value)))
+      (when (> (%utf8-length (quasar.protocol:encode scope)) *query-max-scope-bytes*)
+        (%query-error "query.invalid" "Encoded query filters exceed the scope budget."))
       scope)))
 
 (defun %document-matches-scope-p (document scope)
@@ -134,14 +143,18 @@
                                         (quasar.protocol:clone-json value))))))
 
 (defun %search-cursor (workspace-id revision scope key)
-  (quasar.protocol:encode
-   (quasar.protocol:json-object (cons "v" 1) (cons "workspace" workspace-id)
-                                (cons "revision" revision) (cons "scope" scope) (cons "after" key))))
+  (let ((cursor (quasar.protocol:encode
+                 (quasar.protocol:json-object
+                  (cons "v" 1) (cons "workspace" workspace-id)
+                  (cons "revision" revision) (cons "scope" scope) (cons "after" key)))))
+    (when (> (length cursor) *query-max-cursor-characters*)
+      (%query-error "query.invalid" "Query cannot produce a bounded continuation token."))
+    cursor))
 
 (defun %cursor-start (request workspace-id revision scope prefix)
   (let ((cursor (quasar.protocol:json-value request "cursor" nil)))
     (when cursor
-      (unless (and (stringp cursor) (<= (length cursor) 16000))
+      (unless (and (stringp cursor) (<= (length cursor) *query-max-cursor-characters*))
         (%query-error "query.invalid-cursor" "Invalid continuation token."))
       (let ((token (handler-case (jsown:with-injective-reader (jsown:parse cursor))
                      (error () (%query-error "query.invalid-cursor" "Malformed continuation token.")))))

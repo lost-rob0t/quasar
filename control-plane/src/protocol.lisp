@@ -146,6 +146,7 @@ array, not an object pair."
         (ensure-string id "id")
         (ensure-string command "command")
         (ensure-object payload "payload")
+        (ensure-object metadata "metadata")
         (let ((envelope (make-command-envelope)))
           (setf (command-envelope-id envelope) id
                 (command-envelope-command envelope) command
@@ -153,7 +154,8 @@ array, not an object pair."
                 (command-envelope-client envelope)
                 (json-value metadata "client")
                 (command-envelope-workspace envelope)
-                (json-value metadata "workspace"))
+                (ensure-string (json-value metadata "workspace" "default")
+                               "metadata.workspace"))
           envelope))
     (quasar-error (condition)
       (error condition))
