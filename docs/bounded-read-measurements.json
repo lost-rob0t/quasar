@@ -1,0 +1,22 @@
+{
+  "measuredAt": "2026-10-10",
+  "baseCommit": "8199962373a9733b6dddda54e25ee6a7508cd835",
+  "tek9Commit": "ca24ef35ea6877420cbca057dd7fb702fe29a740",
+  "lispVersion": "2.6.6",
+  "bodyBytes": 256,
+  "command": "nix develop --command bash scripts/benchmark-bounded-reads",
+  "measurements": [
+    { "documents": 10000, "operation": "bootstrap", "elapsedMs": 1, "allocatedBytes": 119552, "retainedHeapDelta": 5760, "responseBytes": 175, "rssAfter": 213331968 },
+    { "documents": 100000, "operation": "bootstrap", "elapsedMs": 1, "allocatedBytes": 130304, "retainedHeapDelta": 6528, "responseBytes": 176, "rssAfter": 205385728 },
+    { "documents": 10000, "operation": "search-50", "elapsedMs": 7, "allocatedBytes": 3400720, "retainedHeapDelta": 82304, "responseBytes": 5611, "rssAfter": 213426176 },
+    { "documents": 100000, "operation": "search-50", "elapsedMs": 7, "allocatedBytes": 2742928, "retainedHeapDelta": 110336, "responseBytes": 5611, "rssAfter": 205295616 },
+    { "documents": 10000, "operation": "ten-searches", "elapsedMs": 15, "allocatedBytes": 12220416, "retainedHeapDelta": 92160, "rangeCalls": 500, "rssAfter": 213852160 },
+    { "documents": 100000, "operation": "ten-searches", "elapsedMs": 15, "allocatedBytes": 11304192, "retainedHeapDelta": 93568, "rangeCalls": 500, "rssAfter": 206061568 },
+    { "documents": 10000, "operation": "missing-search-scan-budget", "elapsedMs": 18, "allocatedBytes": 17036928, "retainedHeapDelta": 4608, "responseBytes": 462, "rssAfter": 214016000 },
+    { "documents": 100000, "operation": "missing-search-scan-budget", "elapsedMs": 20, "allocatedBytes": 16156416, "retainedHeapDelta": 4096, "responseBytes": 462, "rssAfter": 206254080 },
+    { "documents": 10000, "operation": "legacy-snapshot-drain", "elapsedMs": 678, "allocatedBytes": 686621424, "retainedHeapDelta": 28226176, "pageFetches": 8, "transferBytes": 4085748, "rssAfter": 293617664 },
+    { "documents": 100000, "operation": "legacy-snapshot-drain", "elapsedMs": 39162, "allocatedBytes": 34636957280, "retainedHeapDelta": 282694656, "pageFetches": 79, "transferBytes": 41057311, "rssAfter": 647114752 },
+    { "documents": 10000, "operation": "legacy-load-and-copy", "elapsedMs": 110, "allocatedBytes": 80167856, "retainedHeapDelta": 27414688, "rssAfter": 255647744 },
+    { "documents": 100000, "operation": "legacy-load-and-copy", "elapsedMs": 1088, "allocatedBytes": 806373936, "retainedHeapDelta": 274177456, "rssAfter": 719376384 }
+  ]
+}

@@ -268,7 +268,7 @@
               export QUASAR_DEV_NIX_READY=1
               export QUASAR_PRODUCTION_NIX_READY=1
               export QUASAR_PRODUCTION_SMOKE_NIX_READY=1
-              export QUASAR_TEK9_PATH="''${QUASAR_TEK9_PATH:-$HOME/starintel/tek9}"
+              export QUASAR_TEK9_PATH="''${QUASAR_TEK9_PATH:-${tek9}}"
               export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeLibs}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
               export TMPDIR="/tmp"
               export TMP="/tmp"

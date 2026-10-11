@@ -241,7 +241,7 @@ ok =
     "export QUASAR_PRODUCTION_NIX_READY=1",
     "export QUASAR_PRODUCTION_SMOKE_NIX_READY=1",
   ]) && ok;
-ok = checkContainsAll("flake.nix Tek9 source registry", flake, ["QUASAR_TEK9_PATH", "$HOME/starintel/tek9"]) && ok;
+ok = checkContainsAll("flake.nix pinned Tek9 source registry", flake, ["QUASAR_TEK9_PATH:-${tek9}"]) && ok;
 ok = checkContainsAll("scripts/run-control-plane Nix fallback", runControlPlane, nativeNixPackages) && ok;
 ok = checkContainsAll("CI Ubuntu native packages", ciYml, nativeAptPackages) && ok;
 ok =
