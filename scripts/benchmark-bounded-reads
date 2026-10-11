@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Run within `nix develop --command bash scripts/benchmark-bounded-reads`.
+# Separate SBCL processes prevent 10k/100k RSS high-water marks contaminating
+# each other. Fixture creation is bounded and excluded from operation timings.
+for count in 10000 100000; do
+  QUASAR_BENCH_DOCUMENTS="$count" \
+    QUASAR_TEST_EVAL='(progn (asdf:load-system :quasar-tests) (uiop:symbol-call :quasar.tests :run-bounded-read-benchmark))' \
+    bash scripts/test-lisp
+done

@@ -5,6 +5,9 @@ import { join } from "node:path";
 import WebSocket from "ws";
 
 const repoRoot = new URL("../", import.meta.url).pathname;
+const viteUrl = `http://127.0.0.1:${process.env.QUASAR_VITE_PORT || "5173"}`;
+const httpUrl = `http://127.0.0.1:${process.env.QUASAR_HTTP_PORT || "8080"}`;
+const wsUrl = `ws://127.0.0.1:${process.env.QUASAR_WS_PORT || "8081"}`;
 let exitCode = 0;
 
 function findOpenSsl() {
@@ -85,6 +88,21 @@ function websocketExchange(url) {
         }),
       );
       socket.send("{");
+      for (const [id, command, payload] of [
+        ["smoke-bootstrap", "workspace.bootstrap", {}],
+        ["smoke-search", "document.search", { limit: 5 }],
+        ["smoke-batch", "document.batch", { ids: [] }],
+      ]) {
+        socket.send(
+          JSON.stringify({
+            protocol: "quasar.control.v1",
+            id,
+            command,
+            payload,
+            metadata: { client: "stack-smoke", workspace: "default" },
+          }),
+        );
+      }
     });
     socket.on("message", (data) => {
       let response;
@@ -98,6 +116,9 @@ function websocketExchange(url) {
           response.status !== "ok" ||
           !Array.isArray(response.result) ||
           !response.result.includes("workspace.snapshot") ||
+          !response.result.includes("workspace.bootstrap") ||
+          !response.result.includes("document.search") ||
+          !response.result.includes("document.batch") ||
           !response.result.includes("melissa.request") ||
           !response.result.includes("melissa.status")
         ) {
@@ -106,13 +127,38 @@ function websocketExchange(url) {
           return;
         }
         received.add("capabilities");
+      } else if (response.id === "smoke-bootstrap") {
+        if (response.status !== "ok" || "documents" in response.result || "graphs" in response.result) {
+          reject(new Error("Bootstrap returned document or graph hydration"));
+          socket.terminate();
+          return;
+        }
+        received.add("bootstrap");
+      } else if (response.id === "smoke-search") {
+        if (
+          response.status !== "ok" ||
+          response.result.documents.length > 5 ||
+          response.result.projection !== "search-row.v1"
+        ) {
+          reject(new Error("Search exceeded the bounded projection contract"));
+          socket.terminate();
+          return;
+        }
+        received.add("search");
+      } else if (response.id === "smoke-batch") {
+        if (response.status !== "ok" || response.result.documents.length !== 0) {
+          reject(new Error("Invalid empty ID batch"));
+          socket.terminate();
+          return;
+        }
+        received.add("batch");
       } else if (
         response.status === "error" &&
         response.error?.code === "protocol.invalid-envelope"
       ) {
         received.add("malformed");
       }
-      if (received.size === 2) {
+      if (received.size === 5) {
         clearTimeout(timer);
         socket.close();
         resolve();
@@ -175,16 +221,16 @@ async function runSmokeTest() {
   });
 
   try {
-    console.log("  waiting for Vite (http://127.0.0.1:5173)...");
-    await waitForHttp("http://127.0.0.1:5173", 60000, dev);
+    console.log(`  waiting for Vite (${viteUrl})...`);
+    await waitForHttp(viteUrl, 60000, dev);
     console.log("  Vite OK");
 
-    console.log("  waiting for CLOG (http://127.0.0.1:8080)...");
-    await waitForHttp("http://127.0.0.1:8080", 60000, dev);
+    console.log(`  waiting for CLOG (${httpUrl})...`);
+    await waitForHttp(httpUrl, 60000, dev);
     console.log("  CLOG OK");
 
-    console.log("  waiting for WebSocket (ws://127.0.0.1:8081)...");
-    await waitForWs("ws://127.0.0.1:8081", 60000, dev);
+    console.log(`  waiting for WebSocket (${wsUrl})...`);
+    await waitForWs(wsUrl, 60000, dev);
     console.log("  WebSocket OK");
 
     const exited = childExitError(dev, "development stack");
@@ -211,7 +257,7 @@ async function runSmokeTest() {
         unlinkSync(marker);
       } catch {}
       const alive = [];
-      for (const url of ["http://127.0.0.1:5173", "http://127.0.0.1:8080"]) {
+      for (const url of [viteUrl, httpUrl]) {
         try {
           await fetch(url);
           alive.push(url);

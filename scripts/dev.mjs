@@ -212,10 +212,10 @@ startProcess(
 startProcess(
   "vite",
   viteBin,
-  ["--port", "5173", "--host"],
+  ["--port", process.env.QUASAR_VITE_PORT || "5173", "--strictPort", "--host"],
   { cwd: frontendDir, env },
 );
 
-console.log("\n  control-plane: ws://127.0.0.1:8081  (WebSocket)");
-console.log("  control-plane: http://127.0.0.1:8080 (CLOG host)");
-console.log("  vite:          http://127.0.0.1:5173  (React UI)\n");
+console.log(`\n  control-plane: ws://127.0.0.1:${process.env.QUASAR_WS_PORT || "8081"}  (WebSocket)`);
+console.log(`  control-plane: http://127.0.0.1:${process.env.QUASAR_HTTP_PORT || "8080"} (CLOG host)`);
+console.log(`  vite:          http://127.0.0.1:${process.env.QUASAR_VITE_PORT || "5173"}  (React UI)\n`);

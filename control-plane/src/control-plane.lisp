@@ -371,6 +371,7 @@ returns a result envelope with revision, operation ID, and canonical data."
     (quasar.workspace:graph-snapshot workspace graph-id)))
 
 (defun install-core-commands (plane)
+  (install-bounded-read-commands plane)
   (register-command
    plane "system.capabilities"
    (lambda (payload envelope)

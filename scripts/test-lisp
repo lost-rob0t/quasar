@@ -7,7 +7,7 @@ export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
 
 # Isolate ASDF source registry from user-local CL projects (e.g. Lem's qlot)
 # that may provide incompatible versions of named-readtables or other deps.
-export CL_SOURCE_REGISTRY="(:source-registry (:tree \"$tek9_path/\") (:tree \"$HOME/quicklisp/local-projects/\") (:tree \"$HOME/quicklisp/dists/quicklisp/software/\") (:tree \"$repo_root/systems/\") (:tree \"$repo_root/vendor/star-cl/\") :ignore-inherited-configuration)"
+export CL_SOURCE_REGISTRY="(:source-registry (:directory \"$repo_root/systems/\") (:tree \"$repo_root/vendor/star-cl/\") (:tree \"$tek9_path/\") (:tree \"$HOME/quicklisp/local-projects/\") (:tree \"$HOME/quicklisp/dists/quicklisp/software/\") :ignore-inherited-configuration)"
 
 # Find native libraries for CFFI-based systems (NixOS compatibility).
 for native_name in openssl lmdb; do
@@ -29,7 +29,8 @@ sbcl --non-interactive \
   --eval '(asdf:load-asd (truename "systems/quasar-control.asd"))' \
   --eval '(asdf:load-asd (truename "systems/quasar-starlang.asd"))' \
   --eval '(asdf:load-asd (truename "systems/quasar-tests.asd"))' \
-  --eval '(asdf:test-system :quasar-tests)' 2>&1 | tee "$output_file"
+  --eval '(dolist (name (list :quasar-control :quasar-web :quasar-starlang :quasar-tests)) (assert (equal (truename "systems/") (truename (asdf:system-source-directory name))) () "ASDF selected another checkout for ~A" name))' \
+  --eval "${QUASAR_TEST_EVAL:-(asdf:test-system :quasar-tests)}" 2>&1 | tee "$output_file"
 
 # Fail on undefined-function warnings or unexpected ERRORs from quasar code.
 if grep -iE '(undefined.*function|UNDEFINED-FUNCTION|; caught.*ERROR.*condition)' "$output_file" | grep -ivE '(quicklisp|sento|bordeaux|jsown)'; then
