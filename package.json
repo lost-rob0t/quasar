@@ -24,7 +24,7 @@
     "typecheck": "npm --prefix frontend run typecheck",
     "lint": "npm --prefix frontend run lint",
     "format": "npm --prefix frontend run format",
-    "check": "npm --prefix frontend run check && node scripts/check-control-plane-deps.mjs",
+    "check": "node --test scripts/test-bootstrap-lisp-deps.mjs && npm --prefix frontend run check && node scripts/check-control-plane-deps.mjs",
     "benchmark:graph": "npm --prefix frontend run benchmark:graph",
     "benchmark:graph-renderer": "npm --prefix frontend run benchmark:graph-renderer",
     "bench:logging": "bash scripts/bench-logging"
