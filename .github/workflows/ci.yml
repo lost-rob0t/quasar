@@ -201,6 +201,9 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v22
 
+      - name: Build saved Quasar runtime and pinned authentication bridge
+        run: nix build .#checks.x86_64-linux.quasar-server --no-write-lock-file --print-build-logs
+
       - name: Bootstrap and smoke test inside the repository flake
         run: |
           nix develop --command bash -lc '
