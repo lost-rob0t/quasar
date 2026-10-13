@@ -4,7 +4,7 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     tek9 = {
-      url = "git+https://git.starintel.actor/starintel-labs/tek9?rev=ca24ef35ea6877420cbca057dd7fb702fe29a740";
+      url = "github:lost-rob0t/tek9/ca24ef35ea6877420cbca057dd7fb702fe29a740";
       flake = false;
     };
     starintel-biz = {

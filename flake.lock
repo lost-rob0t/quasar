@@ -45,16 +45,16 @@
       "locked": {
         "lastModified": 1787002297,
         "narHash": "sha256-ntX5V5R6/96jLaD89RdtfeW9wenIU3DkwR0Agbyb/j0=",
-        "ref": "refs/heads/master",
+        "owner": "lost-rob0t",
+        "repo": "tek9",
         "rev": "ca24ef35ea6877420cbca057dd7fb702fe29a740",
-        "revCount": 124,
-        "type": "git",
-        "url": "https://git.starintel.actor/starintel-labs/tek9"
+        "type": "github"
       },
       "original": {
+        "owner": "lost-rob0t",
+        "repo": "tek9",
         "rev": "ca24ef35ea6877420cbca057dd7fb702fe29a740",
-        "type": "git",
-        "url": "https://git.starintel.actor/starintel-labs/tek9"
+        "type": "github"
       }
     }
   },
