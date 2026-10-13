@@ -3,8 +3,8 @@ import { useMemo, useState } from "react";
 import { useQuasar } from "../store";
 import { useUiRuntime } from "./runtime";
 
-const BAD = new Set(["error", "denied", "failed", "offline", "disconnected"]);
-const BUSY = new Set(["connecting", "retrying", "active", "reconnecting"]);
+const BAD = new Set(["error", "denied", "failed", "disconnected"]);
+const BUSY = new Set(["connecting", "retrying", "active", "reconnecting", "synchronizing"]);
 const GOOD = new Set(["online", "connected", "synced", "success", "ready"]);
 
 function tone(status) {
@@ -15,7 +15,7 @@ function tone(status) {
 }
 
 function overall(items) {
-  if (items.some((entry) => entry.critical && BAD.has(entry.status))) return "danger";
+  if (items.some((entry) => entry.critical && entry.status === "offline")) return "danger";
   if (items.some((entry) => BAD.has(entry.status))) return "danger";
   if (items.some((entry) => BUSY.has(entry.status))) return "warning";
   if (items.every((entry) => GOOD.has(entry.status) || entry.status === "offline"))
@@ -23,7 +23,9 @@ function overall(items) {
   return "neutral";
 }
 
-function overallLabel(value, runtimeLabel) {
+function overallLabel(value, runtimeLabel, control) {
+  if (control?.status === "synchronizing") return "Loading workspace";
+  if (control?.status === "reconnecting") return "Reconnecting";
   if (value === "danger") return "Degraded";
   if (value === "warning") return "Connecting";
   if (value === "success") return runtimeLabel;
@@ -36,6 +38,7 @@ export default function StatusCenter() {
   const [open, setOpen] = useState(false);
   const items = useMemo(() => runtime.health(quasar), [runtime, quasar]);
   const state = overall(items);
+  const control = items.find((entry) => entry.id === "control-plane");
 
   return (
     <div className="status-center">
@@ -53,7 +56,7 @@ export default function StatusCenter() {
         ) : (
           <PlugZap size={15} />
         )}
-        <span>{overallLabel(state, runtime.label)}</span>
+        <span>{overallLabel(state, runtime.label, control)}</span>
         <ChevronDown size={14} aria-hidden="true" />
       </button>
 

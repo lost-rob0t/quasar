@@ -29,6 +29,9 @@ configured sink."
 (defparameter +default-capabilities+
   '("system.capabilities"
     "workspace.snapshot"
+    "workspace.bootstrap"
+    "document.search"
+    "document.batch"
     "workspace.transaction"
     "document.import.begin"
     "document.import.chunk"
@@ -197,13 +200,9 @@ Expired entries are removed while holding the session-table lock."
     (error () nil)))
 
 (defun safe-decode-workspace (message)
-  "Try to extract the workspace from a possibly-malformed message."
-  (handler-case
-      (let* ((object (jsown:parse message))
-             (metadata (quasar.protocol:json-value object "metadata"
-                        (quasar.protocol:empty-object))))
-        (or (quasar.protocol:json-value metadata "workspace") "default"))
-    (error () "default")))
+  "Use the dispatch decoder's typed identity; malformed workspaces fail closed."
+  (quasar.protocol:command-envelope-workspace
+   (quasar.protocol:decode-command message)))
 
 (defun safe-decode-command (message)
   "Try to extract the command name from a possibly-malformed message."

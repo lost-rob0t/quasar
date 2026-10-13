@@ -1,0 +1,11 @@
+quasar_websocket_inspector('scripts/inspect-websocket.mjs').
+quasar_websocket_capture_artifact(events, 'events.jsonl').
+quasar_websocket_capture_artifact(summary, 'summary.json').
+quasar_websocket_invariant(sync_cleanup_requires_current_attempt_and_socket).
+quasar_websocket_invariant(one_diagnostic_warning_per_disconnected_transition).
+quasar_websocket_invariant(disconnect_notice_cleared_after_synchronized_recovery).
+quasar_websocket_invariant(snapshot_progress_distinct_from_transport_reconnect).
+quasar_websocket_invariant(optional_stopped_services_do_not_degrade_healthy_workspace).
+quasar_launch_invariant(checkout_asdf_registry_precedes_quicklisp_projects).
+quasar_websocket_regression_tests('frontend/tests/unit/control-plane-client.test.ts').
+quasar_websocket_debug_guide('docs/WEBSOCKET-DEBUGGING.md').

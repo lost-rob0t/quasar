@@ -16,7 +16,7 @@ class FakeWebSocket {
   sent: string[] = [];
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: string }) => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((event: { code: number; reason: string; wasClean: boolean }) => void) | null = null;
   onerror: (() => void) | null = null;
 
   constructor(readonly url: string) {
@@ -32,10 +32,10 @@ class FakeWebSocket {
     this.sent.push(message);
   }
 
-  close() {
+  close(code = 1000, reason = "") {
     if (this.readyState === FakeWebSocket.CLOSED) return;
     this.readyState = FakeWebSocket.CLOSED;
-    this.onclose?.();
+    this.onclose?.({ code, reason, wasClean: true });
   }
 
   respond(result: unknown, index = this.sent.length - 1) {
@@ -124,12 +124,57 @@ describe("control-plane client lifecycle", () => {
     client.dispose();
   });
 
+  it("does not close the current socket when an obsolete workspace sync fails", async () => {
+    const client = createControlPlaneClient("ws://quasar.test");
+    const socket = FakeWebSocket.instances[0];
+    socket.open();
+    client.setWorkspace("next");
+    socket.respond({ id: "next", revision: 1, documents: [], graphs: [] }, 1);
+    await vi.waitFor(() => expect(client.getConnected()).toBe(true));
+    const old = JSON.parse(socket.sent[0]);
+    socket.onmessage?.({
+      data: JSON.stringify({
+        protocol: PROTOCOL_VERSION,
+        id: old.id,
+        status: "error",
+        error: { code: "workspace.not-found", message: "Old workspace gone", details: {} }
+      })
+    });
+    await Promise.resolve();
+    expect(socket.readyState).toBe(FakeWebSocket.OPEN);
+    expect(client.getConnected()).toBe(true);
+    client.dispose();
+  });
+
+  it("does not report a synchronization failure after a transport close", async () => {
+    vi.useFakeTimers();
+    const events: string[] = [];
+    vi.stubGlobal("window", {
+      sessionStorage: { getItem: () => null },
+      location: { search: "" },
+      localStorage: { getItem: () => null },
+      dispatchEvent: (event: CustomEvent) => {
+        events.push(event.detail.message);
+      }
+    });
+    const client = createControlPlaneClient("ws://quasar.test");
+    const socket = FakeWebSocket.instances[0];
+    socket.open();
+    socket.close();
+    await Promise.resolve();
+    expect(events).not.toContain("Workspace synchronization failed.");
+    client.dispose();
+  });
+
   it("reassembles size-bounded authoritative snapshot pages", async () => {
     const client = createControlPlaneClient("ws://quasar.test");
     const snapshots: Record<string, unknown>[] = [];
     client.onSnapshot((snapshot) => snapshots.push(snapshot));
     const socket = FakeWebSocket.instances[0];
     socket.open();
+    const states: unknown[] = [];
+    client.onConnectionStateChange((state) => states.push(state));
+    expect(states.at(-1)).toMatchObject({ phase: "synchronizing", synchronized: false });
 
     expect(JSON.parse(socket.sent[0]).payload).toMatchObject({
       documentOffset: 0,
@@ -143,6 +188,10 @@ describe("control-plane client lifecycle", () => {
       documentPage: { nextOffset: 1, total: 2, complete: false }
     });
     await vi.waitFor(() => expect(socket.sent).toHaveLength(2));
+    expect(states.at(-1)).toMatchObject({
+      phase: "synchronizing",
+      progress: { received: 1, total: 2 }
+    });
     expect(JSON.parse(socket.sent[1]).payload.documentOffset).toBe(1);
     socket.respond(
       {
@@ -156,6 +205,8 @@ describe("control-plane client lifecycle", () => {
     );
 
     await vi.waitFor(() => expect(client.getConnected()).toBe(true));
+    expect(states.at(-1)).toMatchObject({ phase: "connected", synchronized: true });
+    expect(states.at(-1)).toHaveProperty("progress", undefined);
     expect(snapshots[0].documents).toEqual([{ _id: "document:1" }, { _id: "document:2" }]);
     expect(snapshots[0]).not.toHaveProperty("documentPage");
     client.dispose();

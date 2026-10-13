@@ -123,7 +123,13 @@ export function QuasarProvider({ children }) {
     const unsubConn = cpClient?.onConnectionStateChange((state) => {
       setControlPlaneStatus(state);
       if (state.phase === "disconnected") {
-        setNotice({ kind: "error", message: "The Common Lisp control plane disconnected." });
+        setNotice({
+          kind: "info",
+          code: "control-plane.disconnected",
+          message: "Connection interrupted. Reconnecting automatically…"
+        });
+      } else if (state.phase === "synchronizing" || (state.connected && state.synchronized)) {
+        setNotice((current) => (current?.code === "control-plane.disconnected" ? null : current));
       }
     });
     const unsubSnapshot = cpClient?.onSnapshot((snapshot) => {

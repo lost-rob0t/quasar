@@ -22,12 +22,14 @@ export function quasarHealth(state, { requireControlPlane = false } = {}) {
         "Quasar control plane",
         control.connected
           ? "online"
-          : ["connecting", "reconnecting"].includes(control.phase)
+          : ["connecting", "reconnecting", "synchronizing"].includes(control.phase)
             ? control.phase
             : "error",
         control.connected
           ? "Connected and authoritative"
-          : `${control.phase || "disconnected"}${control.attempts ? ` · reconnect attempt ${control.attempts}` : ""}`,
+          : control.phase === "synchronizing"
+            ? `WebSocket connected · loading workspace${control.progress ? ` · ${control.progress.received.toLocaleString()} / ${control.progress.total.toLocaleString()} documents` : ""}`
+            : `${control.phase || "disconnected"}${control.attempts ? ` · reconnect attempt ${control.attempts}` : ""}`,
         true
       )
     );

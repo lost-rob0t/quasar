@@ -137,10 +137,7 @@ async function bootstrap(): Promise<void> {
       return;
     }
 
-    if (
-      (state.phase === "disconnected" || state.phase === "reconnecting") &&
-      state.phase !== lastControlPlanePhase
-    ) {
+    if (state.phase === "disconnected" && state.phase !== lastControlPlanePhase) {
       recordRuntimeDiagnostic({
         level: "warning",
         source: "control-plane",

@@ -67,6 +67,9 @@
     #:direct-workspace-snapshot-page
     #:direct-workspace-revision
     #:direct-graph-snapshot
+    #:workspace-bootstrap
+    #:search-documents
+    #:fetch-document-batch
     #:begin-import-stage
     #:accept-import-chunk
     #:promote-import-stage

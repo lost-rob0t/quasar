@@ -9,7 +9,16 @@ TEK9_SHA="ca24ef35ea6877420cbca057dd7fb702fe29a740"
 
 local_projects="${QUASAR_QUICKLISP_LOCAL_PROJECTS:-$HOME/quicklisp/local-projects}"
 tek9_path="${QUASAR_TEK9_PATH:-$HOME/starintel/tek9}"
-mkdir -p "$local_projects" "$(dirname "$tek9_path")"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Nix exports the pinned Tek9 input without .git. Verify its lock/revision and
+# full NAR hash before any dependency mutation; never clone into that source.
+tek9_source_verified=0
+if [[ -d "$tek9_path" && ! -e "$tek9_path/.git" ]]; then
+  node "$repo_root/scripts/check-tek9-nix-source.mjs" "$tek9_path" "$TEK9_SHA"
+  tek9_source_verified=1
+fi
+mkdir -p "$local_projects"
 
 sync_dependency() {
   local name="$1"
@@ -18,6 +27,7 @@ sync_dependency() {
   local path="$4"
 
   if [[ ! -d "$path/.git" ]]; then
+    mkdir -p "$(dirname "$path")"
     git clone --quiet "$url" "$path"
   else
     if ! git -C "$path" diff --quiet --ignore-submodules -- || \
@@ -43,11 +53,12 @@ sync_dependency() {
 }
 
 sync_dependency "clog" "https://github.com/rabbibotton/clog.git" "$CLOG_SHA" "$local_projects/clog"
-sync_dependency "tek9" "https://github.com/lost-rob0t/tek9.git" "$TEK9_SHA" "$tek9_path"
+if [[ "$tek9_source_verified" == "0" ]]; then
+  sync_dependency "tek9" "https://github.com/lost-rob0t/tek9.git" "$TEK9_SHA" "$tek9_path"
+fi
 
 printf 'Pinned Common Lisp dependencies ready:\n  CLOG %s\n  Tek9 %s\n' \
   "$CLOG_SHA" "$TEK9_SHA"
 
 # The canonical StarIntel validator is vendored and source-pinned with Quasar.
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ln -sfn "$repo_root/vendor/star-cl" "$local_projects/quasar-starintel-canonical"

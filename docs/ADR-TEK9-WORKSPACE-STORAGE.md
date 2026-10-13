@@ -2,6 +2,12 @@
 
 Status: accepted for Phase 1 and Phase 2 of issue #24
 
+The bounded-read extension and its remaining migration dependencies are documented
+in [BOUNDED-WORKBENCH.md](BOUNDED-WORKBENCH.md). `workspace.bootstrap` and
+`document.search` bypass both document hydration and metadata graph restoration.
+Their availability does not by itself migrate the existing eager React startup
+or eliminate the ordinary mutation candidate described below.
+
 ## Context
 
 Quasar's Common Lisp control plane owns canonical command validation,
