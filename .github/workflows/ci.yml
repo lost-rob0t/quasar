@@ -19,6 +19,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  nix-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: Build saved Quasar runtime and pinned authentication bridge
+        run: nix build .#checks.x86_64-linux.quasar-server --no-write-lock-file --print-build-logs
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 45

@@ -122,6 +122,16 @@ isolation, capability denial, malformed requests, and message-size limits.
 
 ## Production
 
+Build the reusable pinned Nix runtime without starting a service:
+
+```sh
+nix build .#quasar-server --no-write-lock-file
+```
+
+The runtime includes the `quasar-auth` and `quasar-auth-host` ASDF systems
+provided by the pinned business-layer source. `nix flake check` and the
+`nix-runtime` CI job build this closure, including the frontend dependency hash.
+
 Build and start the packaged server from a fresh dependency state:
 
 ```sh
