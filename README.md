@@ -129,7 +129,10 @@ nix build .#quasar-server --no-write-lock-file
 ```
 
 The runtime includes the `quasar-auth` and `quasar-auth-host` ASDF systems
-provided by the pinned business-layer source. `nix flake check` and the
+provided by the pinned business-layer source. Tek9 uses its public GitHub mirror at the
+same immutable commit and NAR content hash as the Forgejo source. This avoids
+the unavailable Tek9 endpoint without changing library contents. Other pinned
+inputs retain their existing source/access requirements. `nix flake check` and the
 `nix-runtime` CI job build this closure, including the frontend dependency hash.
 
 Build and start the packaged server from a fresh dependency state:
