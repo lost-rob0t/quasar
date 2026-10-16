@@ -4,7 +4,7 @@
   "Preserve Phase 1 restart coverage while asserting the Phase 2 read boundary.
 The protocol snapshot must not populate CONTROL-PLANE-WORKSPACES. Full restore
 is exercised explicitly through LOAD-WORKSPACE, because that API remains the
-compatibility path used by ordinary mutation code until #24's final phase."
+explicit compatibility read API; durable mutations use record overlays."
   (let* ((response
            (call-command
             plane
