@@ -313,7 +313,11 @@
       (cons "viewport" :null)
       (cons "layout" "cose")
       (cons "selectedIds" (quasar.protocol:json-array))
-      (cons "groups" (quasar.protocol:empty-object))))))
+      (cons "groups" (quasar.protocol:empty-object)))))
+    ;; Also covers #78's first overlay commit, which calls this helper before
+    ;; writing workspace metadata. Never mark an existing legacy workspace ready.
+    (unless (tek9:fetch* database (%workspace-meta-key workspace-id))
+      (%mark-graph-catalog-ready database workspace-id))))
 
 (defun %compact-import-journal
     (workspace-id stage-id operation-id client
