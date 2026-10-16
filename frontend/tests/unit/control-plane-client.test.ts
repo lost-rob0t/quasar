@@ -80,6 +80,161 @@ describe("control-plane client lifecycle", () => {
     vi.unstubAllGlobals();
   });
 
+  it("bootstraps without hydrating or restoring saved graphs across reconnect/workspace switch", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
+    const client = createControlPlaneClient("ws://quasar.test", { synchronization: "bootstrap" });
+    const legacy = vi.fn();
+    const bootstraps = vi.fn();
+    client.onSnapshot(legacy);
+    client.onBootstrap(bootstraps);
+    const first = FakeWebSocket.instances[0];
+    first.open();
+    expect(JSON.parse(first.sent[0]).command).toBe("workspace.bootstrap");
+    first.respond({
+      id: "default",
+      revision: 4,
+      documentCount: 100000,
+      savedGraphId: "large-graph"
+    });
+    await vi.waitFor(() => expect(client.getConnected()).toBe(true));
+    expect(first.sent).toHaveLength(1);
+    await expect(client.snapshot()).rejects.toMatchObject({ code: "query.invalid" });
+    first.close();
+    expect(client.reads.stats().revision).toBeNull();
+    await vi.advanceTimersByTimeAsync(500);
+    const second = FakeWebSocket.instances[1];
+    second.open();
+    expect(JSON.parse(second.sent[0]).command).toBe("workspace.bootstrap");
+    second.respond({
+      id: "default",
+      revision: 8,
+      documentCount: 100000,
+      savedGraphId: "large-graph"
+    });
+    await vi.waitFor(() => expect(client.getConnected()).toBe(true));
+    client.setWorkspace("other");
+    expect(client.reads.stats().revision).toBeNull();
+    expect(JSON.parse(second.sent[1])).toMatchObject({
+      command: "workspace.bootstrap",
+      metadata: { workspace: "other" }
+    });
+    second.respond({ id: "other", revision: 1, documentCount: 0, savedGraphId: null });
+    await vi.waitFor(() => expect(client.getConnected()).toBe(true));
+    expect(client.getRevision()).toBe(1);
+    expect(bootstraps).toHaveBeenCalledTimes(3);
+    expect(legacy).not.toHaveBeenCalled();
+    client.dispose();
+  });
+
+  it("never falls back to corpus hydration when bootstrap is unsupported", async () => {
+    const client = createControlPlaneClient("ws://quasar.test", { synchronization: "bootstrap" });
+    const socket = FakeWebSocket.instances[0];
+    socket.open();
+    socket.onmessage?.({
+      data: JSON.stringify({
+        protocol: PROTOCOL_VERSION,
+        id: JSON.parse(socket.sent[0]).id,
+        status: "error",
+        error: { code: "protocol.unknown-command", message: "Unsupported" }
+      })
+    });
+    await vi.waitFor(() => expect(socket.readyState).toBe(FakeWebSocket.CLOSED));
+    expect(socket.sent).toHaveLength(1);
+    expect(client.getConnected()).toBe(false);
+    client.dispose();
+  });
+
+  it("invalidates canonical cache on events and restarts from authoritative bootstrap", async () => {
+    const client = createControlPlaneClient("ws://quasar.test", { synchronization: "bootstrap" });
+    const socket = FakeWebSocket.instances[0];
+    socket.open();
+    socket.respond({ id: "default", revision: 4, documentCount: 1, savedGraphId: null });
+    await vi.waitFor(() => expect(client.getConnected()).toBe(true));
+    const lookup = client.reads.inspect("a");
+    socket.respond({
+      revision: 4,
+      documents: [{ id: "a", schemaVersion: "0.10.1" }],
+      missingIds: []
+    });
+    await lookup;
+    expect(client.reads.stats().records).toBe(1);
+    socket.onmessage?.({
+      data: JSON.stringify({
+        protocol: PROTOCOL_VERSION,
+        event: "document.updated",
+        workspace: "default",
+        revision: 5,
+        operationId: "op-5",
+        payload: {}
+      })
+    });
+    expect(client.reads.stats()).toMatchObject({ records: 0, revision: null });
+    const refresh = client.resynchronize();
+    socket.respond({ id: "default", revision: 5, documentCount: 1, savedGraphId: null });
+    await refresh;
+    expect(client.reads.stats().revision).toBe(5);
+    // Events from another workspace must not invalidate the new scope.
+    for (const [revision, operationId] of [
+      [4, "older"],
+      [5, "op-5"],
+      [5, "op-5"]
+    ]) {
+      socket.onmessage?.({
+        data: JSON.stringify({
+          protocol: PROTOCOL_VERSION,
+          event: "document.updated",
+          workspace: "other",
+          revision,
+          operationId,
+          payload: {}
+        })
+      });
+    }
+    expect(client.reads.stats().revision).toBe(5);
+    for (const [revision, operationId] of [
+      [4, "older"],
+      [5, "op-5"],
+      [5, "op-5"]
+    ]) {
+      socket.onmessage?.({
+        data: JSON.stringify({
+          protocol: PROTOCOL_VERSION,
+          event: "document.updated",
+          workspace: "default",
+          revision,
+          operationId,
+          payload: {}
+        })
+      });
+    }
+    expect(client.reads.stats().revision).toBe(5);
+    client.dispose();
+  });
+
+  it("rejects bootstrap raced by a mutation instead of publishing mixed revisions", async () => {
+    const client = createControlPlaneClient("ws://quasar.test", { synchronization: "bootstrap" });
+    const listener = vi.fn();
+    client.onBootstrap(listener);
+    const socket = FakeWebSocket.instances[0];
+    socket.open();
+    socket.onmessage?.({
+      data: JSON.stringify({
+        protocol: PROTOCOL_VERSION,
+        event: "document.updated",
+        workspace: "default",
+        revision: 5,
+        operationId: "op-5",
+        payload: {}
+      })
+    });
+    socket.respond({ id: "default", revision: 4, documentCount: 1, savedGraphId: null });
+    await vi.waitFor(() => expect(socket.readyState).toBe(FakeWebSocket.CLOSED));
+    expect(listener).not.toHaveBeenCalled();
+    expect(client.getConnected()).toBe(false);
+    client.dispose();
+  });
+
   it("rejects pending requests immediately when the socket closes", async () => {
     const client = createControlPlaneClient("ws://quasar.test");
     const socket = await connect(client);
