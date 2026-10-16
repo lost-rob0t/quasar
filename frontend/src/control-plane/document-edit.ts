@@ -5,7 +5,8 @@ import { ControlPlaneError } from "./protocol";
 export async function commitDocumentEdit(
   client: Pick<ControlPlaneClient, "send" | "transaction" | "onConnectionStateChange">,
   id: string,
-  document?: Record<string, unknown>
+  document?: Record<string, unknown>,
+  intent?: "create" | "update"
 ) {
   if (!id || id.length > 512 || (document && (document.id || document._id) !== id)) {
     throw new ControlPlaneError("query.invalid", "Document edit requires a matching canonical ID.");
@@ -53,6 +54,13 @@ export async function commitDocumentEdit(
         "Edit lookup must explicitly report the document or its absence."
       );
     const previous = batch.documents[0] ?? null;
+    if (intent === "create" && previous)
+      throw new ControlPlaneError(
+        "document.duplicate-id",
+        "That document ID already exists; edit the existing record instead."
+      );
+    if (intent === "update" && !previous)
+      throw new ControlPlaneError("document.not-found", "The document no longer exists.");
     const type = document ? (previous ? "document.update" : "document.create") : "document.delete";
     const transaction = (await client.transaction(
       [{ type, payload: document ?? { id } }],

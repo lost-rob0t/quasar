@@ -83,6 +83,20 @@ describe("canonical single-document edits", () => {
     });
     expect(f.transaction).not.toHaveBeenCalled();
   });
+  it("never overwrites an existing ID for explicit create intent", async () => {
+    const f = fixture();
+    await expect(commitDocumentEdit(f.client, "a", previous, "create")).rejects.toMatchObject({
+      code: "document.duplicate-id"
+    });
+    expect(f.transaction).not.toHaveBeenCalled();
+  });
+  it("never recreates a deleted record for explicit edit intent", async () => {
+    const f = fixture(false);
+    await expect(commitDocumentEdit(f.client, "a", previous, "update")).rejects.toMatchObject({
+      code: "document.not-found"
+    });
+    expect(f.transaction).not.toHaveBeenCalled();
+  });
   it("refuses ambiguous missing-record responses", async () => {
     const f = fixture();
     f.send

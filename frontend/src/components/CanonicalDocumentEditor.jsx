@@ -9,6 +9,7 @@ import {
   toCanonicalDocument,
   toLegacyUiDocument
 } from "../lib/canonical-document";
+import { useCanonicalDocument } from "../control-plane/use-canonical-document";
 import { operation } from "../lib/operations";
 import { useQuasar } from "../store";
 
@@ -42,14 +43,7 @@ export function parseCanonicalField(text, field) {
 }
 
 function Editor({ initial, mode, params, draftToken }) {
-  const {
-    execute,
-    setNotice,
-    documents = [],
-    workspace,
-    addDocumentsToActiveGraph,
-    runTargetActors
-  } = useQuasar();
+  const { execute, setNotice, workspace, addDocumentsToActiveGraph, runTargetActors } = useQuasar();
   const navigate = useNavigate();
   const [document, setDocument] = useState(initial);
   const [raw, setRaw] = useState(null);
@@ -77,10 +71,9 @@ function Editor({ initial, mode, params, draftToken }) {
       const validated = assertDocument(candidate);
       if (mode === "edit" && validated.id !== initial.id)
         throw new TypeError("An edit cannot change the document ID");
-      if (mode !== "edit" && documents.some((item) => (item.id || item._id) === validated.id))
-        throw new TypeError("That document ID already exists; edit the existing record instead");
+
       await execute(
-        operation.save(validated),
+        { ...operation.save(validated), intent: mode === "edit" ? "update" : "create" },
         `${mode === "edit" ? "Update" : "Create"} ${validated.id}`
       );
       setNotice?.({ kind: "success", message: "Saved canonical StarIntel 0.10.1 document" });
@@ -294,9 +287,13 @@ function CanonicalField({ name, field, value, required, disabled, onChange, onEr
 export default function CanonicalDocumentEditor({ mode }) {
   const { id } = useParams();
   const [params] = useSearchParams();
-  const { documents } = useQuasar();
-  const existing = documents.find((document) => (document.id || document._id) === id);
   const draftToken = params.get("draft");
+  const lookup = useCanonicalDocument(mode === "edit" && !draftToken ? id : null, false);
+  const existing = lookup.document;
+  if (mode === "edit" && !draftToken && lookup.status === "loading")
+    return <p role="status">Loading document…</p>;
+  if (mode === "edit" && !draftToken && lookup.status === "error")
+    return <p role="alert">{lookup.error}</p>;
   let initial;
   try {
     const draftText =
@@ -304,8 +301,7 @@ export default function CanonicalDocumentEditor({ mode }) {
         ? sessionStorage.getItem(`quasar.editor-draft.v1:${draftToken}`)
         : null;
     const draft = draftText ? parseBrowserDocumentJson(draftText) : null;
-    if (mode === "edit" && !existing && !draft)
-      return <p role="alert">Document is not available yet.</p>;
+    if (mode === "edit" && !existing && !draft) return <p role="alert">Document not found.</p>;
     initial =
       draft || existing
         ? toCanonicalDocument(draft || existing, { allowLegacy090: true })

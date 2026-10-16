@@ -107,3 +107,34 @@ it("strips storage metadata before provider batch transport", async () => {
   expect(payload).not.toHaveProperty("data");
   expect(report.saved[0].id).toBe(document.id);
 });
+
+it("keeps repeated transaction touches ordered using only canonical preflight state", async () => {
+  await context.execute({
+    type: "batch",
+    operations: [
+      { type: "save-document", document },
+      { type: "remove-document", id: document.id },
+      { type: "save-document", document: { ...document, name: "again" } }
+    ]
+  });
+  expect(cp.cpTransaction).toHaveBeenCalledWith(
+    [
+      { type: "document.create", payload: document },
+      { type: "document.delete", payload: { id: document.id } },
+      { type: "document.create", payload: { ...document, name: "again" } }
+    ],
+    0
+  );
+  expect(client.send.mock.calls.filter(([command]) => command === "document.batch")).toHaveLength(
+    1
+  );
+});
+it("skip-existing policy uses canonical presence even when the provider cache is empty", async () => {
+  client.send
+    .mockResolvedValueOnce({ revision: 4 })
+    .mockResolvedValueOnce({ revision: 4, documents: [document], missingIds: [] });
+  const report = await context.executeBatch([document], "Skip existing", { replace: false });
+  expect(report.saved).toEqual([]);
+  expect(report.skipped).toEqual([{ id: document.id, reason: "exists" }]);
+  expect(cp.cpTransaction).not.toHaveBeenCalled();
+});

@@ -22,6 +22,7 @@ import { cpImportDocuments, cpSnapshot, cpTransaction } from "./control-plane/mu
 import { getControlPlane } from "./control-plane/client";
 import { chunkTransactionOperations } from "./control-plane/transaction-chunks";
 import { importFiles } from "./lib/importer";
+import { withMutationBase } from "./control-plane/mutation-base";
 import { commitDocumentEdit } from "./control-plane/document-edit";
 import { exportWorkspaceToFile } from "./control-plane/browser-export";
 import { operation } from "./lib/operations";
@@ -171,7 +172,8 @@ export function QuasarProvider({ children }) {
         const { previous: existing, result } = await commitDocumentEdit(
           client,
           doc.id || doc._id,
-          doc
+          doc,
+          command.intent
         );
         await refresh();
         const inverse = existing ? operation.save(existing) : operation.remove(doc.id || doc._id);
@@ -188,75 +190,91 @@ export function QuasarProvider({ children }) {
         return result;
       }
       if (command?.type === "batch") {
-        const known = new Map(
-          documentsRef.current.map((document) => [document.id || document._id, document])
-        );
-        const inverses = [];
-        const ops = (command.operations || []).map((op) => {
-          if (op.type === "save-document") {
-            const previous = known.get(op.document.id || op.document._id);
-            if (recordHistory)
-              inverses.push(
-                previous
-                  ? operation.save(previous)
-                  : operation.remove(op.document.id || op.document._id)
-              );
-            known.set(op.document.id || op.document._id, op.document);
-            return {
-              type: previous ? "document.update" : "document.create",
-              payload: op.document
-            };
-          }
-          if (op.type === "remove-document") {
-            const previous = known.get(op.id);
-            if (recordHistory && previous) inverses.push(operation.save(previous));
-            known.delete(op.id);
-            return { type: "document.delete", payload: { id: op.id } };
-          }
-          return op;
-        });
-        const chunks = recordHistory ? [ops] : chunkTransactionOperations(ops);
-        let result = null;
-        let committedOperationCount = 0;
-        let failure = null;
-        eventRefreshSuspensions.current += 1;
-        try {
-          if (recordHistory) {
-            result = await cpTransaction(ops);
-            committedOperationCount = ops.length;
-          } else {
-            result = await cpImportDocuments(chunks);
-            committedOperationCount = ops.length;
-            const nextDocuments = [...known.values()];
-            documentsRef.current = nextDocuments;
-            setDocuments(nextDocuments);
-          }
-        } catch (error) {
-          error.committedOperationCount = committedOperationCount;
-          failure = error;
-        } finally {
-          eventRefreshSuspensions.current -= 1;
-          if (!eventRefreshSuspensions.current && (recordHistory || failure)) {
-            try {
-              await refresh();
-            } catch (error) {
-              if (!failure) failure = error;
+        const applyBatch = async (known, expectedRevision) => {
+          const inverses = [];
+          const ops = (command.operations || []).map((op) => {
+            if (op.type === "save-document") {
+              const previous = known.get(op.document.id || op.document._id);
+              if (recordHistory)
+                inverses.push(
+                  previous
+                    ? operation.save(previous)
+                    : operation.remove(op.document.id || op.document._id)
+                );
+              known.set(op.document.id || op.document._id, op.document);
+              return {
+                type: previous ? "document.update" : "document.create",
+                payload: op.document
+              };
+            }
+            if (op.type === "remove-document") {
+              const previous = known.get(op.id);
+              if (recordHistory && previous) inverses.push(operation.save(previous));
+              known.delete(op.id);
+              return { type: "document.delete", payload: { id: op.id } };
+            }
+            return op;
+          });
+          const chunks = recordHistory ? [ops] : chunkTransactionOperations(ops);
+          let result = null;
+          let committedOperationCount = 0;
+          let failure = null;
+          eventRefreshSuspensions.current += 1;
+          try {
+            if (recordHistory) {
+              result = await cpTransaction(ops, expectedRevision);
+              committedOperationCount = ops.length;
+            } else {
+              result = await cpImportDocuments(chunks);
+              committedOperationCount = ops.length;
+              const nextDocuments = [...known.values()];
+              documentsRef.current = nextDocuments;
+              setDocuments(nextDocuments);
+            }
+          } catch (error) {
+            error.committedOperationCount = committedOperationCount;
+            failure = error;
+          } finally {
+            eventRefreshSuspensions.current -= 1;
+            if (!eventRefreshSuspensions.current && (recordHistory || failure)) {
+              try {
+                await refresh();
+              } catch (error) {
+                if (!failure) failure = error;
+              }
             }
           }
-        }
-        if (failure) throw failure;
-        if (recordHistory && inverses.length) {
-          record({
-            label,
-            inverse: operation.batch(inverses.reverse(), `Undo ${label}`),
-            redo: command
-          });
-        }
-        return {
-          ...result,
-          chunkCount: chunks.length,
-          atomic: !recordHistory || chunks.length === 1
+          if (failure) throw failure;
+          if (recordHistory && inverses.length) {
+            record({
+              label,
+              inverse: operation.batch(inverses.reverse(), `Undo ${label}`),
+              redo: command
+            });
+          }
+          return {
+            ...result,
+            chunkCount: chunks.length,
+            atomic: !recordHistory || chunks.length === 1
+          };
         };
+        if (recordHistory) {
+          const client = getControlPlane();
+          if (!client) throw new Error("Connect to the workspace before editing.");
+          const ids = (command.operations || []).flatMap((op) =>
+            op.type === "save-document"
+              ? [op.document.id || op.document._id]
+              : op.type === "remove-document"
+                ? [op.id]
+                : []
+          );
+          return withMutationBase(client, ids, ({ documents, revision }) =>
+            applyBatch(documents, revision)
+          );
+        }
+        return applyBatch(
+          new Map(documentsRef.current.map((document) => [document.id || document._id, document]))
+        );
       }
       throw new TypeError(`Unknown operation type: ${command?.type || "<missing>"}`);
     },
@@ -279,9 +297,20 @@ export function QuasarProvider({ children }) {
         throw error;
       }
       const replace = options.replace !== false;
-      const existing = new Map(
-        documentsRef.current.map((document) => [document.id || document._id, document])
-      );
+      let existing;
+      if (options.recordHistory !== false) {
+        const client = getControlPlane();
+        if (!client) throw new Error("Connect to the workspace before editing.");
+        existing = await withMutationBase(
+          client,
+          preflight.validated.map(({ document }) => document.id || document._id),
+          async ({ documents }) => documents
+        );
+      } else {
+        existing = new Map(
+          documentsRef.current.map((document) => [document.id || document._id, document])
+        );
+      }
       const savedDocuments = [];
       const skipped = [];
       let atomicCommit = true;
