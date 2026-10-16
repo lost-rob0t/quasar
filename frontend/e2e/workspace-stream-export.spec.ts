@@ -36,29 +36,33 @@ for (const holdClose of [false, true]) {
       });
     }, holdClose);
     const commands: string[] = [];
-    await page.routeWebSocket(/.*/, (socket) => {
-      socket.onMessage((raw) => {
-        const request = JSON.parse(String(raw));
-        commands.push(request.command);
-        const result =
-          request.command === "system.capabilities"
-            ? ["document.page"]
-            : request.command === "document.page"
-              ? {
-                  revision: 4,
-                  documents: request.payload.cursor
-                    ? []
-                    : [{ id: "fixture:a", schemaVersion: "0.10.1", dtype: "person" }],
-                  complete: Boolean(request.payload.cursor),
-                  cursor: request.payload.cursor ? null : "next"
-                }
-              : { id: request.metadata.workspace, revision: 4, documents: [], graphs: [] };
-        socket.send(
-          JSON.stringify({ protocol: "quasar.control.v1", id: request.id, status: "ok", result })
-        );
-      });
-    });
+    await page.routeWebSocket(
+      (url) => url.port === (process.env.QUASAR_WS_PORT || "8081"),
+      (socket) => {
+        socket.onMessage((raw) => {
+          const request = JSON.parse(String(raw));
+          commands.push(request.command);
+          const result =
+            request.command === "system.capabilities"
+              ? ["document.page"]
+              : request.command === "document.page"
+                ? {
+                    revision: 4,
+                    documents: request.payload.cursor
+                      ? []
+                      : [{ id: "fixture:a", schemaVersion: "0.10.1", dtype: "person" }],
+                    complete: Boolean(request.payload.cursor),
+                    cursor: request.payload.cursor ? null : "next"
+                  }
+                : { id: request.metadata.workspace, revision: 4, documents: [], graphs: [] };
+          socket.send(
+            JSON.stringify({ protocol: "quasar.control.v1", id: request.id, status: "ok", result })
+          );
+        });
+      }
+    );
     await page.goto("/documents");
+    await expect.poll(() => commands.includes("workspace.snapshot")).toBe(true);
     await page.getByRole("button", { name: "Export workspace", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.exportFixture.writes.length)).toBe(1);
     if (holdClose) {
