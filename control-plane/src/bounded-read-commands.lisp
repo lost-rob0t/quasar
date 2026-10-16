@@ -43,4 +43,10 @@
                        (quasar.store:graph-content-page
                         (control-plane-store plane) (phase2-workspace-id envelope) payload)
                        envelope (quasar.protocol:json-value payload "byteLimit" quasar.store::*query-max-bytes*))))
+  (register-command plane "document.page"
+                    (lambda (payload envelope)
+                      (bounded-wire-result
+                       (quasar.store:page-documents
+                        (control-plane-store plane) (phase2-workspace-id envelope) payload)
+                       envelope (quasar.protocol:json-value payload "byteLimit" quasar.store::*query-max-bytes*))))
   plane)
