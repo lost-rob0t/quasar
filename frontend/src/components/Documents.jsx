@@ -18,6 +18,8 @@ import { documentLabel } from "starintel_doc/legacy";
 import { connectedDocumentIds } from "../lib/document-delete";
 import { graphRenderDecision } from "../lib/graph-scale";
 import { documentsToJsonl, documentsToHistoricalJsonl, downloadText } from "../lib/importer";
+import { useCanonicalDocument } from "../control-plane/use-canonical-document";
+import { toLegacyUiDocument } from "../lib/canonical-document";
 import { operation } from "../lib/operations";
 import { useQuasar } from "../store";
 
@@ -581,9 +583,15 @@ export function DocumentPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { documents, execute, setNotice } = useQuasar();
-  const document = documents.find((item) => item._id === id);
+  const lookup = useCanonicalDocument(id);
+  const document = useMemo(
+    () => (lookup.document ? toLegacyUiDocument(lookup.document) : null),
+    [lookup.document]
+  );
   const website = safeExternalUrl(document?.data?.website);
 
+  if (lookup.status === "loading") return <p role="status">Loading document…</p>;
+  if (lookup.status === "error") return <p role="alert">{lookup.error}</p>;
   if (!document)
     return (
       <section className="empty-state">

@@ -124,3 +124,29 @@ provider/client wire requests and deferred-close cancellation, with mocked
 transport/file sinks. They do not verify native OS save dialogs or backend
 paging. Local Chromium installation failed with HTTP 403 Domain forbidden from
 cdn.playwright.dev; these journeys remain unrun locally.
+
+## Canonical route and reversible-batch migration
+
+Document inspection and the canonical editor now resolve IDs through bootstrap
+and a revision-bound canonical batch instead of provider-array membership.
+Only explicit missingIds produces a not-found view. Navigation/workspace changes
+cancel late responses. Inspection coalesces event refreshes to one in-flight
+lookup; an editor keeps its opened draft across reconnect, but clears the old
+scope on workspace change. Canonical create/edit carries explicit intent, so a
+cache miss cannot overwrite a duplicate ID or recreate a deleted edit target.
+
+Reversible batch preflight and skip-existing decisions now look up distinct
+touched IDs (at most the 1,000-ID transaction bound), 50 at a time at one revision.
+Oversized/deadline batches split; a single oversized record fails explicitly.
+The ordered transaction retains only touched canonical records for inverse
+construction and commits at expectedRevision. This retention scales with the
+explicit transaction's touched bytes, not unrelated corpus size. It is not the
+2 MiB read cache. Existing undo-history retention and post-write snapshot refresh
+are unchanged. Non-history import staging and actor full-corpus input still need
+separate migration; they are not advertised as bounded here.
+
+A separate integration checkout/branch combines PR117 f4ac9ca, PR118 39fd4c48 and
+PR119 for hosted combined-stack checks. Conflicts are limited to retaining both
+read command registrations and both ASDF component entries. No backend-owner
+branch was rewritten. Combined results must be read from that integration head;
+individual PR test results are not combined-stack evidence.

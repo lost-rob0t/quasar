@@ -27,6 +27,7 @@ export interface ConnectionState {
   connected: boolean;
   synchronized: boolean;
   attempts: number;
+  workspaceId?: string;
   progress?: { received: number; total: number };
 }
 
@@ -171,11 +172,12 @@ export function createControlPlaneClient(
     phase: "connecting",
     connected: false,
     synchronized: false,
-    attempts: 0
+    attempts: 0,
+    workspaceId
   };
 
   function publishState(next: Partial<ConnectionState>): void {
-    state = { ...state, ...next };
+    state = { ...state, workspaceId, ...next };
     traceTransport("state", { ...state });
     for (const listener of connectionListeners) {
       try {
