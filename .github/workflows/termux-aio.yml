@@ -1,0 +1,222 @@
+name: Quasar Termux all-in-one
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "control-plane/**"
+      - "systems/**"
+      - "frontend/**"
+      - "package.json"
+      - "package-lock.json"
+      - "packaging/termux-aio/**"
+      - ".github/workflows/termux-aio.yml"
+  pull_request:
+    paths:
+      - "control-plane/**"
+      - "systems/**"
+      - "frontend/**"
+      - "package.json"
+      - "package-lock.json"
+      - "packaging/termux-aio/**"
+      - ".github/workflows/termux-aio.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quasar-termux-aio-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AIO_VERSION: 0.2.0
+  LOCAL_STARINTEL_URL: http://127.0.0.1:5000
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout Quasar
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Validate Quasar source
+        run: npm run check
+
+      - name: Build phone-ready frontend
+        env:
+          VITE_STARINTEL_SERVER_URL: ${{ env.LOCAL_STARINTEL_URL }}
+        run: npm run build
+
+      - name: Install CI packaging dependencies
+        run: |
+          sudo apt-get update --quiet
+          sudo apt-get install --yes --quiet \
+            sbcl curl git zip rsync \
+            libffi-dev libssl-dev libsqlite3-dev librabbitmq-dev liblmdb-dev
+
+      - name: Install Quicklisp resolver
+        run: |
+          curl --fail --silent --show-error \
+            --output /tmp/quicklisp.lisp \
+            https://beta.quicklisp.org/quicklisp.lisp
+          sbcl --non-interactive \
+            --load /tmp/quicklisp.lisp \
+            --eval '(quicklisp-quickstart:install :path #p"/home/runner/quicklisp/")'
+
+      - name: Assemble pinned application sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          source packaging/termux-aio/vendor-pins.env
+
+          package_root="$RUNNER_TEMP/quasar-termux-aio-$AIO_VERSION"
+          payload="$package_root/payload"
+          mkdir -p "$payload/app/quasar/frontend" "$payload/vendor" "$payload/lisp"
+
+          cp packaging/termux-aio/install-termux.sh "$package_root/install-termux.sh"
+          cp packaging/termux-aio/quasar-aio "$package_root/quasar-aio"
+          cp packaging/termux-aio/README.md "$package_root/README.md"
+          cp -a packaging/termux-aio/runtime "$payload/runtime"
+          cp packaging/termux-aio/vendor-pins.env "$payload/vendor-pins.env"
+
+          cp -a control-plane systems example_configs LICENSE "$payload/app/quasar/"
+          cp -a frontend/dist "$payload/app/quasar/frontend/dist"
+
+          clone_at() {
+            local url="$1"
+            local ref="$2"
+            local dest="$3"
+            rm -rf "$dest"
+            git init -q "$dest"
+            git -C "$dest" remote add origin "$url"
+            git -C "$dest" fetch -q --depth=1 origin "$ref"
+            git -C "$dest" checkout -q --detach FETCH_HEAD
+            rm -rf "$dest/.git"
+          }
+
+          clone_at https://github.com/lost-rob0t/starintel-server.git \
+            "$STARINTEL_SERVER_REF" "$payload/app/starintel-server"
+          clone_at https://github.com/lost-rob0t/star-cl.git \
+            "$STAR_CL_REF" "$payload/vendor/star-cl"
+          clone_at https://github.com/rabbibotton/clog.git \
+            "$CLOG_REF" "$payload/vendor/clog"
+          clone_at https://github.com/lost-rob0t/tek9.git \
+            "$TEK9_REF" "$payload/vendor/tek9"
+          clone_at https://github.com/lost-rob0t/cl-couch.git \
+            "$CL_COUCH_REF" "$payload/vendor/cl-couch"
+          clone_at https://github.com/mdbergmann/cl-gserver.git \
+            "$SENTO_REF" "$payload/vendor/sento"
+          clone_at https://github.com/lokedhs/cl-rabbit.git \
+            "$CL_RABBIT_REF" "$payload/vendor/cl-rabbit"
+          clone_at https://github.com/atlas-engineer/nhooks.git \
+            "$NHOOKS_REF" "$payload/vendor/nhooks"
+          clone_at https://gitlab.com/colinstrickland/cms-ulid.git \
+            "$CMS_ULID_REF" "$payload/vendor/cms-ulid"
+
+          printf '%s\n' "$package_root" > "$RUNNER_TEMP/aio-package-root"
+          printf '%s\n' "$payload" > "$RUNNER_TEMP/aio-payload"
+
+      - name: Resolve and capture Common Lisp dependency closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload="$(cat "$RUNNER_TEMP/aio-payload")"
+          cat >"$RUNNER_TEMP/resolve-aio-deps.lisp" <<EOF
+          (require :asdf)
+          (load #P"/home/runner/quicklisp/setup.lisp")
+          (asdf:initialize-source-registry
+           '(:source-registry
+             (:tree "$payload/app/")
+             (:tree "$payload/vendor/")
+             :inherit-configuration))
+          (ql:quickload '(:quasar-web :starintel-gserver) :silent t)
+          (uiop:quit 0)
+          EOF
+          sbcl --non-interactive --no-userinit --no-sysinit \
+            --load "$RUNNER_TEMP/resolve-aio-deps.lisp"
+          cp -a /home/runner/quicklisp/dists/quicklisp/software "$payload/lisp/software"
+
+      - name: Verify bundle loads without Quicklisp
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload="$(cat "$RUNNER_TEMP/aio-payload")"
+          export CL_SOURCE_REGISTRY="(:source-registry (:tree \"$payload/app/\") (:tree \"$payload/vendor/\") (:tree \"$payload/lisp/software/\") :ignore-inherited-configuration)"
+          export XDG_CACHE_HOME="$RUNNER_TEMP/aio-cl-cache"
+          sbcl --non-interactive --no-userinit --no-sysinit \
+            --eval '(require :asdf)' \
+            --eval '(asdf:load-system :quasar-web)' \
+            --eval '(asdf:load-system :starintel-gserver)' \
+            --eval '(uiop:quit 0)'
+
+      - name: Validate appliance scripts and manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_root="$(cat "$RUNNER_TEMP/aio-package-root")"
+          payload="$(cat "$RUNNER_TEMP/aio-payload")"
+
+          bash -n "$package_root/install-termux.sh"
+          bash -n "$package_root/quasar-aio"
+          find "$payload/runtime" -type f -name '*.sh' -print0 \
+            | xargs -0 -n1 bash -n
+
+          cat >"$payload/MANIFEST.txt" <<EOF
+          Quasar Termux all-in-one
+          version: $AIO_VERSION
+          quasar-bundle-sha: $GITHUB_SHA
+          local-quasar: http://127.0.0.1:8080
+          local-quasar-ws: ws://127.0.0.1:8081
+          local-starintel-gserver: http://127.0.0.1:5000
+          local-couchdb: http://127.0.0.1:5984
+          local-rabbitmq: amqp://127.0.0.1:5672
+          local-valkey: redis://127.0.0.1:6379
+          deployment: rootless proot-distro Debian Trixie
+          EOF
+          cat "$payload/vendor-pins.env" >>"$payload/MANIFEST.txt"
+
+          (
+            cd "$package_root"
+            find payload -type f -print0 \
+              | LC_ALL=C sort -z \
+              | xargs -0 sha256sum > PAYLOAD-SHA256SUMS
+          )
+
+      - name: Build universal Termux release ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_root="$(cat "$RUNNER_TEMP/aio-package-root")"
+          archive="$GITHUB_WORKSPACE/quasar-termux-aio-$AIO_VERSION.zip"
+          chmod 0755 "$package_root/install-termux.sh" "$package_root/quasar-aio"
+          (
+            cd "$(dirname "$package_root")"
+            zip -q -r "$archive" "$(basename "$package_root")"
+          )
+          sha256sum "$archive" > "$archive.sha256"
+          ls -lh "$archive" "$archive.sha256"
+          cat "$archive.sha256"
+
+      - name: Upload all-in-one Termux bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: quasar-termux-all-in-one
+          path: |
+            quasar-termux-aio-${{ env.AIO_VERSION }}.zip
+            quasar-termux-aio-${{ env.AIO_VERSION }}.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
