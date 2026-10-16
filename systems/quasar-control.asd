@@ -35,6 +35,7 @@
                (:file "phase2-store-reads")
                (:file "bounded-reads")
                (:file "graph-catalog")
+               (:file "document-pages")
                (:file "control-plane")
                (:file "pro-actors")
                (:file "command-authority-context")
