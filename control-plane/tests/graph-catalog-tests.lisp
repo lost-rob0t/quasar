@@ -156,8 +156,93 @@
     (check (bounded-error-p "query.record-too-large"
                             (lambda () (graph-section-query store "nodes" (cons "byteLimit" 32768)))))))
 
+(defun test-graph-catalog-empty-deadline-and-auth ()
+  (with-temporary-tek9-store (store path "graph-catalog-auth")
+    (check (eq t (quasar.protocol:json-value (graph-catalog-query store) "complete")))
+    (seed-graph-catalog store)
+    (let* ((ticks 0)
+           (quasar.store::*query-clock* (lambda () (incf ticks internal-time-units-per-second)))
+           (page (graph-section-query store "members")))
+      (check (null (quasar.workspace:array-elements (quasar.protocol:json-value page "records"))))
+      (check (eq :false (quasar.protocol:json-value page "complete")))
+      (check (stringp (quasar.protocol:json-value page "cursor"))))
+    (let ((page (graph-section-query store "members" (cons "scanLimit" 1))))
+      (check (= 1 (length (quasar.workspace:array-elements (quasar.protocol:json-value page "records")))))
+      (check (equal "scan-budget" (quasar.protocol:json-value (quasar.protocol:json-value page "performance") "stopReason"))))
+    (let* ((plane (quasar.control-plane:start-control-plane (quasar.control-plane:make-control-plane :store store)))
+           (server (quasar.ws:make-websocket-server plane :insecure-development-p t))
+           (original (symbol-function 'quasar.ws::send-connection-text))
+           (response nil))
+      (unwind-protect
+           (progn
+             (setf (symbol-function 'quasar.ws::send-connection-text)
+                   (lambda (connection encoded) (declare (ignore connection)) (setf response encoded)))
+             (dolist (command '("graph.catalog" "graph.page"))
+               (let ((connection (make-instance 'quasar.ws::ws-connection
+                                               :id "catalog-auth" :ws nil :session-id "catalog-auth"
+                                               :session-token "catalog-auth" :principal "reader"
+                                               :authorized-workspaces '("catalog") :capabilities (list command))))
+                 (quasar.ws::handle-text-message server connection
+                                                (make-envelope command (quasar.protocol:empty-object) :workspace "other"))
+                 (check (string= "security.forbidden" (error-code response)))
+                 (setf (slot-value connection 'quasar.ws::capabilities) nil)
+                 (quasar.ws::handle-text-message server connection
+                                                (make-envelope command (quasar.protocol:empty-object) :workspace "catalog"))
+                 (check (string= "security.forbidden" (error-code response)))))
+             (let ((reply (call-command plane (make-envelope "graph.catalog" (quasar.protocol:empty-object) :workspace "catalog"))))
+               (check (string= "ok" (status reply)))
+               (check (string= "graph-catalog.v1" (quasar.protocol:json-value (result reply) "projection"))))
+             (check (= 0 (hash-table-count (quasar.control-plane:control-plane-workspaces plane)))))
+        (setf (symbol-function 'quasar.ws::send-connection-text) original)
+        (quasar.control-plane:stop-control-plane plane)))))
+
+(defun test-graph-catalog-read-allocation-independence ()
+  (with-temporary-tek9-store (store path "graph-catalog-scaling")
+    (seed-graph-catalog store)
+    (flet ((measure ()
+             (graph-section-query store "members" (cons "limit" 1))
+             (sb-ext:gc :full t)
+             (let ((before (sb-ext:get-bytes-consed)))
+               (dotimes (n 10) (graph-section-query store "members" (cons "limit" 1)))
+               (- (sb-ext:get-bytes-consed) before))))
+      (let ((small (measure)) (db (quasar.store::tek9-store-database store)))
+        ;; Large unrelated metadata and topology. Deliberately use the real
+        ;; shared persistence helpers and canonical sidecars, not stub reads.
+        (tek9:with-write-transaction (db)
+          (dotimes (g 32)
+            (let ((id (format nil "unrelated-~D" g)))
+              (quasar.store::%replace-graph
+               db "catalog" id
+               (quasar.protocol:json-object
+                (cons "id" id) (cons "name" id)
+                (cons "documentIds" (cons :array (loop for n below 1000 collect (format nil "doc:~D" n))))
+                (cons "nodes" (cons :array (loop for n below 64
+                                                collect (quasar.protocol:json-object
+                                                         (cons "id" (format nil "n~D" n))
+                                                         (cons "label" (make-string 1024 :initial-element #\x))))))
+                (cons "edges" (quasar.protocol:json-array)))))))
+        (let ((large (measure)))
+          (format t "~&GRAPH-CATALOG-ALLOCATION small=~D large=~D unrelatedGraphs=32 membersEach=1000 nodesEach=64~%" small large)
+          (check (< large (+ (* 2 small) 1048576))))
+        (let ((fetch (symbol-function 'tek9:fetch*)))
+          (unwind-protect
+               (progn
+                 (setf (symbol-function 'tek9:fetch*)
+                       (lambda (database key &rest arguments)
+                         (when (quasar.store::%prefix-p (quasar.store::%graph-meta-prefix "catalog") key)
+                           (error "Bounded graph read decoded legacy graph metadata."))
+                         (apply fetch database key arguments)))
+                 (with-bounded-read-instrumentation
+                  (lambda ()
+                    (graph-catalog-query store (cons "limit" 1))
+                    (graph-section-query store "members" (cons "limit" 1))
+                    (graph-section-query store "nodes" (cons "limit" 1)))))
+            (setf (symbol-function 'tek9:fetch*) fetch)))))))
+
 (defun run-graph-catalog-tests ()
   (let ((*failures* 0))
+    (test-graph-catalog-empty-deadline-and-auth)
+    (test-graph-catalog-read-allocation-independence)
     (test-graph-catalog-bounded-pages)
     (test-graph-catalog-migration-atomicity)
     (test-graph-catalog-deltas-and-rollback)

@@ -31,7 +31,10 @@
         (tek9:fetch* database (%graph-catalog-ready-key workspace-id)) "version")))
 
 (defun %require-graph-catalog (database workspace-id)
-  (unless (%graph-catalog-ready-p database workspace-id)
+  (unless (or (%graph-catalog-ready-p database workspace-id)
+              ;; A workspace that has never been persisted has an empty catalog.
+              ;; Reads must not create durable state or require a migration.
+              (null (tek9:fetch* database (%workspace-meta-key workspace-id))))
     (%query-error "graph.catalog-migration-required"
                   "Run the explicit graph catalog migration before bounded graph reads.")))
 
@@ -42,8 +45,8 @@
 
 (defun %graph-collection-kind (value)
   (cond ((quasar.protocol:object-p value) "object")
-        ((and (consp value) (eq :array (car value))) "array")
-        ((or (null value) (eq :null value)) "null")
+        ((eq :null value) "null")
+        ((quasar.protocol:array-p value) "array")
         (t (%query-error "graph.catalog-invalid" "Invalid graph collection."))))
 
 (defun %index-graph-collection (database workspace-id graph-id section value)
@@ -57,7 +60,7 @@
                  database (concatenate 'string prefix (%key-part key))
                  (quasar.protocol:json-object (cons "key" key) (cons "value" item)))))
       ((string= kind "array")
-       (loop for item in (rest value) for index from 0
+       (loop for item in (quasar.workspace:array-elements value) for index from 0
              do (%put-compact-graph-record
                  database (format nil "~A~20,'0D" prefix index)
                  (if (string= section "members")
@@ -71,10 +74,10 @@
   (let* ((key (%graph-catalog-key workspace-id graph-id))
          (old (tek9:fetch* database key))
          (members (quasar.protocol:json-value graph "documentIds" :null))
-         (mode (if (or (eq :null members) (null members)) "all" "explicit"))
+         (mode (if (eq :null members) "all" "explicit"))
          (kinds (quasar.protocol:empty-object)))
     (unless (or (string= mode "all")
-                (and (consp members) (eq :array (car members))))
+                (quasar.protocol:array-p members))
       (%query-error "graph.catalog-invalid" "Graph membership must be an array or null."))
     (dolist (pair '(("documentIds" . "members") ("positions" . "positions")
                     ("groups" . "groups") ("selectedIds" . "selection")))
@@ -96,7 +99,7 @@
      (quasar.protocol:json-object
       (cons "id" graph-id) (cons "name" (quasar.protocol:json-value graph "name" graph-id))
       (cons "membershipMode" mode)
-      (cons "documentCount" (if (string= mode "all") :null (length (rest members))))
+      (cons "documentCount" (if (string= mode "all") :null (length (quasar.workspace:array-elements members))))
       (cons "nodeCount" (quasar.protocol:json-value old "nodeCount" 0))
       (cons "edgeCount" (quasar.protocol:json-value old "edgeCount" 0))))
     (%put-record database (%graph-meta-key workspace-id graph-id) (%graph-metadata graph))))
