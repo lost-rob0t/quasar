@@ -8,6 +8,7 @@ import {
   type ResponseEnvelope
 } from "./protocol";
 import { createWorkbenchReads, type WorkbenchReads, type WorkspaceBootstrap } from "./workbench";
+import { streamDocumentExport, type DocumentExportSink } from "./document-export";
 import { createEventBus } from "./events";
 import { createReconnectManager } from "./reconnect";
 
@@ -48,6 +49,10 @@ export interface ControlPlaneClient {
   onBootstrap(listener: (bootstrap: WorkspaceBootstrap) => void): () => void;
   reads: WorkbenchReads;
   resynchronize(): Promise<void>;
+  exportDocuments(
+    sink: DocumentExportSink,
+    signal?: AbortSignal
+  ): Promise<{ count: number; revision: number }>;
   transaction(operations: unknown[], expectedRevision?: number): Promise<unknown>;
   importDocuments(chunks: unknown[][]): Promise<unknown>;
   documentCreate(doc: Record<string, unknown>): Promise<unknown>;
@@ -659,6 +664,32 @@ export function createControlPlaneClient(
     snapshot,
     reads,
     resynchronize: synchronize,
+    exportDocuments(sink, signal) {
+      const started = synchronization;
+      const events = eventGeneration;
+      const exportingSocket = socket;
+      const exportingWorkspace = workspaceId;
+      return streamDocumentExport(
+        send,
+        sink,
+        () => {
+          if (
+            disposed ||
+            !state.synchronized ||
+            socket !== exportingSocket ||
+            workspaceId !== exportingWorkspace ||
+            synchronization !== started ||
+            eventGeneration !== events
+          ) {
+            throw new ControlPlaneError(
+              "query.cancelled",
+              "Export scope changed; discard partial output."
+            );
+          }
+        },
+        signal
+      );
+    },
     onBootstrap(listener) {
       bootstrapListeners.add(listener);
       return () => bootstrapListeners.delete(listener);

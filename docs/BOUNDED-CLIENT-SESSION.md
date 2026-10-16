@@ -52,10 +52,16 @@ Root `AGENTS.md` and `docs/BOUNDED-WORKBENCH.md` govern this work.
 
 - #111: agree compact graph/dataset catalogs and requested graph membership/topology
   paging before provider startup switches. Never restore unrelated graphs.
-- #112: this module consumes the current opaque revision-bound search cursor.
-  It assumes no offset or cursor encoding. Explicit exports still need a canonical
-  streaming sink and agreed export/compatibility contract; this draft does not
-  relabel the existing materialized exporter as streaming.
+- #112: this module consumes opaque revision-bound search cursors. The additive
+  `client.exportDocuments(sink, signal)` consumes PR118's `document.page` contract
+  (39fd4c48), explicitly negotiating the capability and awaiting each canonical
+  document write. The sink must implement write/close/abort and discard partial
+  output on failure. Navigation, reconnect, mutation events, cancellation, stale
+  revisions, malformed pages and sink failures abort without restarting or falling
+  back. The helper does not accumulate output. The existing UI exporter is still
+  materialized; a real durable browser sink and UI wiring remain outstanding.
+  Supplemental frontend fixture tests validate this integration contract; they
+  do not execute PR118's unverified Lisp backend.
 - #78: canonical ID lookup is available for mutation existence decisions, but the
   provider/adapters/undo/redo/import/actor consumers still need to adopt it instead
   of interpreting their current global arrays as complete. The mutation overlay

@@ -235,6 +235,42 @@ describe("control-plane client lifecycle", () => {
     client.dispose();
   });
 
+  it("cancels a streamed export when its sink navigates to another workspace", async () => {
+    const client = createControlPlaneClient("ws://quasar.test", { synchronization: "bootstrap" });
+    const socket = FakeWebSocket.instances[0];
+    socket.open();
+    socket.respond({ id: "default", revision: 4, documentCount: 1, savedGraphId: null });
+    await vi.waitFor(() => expect(client.getConnected()).toBe(true));
+    const sink = {
+      write: vi.fn(async () => {
+        client.setWorkspace("other");
+      }),
+      close: vi.fn(async () => {}),
+      abort: vi.fn(async () => {})
+    };
+    const result = client.exportDocuments(sink);
+    const rejected = expect(result).rejects.toMatchObject({ code: "query.cancelled" });
+    expect(JSON.parse(socket.sent[1]).command).toBe("system.capabilities");
+    socket.respond(["document.page"]);
+    await vi.waitFor(() => expect(socket.sent).toHaveLength(3));
+    socket.respond({
+      revision: 4,
+      documents: [{ id: "a", schemaVersion: "0.10.1" }],
+      complete: false,
+      cursor: "next"
+    });
+    await rejected;
+    expect(sink.abort).toHaveBeenCalledOnce();
+    expect(sink.close).not.toHaveBeenCalled();
+    expect(socket.sent.map((message) => JSON.parse(message).command)).toEqual([
+      "workspace.bootstrap",
+      "system.capabilities",
+      "document.page",
+      "workspace.bootstrap"
+    ]);
+    client.dispose();
+  });
+
   it("rejects pending requests immediately when the socket closes", async () => {
     const client = createControlPlaneClient("ws://quasar.test");
     const socket = await connect(client);
