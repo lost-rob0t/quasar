@@ -26,7 +26,8 @@
          (or (quasar.protocol:command-envelope-client envelope) "unknown"))))
 
 (defun run-record-operation (plane envelope operation)
-  (let* ((store (control-plane-store plane))
+  (let* ((quasar.workspace::*graph-array-indexes* (make-hash-table :test #'eq))
+         (store (control-plane-store plane))
          (workspace-id
            (or (quasar.protocol:command-envelope-workspace envelope) "default"))
          (context (make-record-mutation-context store workspace-id))
@@ -89,9 +90,10 @@
 
 (defun apply-record-transaction-operations (context operations)
   (handler-case
-      (loop
-        for operation in operations
-        collect (mutation-context-apply-operation context operation))
+      (let ((quasar.workspace::*graph-array-indexes* (make-hash-table :test #'eq)))
+        (loop
+          for operation in operations
+          collect (mutation-context-apply-operation context operation)))
     (quasar.protocol:quasar-error (condition)
       (error 'quasar.protocol:quasar-error
              :code "transaction.failed"

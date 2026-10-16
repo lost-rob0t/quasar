@@ -4,6 +4,10 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - control-plane/src/mutation-*.lisp
+      - control-plane/tests/mutation-overlay-regression-tests.lisp
+      - scripts/test-bounded-mutations
+      - scripts/test-lisp
       - control-plane/src/workspace.lisp
       - control-plane/src/debug-logging.lisp
       - control-plane/tests/workspace-integrity-tests.lisp
@@ -37,5 +41,6 @@ jobs:
               --eval "(quicklisp-quickstart:install :path #p\"$HOME/quicklisp/\")"
             printf "%s\n" "(load #p\"$HOME/quicklisp/setup.lisp\")" > "$HOME/.sbclrc"
             bash scripts/bootstrap-lisp-deps
+            bash scripts/test-bounded-mutations
             npm run test:lisp
           '

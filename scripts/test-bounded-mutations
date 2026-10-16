@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Run within nix develop. Keep fixture construction outside measured operations.
+set -euo pipefail
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export QUASAR_TEST_DYNAMIC_SPACE_MB=1024
+export QUASAR_TEST_EVAL='(progn
+  (asdf:load-system :quasar-tests)
+  (assert (= (sb-ext:dynamic-space-size) (* 1024 1024 1024)))
+  (setf (symbol-value (find-symbol "*FAILURES*" :quasar.tests)) 0)
+  (uiop:symbol-call :quasar.tests :run-workspace-integrity-tests)
+  (uiop:symbol-call :quasar.tests :run-mutation-overlay-regression-tests)
+  (uiop:symbol-call :quasar.tests :run-mutation-quota-tests)
+  (uiop:symbol-call :quasar.tests :test-graph-only-overlay-does-not-read-unrelated-corpus)
+  (assert (zerop (symbol-value (find-symbol "*FAILURES*" :quasar.tests)))))'
+bash "$repo_root/scripts/test-lisp"

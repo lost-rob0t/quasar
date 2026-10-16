@@ -89,6 +89,17 @@ hooks install/restore their global value for the serialized test.
 
 Regression tests also cover duplicate edge IDs during node restore (complete
 rollback including quota/journal/events), populated durable revision-zero
-graphs, and implicit graph create/delete state transitions. No PR116 code was
-merged: enabling its transient index binding in overlays requires changing
-lazy hydration to maintain/invalidate those indexes first.
+graphs, and implicit graph create/delete state transitions. PR116 at 68645a7 is now merged into this branch with parent approval.
+Single operations and transaction loops bind a fresh transient index context;
+node/edge hydration uses the indexed append helper, preserving deep-copy
+isolation and updating both ID membership and tail pointers. Promotion creates
+new arrays, and destructive dispatch retains PR116's invalidation behavior.
+Cold durable endpoint, staged append, durable/staged collision, and rollback
+coverage asserts the append path is actually indexed without full topology scans.
+
+Run `nix develop --command bash scripts/test-bounded-mutations` for the focused
+regressions and 10k/100k measurements under an explicitly asserted 1 GiB SBCL
+heap. The graph-index workflow runs this before the complete Lisp suite. Its
+measurements are evidence only after successful execution on the reported head.
+PR116's standalone Nix graph workflow 38978734661 passed at 68645a7; that does
+not validate this combined overlay implementation.

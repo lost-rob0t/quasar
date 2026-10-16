@@ -179,7 +179,77 @@
                                 "graph.node.create" (make-node "all-documents" "after-import"))))
       (assert-mutation-quota-exact store "default"))))
 
+(defun overlay-test-edge (id source target)
+  (quasar.protocol:json-object
+   (cons "id" id) (cons "graphId" "all-documents")
+   (cons "source" source) (cons "target" target)))
+
+(defun test-overlay-indexed-cold-hydration-and-rollback ()
+  (with-temporary-tek9-store (store path "indexed-cold-overlay")
+    (overlay-test-seed-zero store)
+    (quasar.store:close-store store)
+    (setf store (quasar.store:make-tek9-store :path path))
+    (let ((plane (quasar.control-plane:make-control-plane :store store))
+          (events nil))
+      (quasar.control-plane:subscribe plane (lambda (event) (push event events)))
+      ;; The first lookup creates an empty index, then hydrates durable n1/n2.
+      ;; Later creates must append to that same indexed array without losing
+      ;; endpoints or leaving its tail behind. No full topology read is allowed.
+      (let ((quasar.workspace::*graph-index-appends* 0)
+            (quasar.workspace::*graph-index-build-visits* 0))
+        (call-with-no-corpus-ranges
+         (lambda ()
+           (overlay-test-transaction plane
+            (phase3-transaction-operation "graph.edge.create"
+             (overlay-test-edge "cold-edge" "n1" "n2"))
+            (phase3-transaction-operation "graph.node.create"
+             (make-node "all-documents" "staged-node"))
+            (phase3-transaction-operation "graph.edge.create"
+             (overlay-test-edge "staged-edge" "staged-node" "n1")))))
+        (check (= 5 quasar.workspace::*graph-index-appends*))
+        (check (zerop quasar.workspace::*graph-index-build-visits*)))
+      (check (= 1 (quasar.store:direct-workspace-revision store "default")))
+      (check (= 3 (length events)))
+      (dolist (id '("e1" "cold-edge" "staged-edge"))
+        (check (quasar.store:direct-graph-edge store "default" "all-documents" id)))
+      (check (quasar.store:direct-graph-node store "default" "all-documents" "staged-node"))
+      (assert-mutation-quota-exact store "default")
+      ;; Each failed transaction gets a fresh index context. Exercise both a
+      ;; lazily hydrated durable collision and an already staged collision.
+      (dolist (collision '("e1" "candidate-edge"))
+        (let ((before (overlay-test-durable-state store))
+              (event-count (length events)))
+          (check (string= "transaction.failed"
+                  (phase2-v2-error-code
+                   (lambda ()
+                     (call-with-no-corpus-ranges
+                      (lambda ()
+                        (overlay-test-transaction plane
+                         (phase3-transaction-operation "graph.edge.create"
+                          (overlay-test-edge "candidate-edge" "n1" "n2"))
+                         (phase3-transaction-operation "graph.node.create"
+                          (make-node "all-documents" "discarded-node"))
+                         (phase3-transaction-operation "graph.edge.create"
+                          (overlay-test-edge collision "discarded-node" "n2")))))))))
+          (check (equal before (overlay-test-durable-state store)))
+          (check (= event-count (length events)))
+          (check (null (quasar.store:direct-graph-node store "default" "all-documents" "discarded-node")))
+          (check (null (quasar.store:direct-graph-edge store "default" "all-documents" "candidate-edge")))))
+      ;; Single-operation dispatch also hydrates and rejects durable collisions.
+      (check (string= "graph.duplicate-id"
+              (phase2-v2-error-code
+               (lambda () (overlay-test-operation plane "graph.edge.create"
+                            (overlay-test-edge "e1" "n1" "n2"))))))
+      (check (= 1 (quasar.store:direct-workspace-revision store "default")))
+      (assert-mutation-quota-exact store "default")
+      (quasar.store:close-store store)
+      (setf store (quasar.store:make-tek9-store :path path))
+      (check (quasar.store:direct-graph-edge store "default" "all-documents" "staged-edge"))
+      (check (null (quasar.store:direct-graph-edge store "default" "all-documents" "candidate-edge")))
+      (assert-mutation-quota-exact store "default"))))
+
 (defun run-mutation-overlay-regression-tests ()
+  (test-overlay-indexed-cold-hydration-and-rollback)
   (test-overlay-restore-collision-is-atomic)
   (test-overlay-zero-revision-preserves-durable-graph)
   (test-overlay-implicit-graph-create-delete)
