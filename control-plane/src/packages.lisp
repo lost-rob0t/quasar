@@ -70,6 +70,9 @@
     #:workspace-bootstrap
     #:search-documents
     #:fetch-document-batch
+    #:graph-catalog-page
+    #:graph-content-page
+    #:migrate-graph-catalog
     #:begin-import-stage
     #:accept-import-chunk
     #:promote-import-stage

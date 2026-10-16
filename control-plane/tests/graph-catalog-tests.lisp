@@ -1,0 +1,308 @@
+(in-package #:quasar.tests)
+
+(defun graph-catalog-query (store &rest fields)
+  (quasar.store:graph-catalog-page store "catalog" (apply #'quasar.protocol:json-object fields)))
+
+(defun graph-section-query (store section &rest fields)
+  (quasar.store:graph-content-page
+   store "catalog" (apply #'quasar.protocol:json-object
+                          (cons "graphId" "case") (cons "section" section) fields)))
+
+(defun seed-graph-catalog (store &optional (count 120))
+  (let ((workspace (quasar.workspace:make-workspace :id "catalog"))
+        (graph (graph-payload-for-restart-test)))
+    (setf (quasar.workspace:workspace-revision workspace) 3
+          (gethash "activeGraphId" (quasar.workspace:workspace-settings workspace)) "case")
+    (quasar.protocol:object-set
+     graph "documentIds" (cons :array (loop for n below count collect (format nil "doc:~D" n))))
+    (setf (quasar.workspace:workspace-graph workspace "case") graph)
+    (quasar.store:save-workspace store workspace)))
+
+(defun test-graph-catalog-bounded-pages ()
+  (with-temporary-tek9-store (store path "graph-catalog-pages")
+    (seed-graph-catalog store)
+    (with-bounded-read-instrumentation
+     (lambda ()
+       (let* ((page (graph-catalog-query store))
+              (graphs (quasar.workspace:array-elements (quasar.protocol:json-value page "graphs")))
+              (row (find "case" graphs :test #'equal :key (lambda (g) (quasar.protocol:json-value g "id")))))
+         (check (= 2 (length graphs)))
+         (check (= 120 (quasar.protocol:json-value row "documentCount")))
+         (check (= 2 (quasar.protocol:json-value row "nodeCount")))
+         (check (= 1 (quasar.protocol:json-value row "edgeCount")))
+         (check (equal "case" (quasar.protocol:json-value page "savedGraphId")))
+         (check (eq :missing (quasar.protocol:json-value row "documentIds" :missing))))
+       (let ((cursor nil) (seen nil) (complete nil))
+         (loop until complete
+               do (let* ((request (append (list (cons "limit" 17) (cons "expectedRevision" 3))
+                                         (when cursor (list (cons "cursor" cursor)))))
+                         (page (apply #'graph-section-query store "members" request)))
+                    (dolist (row (quasar.workspace:array-elements (quasar.protocol:json-value page "records")))
+                      (push (quasar.protocol:json-value row "documentId") seen))
+                    (check (<= (quasar.protocol:json-value (quasar.protocol:json-value page "performance") "scanned") 17))
+                    (setf complete (eq t (quasar.protocol:json-value page "complete"))
+                          cursor (quasar.protocol:json-value page "cursor"))))
+         (check (equal (loop for n below 120 collect (format nil "doc:~D" n)) (nreverse seen))))))
+    (let* ((first (graph-section-query store "members" (cons "limit" 1)))
+           (cursor (quasar.protocol:json-value first "cursor")))
+      (check (bounded-error-p "query.invalid-cursor"
+                              (lambda () (graph-section-query store "nodes" (cons "cursor" cursor)))))
+      (check (bounded-error-p "query.invalid-cursor"
+                              (lambda () (graph-catalog-query store (cons "cursor" cursor)))))
+      (check (bounded-error-p "query.stale-cursor"
+                              (lambda () (graph-section-query store "members" (cons "expectedRevision" 2)))))
+      (let ((db (quasar.store::tek9-store-database store)))
+        (tek9:with-write-transaction (db)
+          (let ((meta (quasar.store::%read-meta db "catalog")))
+            (quasar.protocol:object-set meta "revision" 4)
+            (quasar.store::%put-record db (quasar.store::%workspace-meta-key "catalog") meta))))
+      (check (bounded-error-p "query.stale-cursor"
+                              (lambda () (graph-section-query store "members" (cons "cursor" cursor))))))
+    (let ((before (graph-section-query store "positions")))
+      (quasar.store:close-store store)
+      (setf store (quasar.store:make-tek9-store :path path))
+      (check (equalp before (graph-section-query store "positions"))))
+    (dolist (section '("nodes" "edges" "groups" "selection" "descriptor"))
+      (check (equal "graph-page.v1" (quasar.protocol:json-value (graph-section-query store section) "projection"))))))
+
+(defun test-graph-catalog-migration-atomicity ()
+  (with-temporary-tek9-store (store path "graph-catalog-migrate")
+    (seed-graph-catalog store)
+    (let ((db (quasar.store::tek9-store-database store)))
+      ;; Simulate an old schema-v1 workspace: canonical records only.
+      (tek9:with-write-transaction (db)
+        (tek9:delete-document db (quasar.store::%graph-catalog-ready-key "catalog"))
+        (quasar.store::%delete-prefix-bounded db (quasar.store::%graph-catalog-prefix "catalog")))
+      (check (bounded-error-p "graph.catalog-migration-required"
+                              (lambda () (graph-catalog-query store))))
+      (check (bounded-error-p "query.stale-cursor"
+                              (lambda () (quasar.store:migrate-graph-catalog store "catalog" :expected-revision 2))))
+      (setf (quasar.store:tek9-store-failure-hook store)
+            (lambda (point) (when (eq point :before-graph-catalog-ready) (error "migration failure"))))
+      (check (handler-case (progn (quasar.store:migrate-graph-catalog store "catalog" :expected-revision 3) nil)
+               (error () t)))
+      (check (null (tek9:fetch* db (quasar.store::%graph-catalog-key "catalog" "case"))))
+      (quasar.store:close-store store)
+      (setf store (quasar.store:make-tek9-store :path path))
+      (check (bounded-error-p "graph.catalog-migration-required"
+                              (lambda () (graph-catalog-query store))))
+      (quasar.store:migrate-graph-catalog store "catalog" :expected-revision 3)
+      (let* ((rows (quasar.workspace:array-elements (quasar.protocol:json-value (graph-catalog-query store) "graphs")))
+             (row (find "case" rows :test #'equal :key (lambda (g) (quasar.protocol:json-value g "id")))))
+        (check (= 2 (quasar.protocol:json-value row "nodeCount")))
+        (check (= 1 (quasar.protocol:json-value row "edgeCount")))
+        (check (= 120 (quasar.protocol:json-value row "documentCount"))))
+      (quasar.store:close-store store)
+      (setf store (quasar.store:make-tek9-store :path path))
+      (check (equal "case" (quasar.protocol:json-value (graph-catalog-query store) "savedGraphId"))))))
+
+(defun test-graph-catalog-deltas-and-rollback ()
+  (with-temporary-tek9-store (store path "graph-catalog-deltas")
+    (seed-graph-catalog store)
+    (let* ((workspace (quasar.workspace:copy-workspace (quasar.store:load-workspace store "catalog")))
+           (operation (quasar.protocol:json-object (cons "baseRevision" 3) (cons "committedRevision" 4)
+                                                    (cons "operationId" "count-deltas")))
+           (node (quasar.protocol:json-object (cons "id" "new-node"))))
+      (setf (quasar.workspace:workspace-revision workspace) 4)
+      (dolist (kind '(:node-upsert :node-upsert))
+        (vector-push-extend (quasar.workspace:make-persistence-change :kind kind :graph-id "case" :id "new-node" :value node)
+                            (quasar.workspace:workspace-persistence-changes workspace)))
+      (setf (quasar.store:tek9-store-failure-hook store)
+            (lambda (point) (when (eq point :before-commit) (error "commit failure"))))
+      (check (handler-case (progn (quasar.store:commit-workspace store workspace operation) nil) (error () t)))
+      (check (= 2 (quasar.protocol:json-value
+                    (tek9:fetch* (quasar.store::tek9-store-database store) (quasar.store::%graph-catalog-key "catalog" "case"))
+                    "nodeCount")))
+      (setf (quasar.store:tek9-store-failure-hook store) nil)
+      (quasar.store:commit-workspace store workspace operation)
+      (check (= 3 (quasar.protocol:json-value
+                    (tek9:fetch* (quasar.store::tek9-store-database store) (quasar.store::%graph-catalog-key "catalog" "case"))
+                    "nodeCount")))
+      (check (bounded-error-p "workspace.revision-conflict"
+                              (lambda () (quasar.store:commit-workspace store workspace operation))))
+      ;; Delete paths use existence checks, so retries cannot decrement twice.
+      (let ((db (quasar.store::tek9-store-database store)))
+        (tek9:with-write-transaction (db)
+          (dotimes (n 2)
+            (quasar.store::%apply-change
+             store "catalog" (quasar.workspace:make-persistence-change :kind :edge-delete :graph-id "case" :id "edge:1")
+             (quasar.store::%fresh-commit-stats))))
+        (check (= 0 (quasar.protocol:json-value (tek9:fetch* db (quasar.store::%graph-catalog-key "catalog" "case")) "edgeCount")))))))
+
+(defun test-graph-catalog-byte-and-wire-budgets ()
+  (with-temporary-tek9-store (store path "graph-catalog-bytes")
+    (seed-graph-catalog store)
+    (let ((db (quasar.store::tek9-store-database store)))
+      (tek9:with-write-transaction (db)
+        (dotimes (n 12)
+          (quasar.store::%put-node db "catalog" "case"
+                                  (quasar.protocol:json-object (cons "id" (format nil "large-~D" n))
+                                                               (cons "label" (make-string 6000 :initial-element #\x)))))))
+    (let ((cursor nil) (count 0) (complete nil))
+      (loop until complete
+            do (let* ((page (apply #'graph-section-query store "nodes"
+                                   (cons "byteLimit" 32768) (when cursor (list (cons "cursor" cursor)))))
+                      (envelope (make-envelope "graph.page" (quasar.protocol:empty-object) :id "graph-byte-test")))
+                 (quasar.control-plane::bounded-wire-result page (quasar.protocol:decode-command envelope) 32768)
+                 (check (<= (quasar.store::%utf8-length (quasar.protocol:encode-result "graph-byte-test" page)) 32768))
+                 (incf count (length (quasar.workspace:array-elements (quasar.protocol:json-value page "records"))))
+                 (setf complete (eq t (quasar.protocol:json-value page "complete"))
+                       cursor (quasar.protocol:json-value page "cursor"))))
+      (check (= 14 count)))
+    (let ((db (quasar.store::tek9-store-database store)))
+      (tek9:with-write-transaction (db)
+        (quasar.store::%put-node db "catalog" "case"
+                                (quasar.protocol:json-object (cons "id" "x") (cons "label" (make-string 40000 :initial-element #\x))))))
+    (check (bounded-error-p "query.record-too-large"
+                            (lambda () (graph-section-query store "nodes" (cons "byteLimit" 32768)))))))
+
+(defun test-graph-catalog-empty-deadline-and-auth ()
+  (with-temporary-tek9-store (store path "graph-catalog-auth")
+    (check (eq t (quasar.protocol:json-value (graph-catalog-query store) "complete")))
+    ;; #78's first overlay commit initializes this shared default graph helper
+    ;; before writing canonical workspace metadata; readiness must survive that.
+    (let ((db (quasar.store::tek9-store-database store)))
+      (tek9:with-write-transaction (db)
+        (quasar.store::%ensure-default-graph-metadata db "catalog")
+        (quasar.store::%put-record db (quasar.store::%workspace-meta-key "catalog")
+                                  (quasar.store::%default-workspace-meta "catalog" 1 0))))
+    (check (= 1 (length (quasar.workspace:array-elements
+                        (quasar.protocol:json-value (graph-catalog-query store) "graphs")))))
+    (seed-graph-catalog store)
+    (let* ((ticks 0)
+           (quasar.store::*query-clock* (lambda () (incf ticks internal-time-units-per-second)))
+           (page (graph-section-query store "members")))
+      (check (null (quasar.workspace:array-elements (quasar.protocol:json-value page "records"))))
+      (check (eq :false (quasar.protocol:json-value page "complete")))
+      (check (stringp (quasar.protocol:json-value page "cursor"))))
+    (let ((page (graph-section-query store "members" (cons "scanLimit" 1))))
+      (check (= 1 (length (quasar.workspace:array-elements (quasar.protocol:json-value page "records")))))
+      (check (equal "scan-budget" (quasar.protocol:json-value (quasar.protocol:json-value page "performance") "stopReason"))))
+    (let* ((plane (quasar.control-plane:start-control-plane (quasar.control-plane:make-control-plane :store store)))
+           (server (quasar.ws:make-websocket-server plane :insecure-development-p t))
+           (original (symbol-function 'quasar.ws::send-connection-text))
+           (response nil))
+      (unwind-protect
+           (progn
+             (setf (symbol-function 'quasar.ws::send-connection-text)
+                   (lambda (connection encoded) (declare (ignore connection)) (setf response encoded)))
+             (dolist (command '("graph.catalog" "graph.page"))
+               (let ((connection (make-instance 'quasar.ws::ws-connection
+                                               :id "catalog-auth" :ws nil :session-id "catalog-auth"
+                                               :session-token "catalog-auth" :principal "reader"
+                                               :authorized-workspaces '("catalog") :capabilities (list command))))
+                 (quasar.ws::handle-text-message server connection
+                                                (make-envelope command (quasar.protocol:empty-object) :workspace "other"))
+                 (check (string= "security.forbidden" (error-code response)))
+                 (setf (slot-value connection 'quasar.ws::capabilities) nil)
+                 (quasar.ws::handle-text-message server connection
+                                                (make-envelope command (quasar.protocol:empty-object) :workspace "catalog"))
+                 (check (string= "security.forbidden" (error-code response)))))
+             (let ((reply (call-command plane (make-envelope "graph.catalog" (quasar.protocol:empty-object) :workspace "catalog"))))
+               (check (string= "ok" (status reply)))
+               (check (string= "graph-catalog.v1" (quasar.protocol:json-value (result reply) "projection"))))
+             (check (= 0 (hash-table-count (quasar.control-plane:control-plane-workspaces plane)))))
+        (setf (symbol-function 'quasar.ws::send-connection-text) original)
+        (quasar.control-plane:stop-control-plane plane)))))
+
+(defun test-graph-catalog-read-allocation-independence ()
+  (with-temporary-tek9-store (store path "graph-catalog-scaling")
+    (seed-graph-catalog store)
+    (flet ((measure ()
+             (graph-section-query store "members" (cons "limit" 1))
+             (sb-ext:gc :full t)
+             (let ((before (sb-ext:get-bytes-consed)))
+               (dotimes (n 10) (graph-section-query store "members" (cons "limit" 1)))
+               (- (sb-ext:get-bytes-consed) before))))
+      (let ((small (measure)) (db (quasar.store::tek9-store-database store)))
+        ;; Large unrelated metadata and topology. Deliberately use the real
+        ;; shared persistence helpers and canonical sidecars, not stub reads.
+        (tek9:with-write-transaction (db)
+          (dotimes (g 32)
+            (let ((id (format nil "unrelated-~D" g)))
+              (quasar.store::%replace-graph
+               db "catalog" id
+               (quasar.protocol:json-object
+                (cons "id" id) (cons "name" id)
+                (cons "documentIds" (cons :array (loop for n below 1000 collect (format nil "doc:~D" n))))
+                (cons "nodes" (cons :array (loop for n below 64
+                                                collect (quasar.protocol:json-object
+                                                         (cons "id" (format nil "n~D" n))
+                                                         (cons "label" (make-string 1024 :initial-element #\x))))))
+                (cons "edges" (quasar.protocol:json-array)))))))
+        (let ((large (measure)))
+          (format t "~&GRAPH-CATALOG-ALLOCATION small=~D large=~D unrelatedGraphs=32 membersEach=1000 nodesEach=64~%" small large)
+          (check (< large (+ (* 2 small) 1048576))))
+        (let ((fetch (symbol-function 'tek9:fetch*)))
+          (unwind-protect
+               (progn
+                 (setf (symbol-function 'tek9:fetch*)
+                       (lambda (database key &rest arguments)
+                         (when (quasar.store::%prefix-p (quasar.store::%graph-meta-prefix "catalog") key)
+                           (error "Bounded graph read decoded legacy graph metadata."))
+                         (apply fetch database key arguments)))
+                 (with-bounded-read-instrumentation
+                  (lambda ()
+                    (graph-catalog-query store (cons "limit" 1))
+                    (graph-section-query store "members" (cons "limit" 1))
+                    (graph-section-query store "nodes" (cons "limit" 1)))))
+            (setf (symbol-function 'tek9:fetch*) fetch)))))))
+
+(defun test-graph-catalog-replace-delete-and-native-arrays ()
+  (with-temporary-tek9-store (store path "graph-catalog-lifecycle")
+    (seed-graph-catalog store)
+    (let ((db (quasar.store::tek9-store-database store))
+          (graph (quasar.protocol:json-object
+                  (cons "id" "case") (cons "name" "renamed")
+                  (cons "documentIds" nil) (cons "selectedIds" nil)
+                  (cons "groups" (list (quasar.protocol:json-object (cons "id" "group-1"))))
+                  (cons "nodes" nil) (cons "edges" nil))))
+      (tek9:with-write-transaction (db)
+        (quasar.store::%replace-graph db "catalog" "case" graph))
+      (let ((catalog (tek9:fetch* db (quasar.store::%graph-catalog-key "catalog" "case"))))
+        (check (equal "explicit" (quasar.protocol:json-value catalog "membershipMode")))
+        (check (equal "renamed" (quasar.protocol:json-value catalog "name")))
+        (dolist (field '("documentCount" "nodeCount" "edgeCount"))
+          (check (= 0 (quasar.protocol:json-value catalog field)))))
+      (check (null (quasar.workspace:array-elements
+                    (quasar.protocol:json-value (graph-section-query store "members") "records"))))
+      (check (= 1 (length (quasar.workspace:array-elements
+                          (quasar.protocol:json-value (graph-section-query store "groups") "records")))))
+      (let* ((rows (quasar.workspace:array-elements
+                    (quasar.protocol:json-value (graph-section-query store "descriptor") "records")))
+             (kinds (quasar.protocol:json-value (first rows) "collectionKinds")))
+        (check (equal "array" (quasar.protocol:json-value kinds "documentIds")))
+        (check (equal "array" (quasar.protocol:json-value kinds "selectedIds"))))
+      (tek9:with-write-transaction (db)
+        (quasar.store::%delete-graph db "catalog" "case"))
+      (check (null (tek9:fetch* db (quasar.store::%graph-catalog-key "catalog" "case"))))
+      (check (null (quasar.store::%bounded-range db (quasar.store::%graph-index-prefix "catalog" "case") :limit 1)))
+      (check (bounded-error-p "graph.not-found" (lambda () (graph-section-query store "nodes")))))))
+
+(defun test-graph-catalog-implicit-members ()
+  (with-temporary-tek9-store (store path "graph-catalog-all")
+    (let ((workspace (quasar.workspace:make-workspace :id "catalog")))
+      (dotimes (n 3)
+        (let ((document (bounded-fixture-document n)))
+          (setf (gethash (quasar.protocol:starintel-document-id document)
+                         (quasar.workspace:workspace-documents workspace)) document)))
+      (quasar.store:save-workspace store workspace))
+    (let ((rows (quasar.workspace:array-elements (quasar.protocol:json-value (graph-catalog-query store) "graphs"))))
+      (check (= 3 (quasar.protocol:json-value (first rows) "documentCount")))
+      (check (equal "all" (quasar.protocol:json-value (first rows) "membershipMode"))))
+    (let ((page (quasar.store:graph-content-page store "catalog"
+                 (quasar.protocol:json-object (cons "graphId" "all-documents") (cons "section" "members")))))
+      (check (= 3 (length (quasar.workspace:array-elements (quasar.protocol:json-value page "records"))))))))
+
+(defun run-graph-catalog-tests ()
+  (let ((*failures* 0))
+    (test-graph-catalog-replace-delete-and-native-arrays)
+    (test-graph-catalog-implicit-members)
+    (test-graph-catalog-empty-deadline-and-auth)
+    (test-graph-catalog-read-allocation-independence)
+    (test-graph-catalog-bounded-pages)
+    (test-graph-catalog-migration-atomicity)
+    (test-graph-catalog-deltas-and-rollback)
+    (test-graph-catalog-byte-and-wire-budgets)
+    (when (plusp *failures*) (error "~D graph catalog checks failed." *failures*))
+    t))
