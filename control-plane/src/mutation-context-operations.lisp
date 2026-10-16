@@ -203,7 +203,8 @@
            (mutation-context-load-edge-dependencies context edge)
            ;; RESTORE delegates to APPLY-EDGE-CREATE, so hydrate collisions just
            ;; as graph.edge.create does before duplicate-ID validation.
-           (let ((edge-id (quasar.protocol:json-value edge "id"))
+           (let ((edge-id (or (quasar.protocol:json-value edge "id")
+                              (quasar.protocol:json-value edge "documentId")))
                  (graph-id (or (quasar.protocol:json-value edge "graphId") "default")))
              (when edge-id (mutation-context-edge context graph-id edge-id))))))
       ((string= type "graph.edge.create")

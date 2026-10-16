@@ -59,7 +59,8 @@
           (quasar.plugin:reset-plugin-policy))))))
 
 (defun test-graph-only-overlay-does-not-read-unrelated-corpus ()
-  ;; Execute both fixtures; do not infer a 100k result from the 10k case.
+  ;; Actual fixture sizes, measurements and scan counters are emitted only
+  ;; when executed. Fixture creation is outside the measured mutation.
   (dolist (count '(10000 100000))
     (phase3-with-durable-corpus
      (format nil "graph-only-overlay-~D" count) count
@@ -72,29 +73,51 @@
               (progn
                 (setf (symbol-function 'quasar.store::%bounded-range)
                       (lambda (database prefix &rest arguments)
-                        (when (equal prefix doc-prefix)
-                          (error "Graph-only mutation read unrelated document corpus."))
+                        (when (or (equal prefix doc-prefix) (search "/journal/" prefix))
+                          (error "Graph-only mutation read unrelated corpus/history."))
                         (incf reads)
                         (apply original database prefix arguments)))
-                (let ((response
-                        (call-command
-                         plane
-                         (make-envelope
-                          "workspace.transaction"
-                          (quasar.protocol:json-object
-                           (cons "operations"
-                            (quasar.protocol:json-array
-                             (phase3-transaction-operation "graph.put"
-                              (quasar.protocol:json-object
-                               (cons "id" "graph-only") (cons "name" "graph-only")
-                               (cons "documentIds" (quasar.protocol:json-array))
-                               (cons "nodes" (quasar.protocol:json-array))
-                               (cons "edges" (quasar.protocol:json-array))))
-                             (phase3-transaction-operation "graph.activate"
-                              (quasar.protocol:json-object (cons "id" "graph-only"))))))
-                          :workspace "large-corpus"))))
-                  (check (string= "ok" (status response)))
+                (let ((metrics
+                        (measure-bounded-operation
+                         (format nil "graph-put-activate-~D" count)
+                         (lambda ()
+                           (let ((response
+                                   (call-command plane
+                                    (make-envelope "workspace.transaction"
+                                     (quasar.protocol:json-object
+                                      (cons "operations"
+                                       (quasar.protocol:json-array
+                                        (phase3-transaction-operation "graph.put"
+                                         (quasar.protocol:json-object
+                                          (cons "id" "graph-only") (cons "name" "graph-only")
+                                          (cons "documentIds" (quasar.protocol:json-array))
+                                          (cons "nodes" (quasar.protocol:json-array))
+                                          (cons "edges" (quasar.protocol:json-array))))
+                                        (phase3-transaction-operation "graph.activate"
+                                         (quasar.protocol:json-object (cons "id" "graph-only"))))))
+                                     :workspace "large-corpus"))))
+                             (check (string= "ok" (status response)))
+                             (parsed response))))))
                   (phase3-assert-no-workspace-corpus-cache plane)
-                  (format t "~&Graph-only fixture ~D: ~D bounded range calls, no document ranges.~%"
-                          count reads)))
+                  (quasar.protocol:object-set metrics "corpusDocuments" count)
+                  (quasar.protocol:object-set metrics "rangeCalls" reads)
+                  (quasar.protocol:object-set metrics "dynamicSpaceBytes" (sb-ext:dynamic-space-size))
+                  (format t "~&MUTATION-MEASUREMENT ~A~%" (quasar.protocol:encode metrics)))
+                (setf reads 0)
+                (let ((metrics
+                        (measure-bounded-operation
+                         (format nil "single-document-update-~D" count)
+                         (lambda ()
+                           (let ((response
+                                   (call-command plane
+                                    (make-envelope "document.update"
+                                     (make-doc (phase2-large-corpus-id (1- count)))
+                                     :workspace "large-corpus"))))
+                             (check (string= "ok" (status response)))
+                             (parsed response))))))
+                  (phase3-assert-no-workspace-corpus-cache plane)
+                  (quasar.protocol:object-set metrics "corpusDocuments" count)
+                  (quasar.protocol:object-set metrics "rangeCalls" reads)
+                  (quasar.protocol:object-set metrics "dynamicSpaceBytes" (sb-ext:dynamic-space-size))
+                  (format t "~&MUTATION-MEASUREMENT ~A~%" (quasar.protocol:encode metrics))))
            (setf (symbol-function 'quasar.store::%bounded-range) original)))))))
