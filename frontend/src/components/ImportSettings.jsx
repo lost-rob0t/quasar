@@ -165,108 +165,122 @@ export function ImportPage() {
         </div>
       </div>
 
-      <label>
-        Source format{" "}
-        <select
-          value={format}
-          disabled={running}
-          onChange={(event) => setFormat(event.target.value)}
-        >
-          <option value="starintel">StarIntel JSON / JSONL / CSV</option>
-          <option value="wigle-csv">WiGLE CSV</option>
-          <option value="kismet-json">Kismet device JSON / JSONL</option>
-        </select>
-      </label>
-      {format !== "starintel" && (
-        <label>
-          Dataset{" "}
-          <input
-            value={dataset}
-            disabled={running}
-            onChange={(event) => setDataset(event.target.value)}
-          />
-        </label>
-      )}
-      {format !== "starintel" && (
-        <p>
-          Bounded preview: 16 MiB total, 10,000 records. Raw observations are preserved. SQLite and
-          KML files must be exported to one of the formats above.
-        </p>
-      )}
-      <div className="import-grid">
-        <label className="upload-card">
-          <File size={28} />
-          <strong>Single file</strong>
-          <span>JSON, JSONL, NDJSON, or CSV</span>
-          <input
-            type="file"
-            accept=".json,.jsonl,.ndjson,.csv,application/json"
-            onChange={chooseSingle}
-          />
-        </label>
-        <label className="upload-card">
-          <Files size={28} />
-          <strong>Bulk files</strong>
-          <span>Import StarIntel documents directly or enable bundle manifest checks below</span>
-          <input
-            type="file"
-            multiple
-            accept=".json,.jsonl,.ndjson,.csv,application/json"
-            onChange={chooseBulk}
-          />
-        </label>
-      </div>
-
-      <section className="panel">
-        <div className="section-heading">
-          <h2>Import queue</h2>
-          <span>{files.length} files</span>
-        </div>
-        <div className="file-list">
-          {files.map((file) => (
-            <div key={`${file.name}:${file.size}`}>
-              <File size={15} />
-              <span>{file.name}</span>
-              <small>{Math.ceil(file.size / 1024)} KB</small>
+      <div className="import-form" aria-label="Document import">
+        <section className="panel import-source-panel">
+          <div className="section-heading import-section-heading">
+            <div>
+              <h2>Import source</h2>
+              <p>Choose the input format before selecting one or more files.</p>
             </div>
-          ))}
-          {!files.length && <p className="muted">No files selected.</p>}
-        </div>
-        <div className="form-actions import-actions">
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={replace}
-              onChange={(event) => setReplace(event.target.checked)}
-            />{" "}
-            Replace matching IDs even when the incoming version is not newer
-          </label>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={resolveManifestReferences}
-              onChange={(event) => setResolveManifestReferences(event.target.checked)}
-            />{" "}
-            Treat manifests as bundle instructions and require every referenced file
-          </label>
-          <div className="button-row">
-            <button
-              className="button"
-              disabled={!files.length || running}
-              onClick={() => runImport()}
-            >
-              <UploadCloud size={16} /> {running ? "Validating and saving…" : "Save locally"}
-            </button>
-            <button
-              className="button primary"
-              disabled={!files.length || running}
-              onClick={() => runImport(files, { openGraph: true })}
-            >
-              <Network size={16} /> Save and open graph
-            </button>
+            <span>Local validation</span>
           </div>
+          <div className={`form-grid import-source-grid${format === "starintel" ? " single" : ""}`}>
+            <label className="field">
+              <span>Source format</span>
+              <select
+                value={format}
+                disabled={running}
+                onChange={(event) => setFormat(event.target.value)}
+              >
+                <option value="starintel">StarIntel JSON / JSONL / CSV</option>
+                <option value="wigle-csv">WiGLE CSV</option>
+                <option value="kismet-json">Kismet device JSON / JSONL</option>
+              </select>
+            </label>
+            {format !== "starintel" && (
+              <label className="field">
+                <span>Dataset</span>
+                <input
+                  value={dataset}
+                  disabled={running}
+                  onChange={(event) => setDataset(event.target.value)}
+                />
+              </label>
+            )}
+          </div>
+          {format !== "starintel" && (
+            <p className="import-source-note">
+              Bounded preview: 16 MiB total, 10,000 records. Raw observations are preserved. SQLite
+              and KML files must be exported to one of the formats above.
+            </p>
+          )}
+        </section>
+
+        <div className="import-grid">
+          <label className="upload-card">
+            <File size={28} />
+            <strong>Single file</strong>
+            <span>JSON, JSONL, NDJSON, or CSV</span>
+            <input
+              type="file"
+              accept=".json,.jsonl,.ndjson,.csv,application/json"
+              onChange={chooseSingle}
+            />
+          </label>
+          <label className="upload-card">
+            <Files size={28} />
+            <strong>Bulk files</strong>
+            <span>Import StarIntel documents directly or enable bundle manifest checks below</span>
+            <input
+              type="file"
+              multiple
+              accept=".json,.jsonl,.ndjson,.csv,application/json"
+              onChange={chooseBulk}
+            />
+          </label>
         </div>
-      </section>
+
+        <section className="panel import-queue-panel">
+          <div className="section-heading">
+            <h2>Import queue</h2>
+            <span>{files.length} files</span>
+          </div>
+          <div className="file-list">
+            {files.map((file) => (
+              <div key={`${file.name}:${file.size}`}>
+                <File size={15} />
+                <span>{file.name}</span>
+                <small>{Math.ceil(file.size / 1024)} KB</small>
+              </div>
+            ))}
+            {!files.length && <p className="muted">No files selected.</p>}
+          </div>
+          <div className="form-actions import-actions">
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={replace}
+                onChange={(event) => setReplace(event.target.checked)}
+              />{" "}
+              Replace matching IDs even when the incoming version is not newer
+            </label>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={resolveManifestReferences}
+                onChange={(event) => setResolveManifestReferences(event.target.checked)}
+              />{" "}
+              Treat manifests as bundle instructions and require every referenced file
+            </label>
+            <div className="button-row">
+              <button
+                className="button"
+                disabled={!files.length || running}
+                onClick={() => runImport()}
+              >
+                <UploadCloud size={16} /> {running ? "Validating and saving…" : "Save locally"}
+              </button>
+              <button
+                className="button primary"
+                disabled={!files.length || running}
+                onClick={() => runImport(files, { openGraph: true })}
+              >
+                <Network size={16} /> Save and open graph
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
       <Report report={report} />
     </section>
   );
