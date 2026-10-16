@@ -159,6 +159,15 @@
 (defun test-graph-catalog-empty-deadline-and-auth ()
   (with-temporary-tek9-store (store path "graph-catalog-auth")
     (check (eq t (quasar.protocol:json-value (graph-catalog-query store) "complete")))
+    ;; #78's first overlay commit initializes this shared default graph helper
+    ;; before writing canonical workspace metadata; readiness must survive that.
+    (let ((db (quasar.store::tek9-store-database store)))
+      (tek9:with-write-transaction (db)
+        (quasar.store::%ensure-default-graph-metadata db "catalog")
+        (quasar.store::%put-record db (quasar.store::%workspace-meta-key "catalog")
+                                  (quasar.store::%default-workspace-meta "catalog" 1 0))))
+    (check (= 1 (length (quasar.workspace:array-elements
+                        (quasar.protocol:json-value (graph-catalog-query store) "graphs")))))
     (seed-graph-catalog store)
     (let* ((ticks 0)
            (quasar.store::*query-clock* (lambda () (incf ticks internal-time-units-per-second)))
