@@ -1,123 +1,157 @@
-# Graph reads: issue #111 handoff
+# Graph reads: version 1
 
-Status: **proposed v1 contract; catalog and paging are not advertised capabilities**.
-The direct compatibility `graph.snapshot` fix is implemented separately. It reads
-only the requested persisted namespace and canonical sidecars, in one Tek9 read
-transaction. It still materializes the entire requested graph. Do not use it as a
-bounded startup primitive.
+Implemented by issue #111 / draft #117. These additive commands use the existing
+authenticated workspace envelope and per-session capability gate. #114 owns
+client consumption; #112 owns document continuation/export. No legacy snapshot
+shape or production startup switch is changed by this backend PR.
 
-## Startup contract for #114
+## Catalog
 
-`workspace.bootstrap` remains unchanged. `savedGraphId` remembers the selection;
-it must not trigger eager activation or a graph snapshot at startup.
-
-Proposed `graph.catalog` request:
-
-```json
-{"limit":50,"byteLimit":524288,"scanLimit":1000,"deadlineMs":50}
-```
-
-Proposed response:
+`graph.catalog` accepts `limit`, `byteLimit`, `scanLimit`, `deadlineMs`, `cursor`
+and `expectedRevision`. All are optional. Example response:
 
 ```json
 {
   "revision":4,
   "projection":"graph-catalog.v1",
-  "graphs":[{"id":"case-1","name":"Case 1","documentCount":3,"nodeCount":3,"edgeCount":1}],
+  "graphs":[{"id":"case-1","name":"Case 1","membershipMode":"explicit","documentCount":3,"nodeCount":3,"edgeCount":1}],
   "savedGraphId":"case-1",
   "complete":false,
   "cursor":"opaque-token",
-  "performance":{"scanned":1,"stopReason":"records"}
+  "performance":{"mode":"bounded-graph-seek","scanned":1,"stopReason":"records"}
 }
 ```
 
-Rows must come from a separate compact durable catalog, never decoded legacy
-metadata with `documentIds`, positions or groups. Counts represent persisted
-membership/topology, not the number currently displayed. Names and IDs retain
-exact values; an oversized row fails explicitly rather than truncating identity.
-An initial empty workspace needs an explicit default-graph rule in integration,
-consistent with `all-documents` and existing activation behavior.
+Rows come from `graph-catalog-v1/` records, never legacy graph metadata. Each
+stored catalog/index row is limited to 8,192 encoded UTF-8 bytes. IDs (at most
+512 characters) and names retain exact values. An oversized write/migration fails
+with `graph.catalog-invalid`; it is never truncated. Counts represent persisted
+topology and membership. `membershipMode: "all"` preserves null `documentIds`
+semantics and reports the workspace document count, or null for unknown legacy
+counts. `savedGraphId` is remembered selection, not an activation instruction.
+A never-persisted workspace returns an empty catalog without writing state.
 
-Proposed `graph.page` request:
+## Sections
+
+`graph.page` requires `graphId` and `section`, plus the same optional budgets,
+`cursor`, and `expectedRevision`. Bind its first page to the catalog revision.
 
 ```json
-{"graphId":"case-1","section":"nodes","expectedRevision":4,"limit":50,"byteLimit":524288,"scanLimit":1000,"deadlineMs":50}
+{"graphId":"case-1","section":"members","expectedRevision":4,"limit":50}
 ```
 
-Response fields: `revision`, `projection: "graph-page.v1"`, `graphId`, `section`,
-`records`, `complete`, `cursor`, `performance`. Sections are `members`, `nodes`,
-`edges`, `positions`, `groups`. Members return `{documentId}` rows; nodes and
-edges return canonical sidecars unchanged, including cross-dataset relationship
-references. Positions return `{nodeId, position}`; groups return canonical group
-objects. Ordered sections require durable ordinals where legacy array order has
-meaning. Small graph presentation fields (layout and viewport) need a separately
-bounded descriptor; catalog must not embed unbounded presentation state.
+The response has `revision`, `projection: "graph-page.v1"`, `graphId`, `section`,
+`records`, `complete`, `cursor`, and `performance`.
 
-Both interfaces default to 50 rows, allow at most 250 rows, 1,000 scanned records,
-50 milliseconds between store calls, and 512 KiB including the result envelope.
-Requests may lower budgets. Byte minimum follows `document.search` (32 KiB).
-No single-row overflow exception: return `query.record-too-large`. Decode memory
-is at least the largest existing stored record; writes/migration must enforce
-compact record sizes before claiming a hard allocation bound.
+| Section | Records |
+| --- | --- |
+| members | `{documentId}`; explicit membership order retained |
+| nodes | Unchanged canonical node sidecars |
+| edges | Unchanged canonical edge sidecars, including typed/cross-dataset references |
+| positions | `{key,value}` for each presentation map entry |
+| groups | `{key,value}` for objects; `{index,value}` for arrays |
+| selection | `{index,value}` for selected-ID arrays |
+| descriptor | One `{metadata,collectionKinds}` row with remaining small metadata |
 
-Cursors are opaque versioned tokens bound to authenticated workspace, workspace
-revision, projection, graph and section where applicable, and the last encoded
-primary key. Continuation uses an exclusive seek, never an ordinal rescan. Page
-size may change; graph/section/workspace may not. Stale revision returns
-`query.stale-cursor`; a scope mismatch returns `query.invalid-cursor`. Validate
-`expectedRevision` on the first page as well, so catalog and topology cannot mix
-revisions. The token must fit existing cursor intake/output bounds.
+`collectionKinds` records `object`, `array`, or `null` for documentIds, positions,
+groups and selectedIds so reconstruction preserves the original container type.
+Array sections use zero-padded ordinal keys to preserve order; objects and
+catalogs use encoded primary-key order. This is not raw lexical ID ordering.
+For implicit all-document membership, members seeks canonical document records
+and projects only IDs; it never collects the corpus. Nodes/edges use existing
+canonical sidecar keys, avoiding topology enumeration entirely.
 
-`complete`, not row count, determines exhaustion. An empty page may have a
-continuation. Clients request pages only for the visible catalog or selected
-graph, cancel by ceasing requests, and keep bounded caches. No page aggregation
-at startup and no graph payload on new document-only endpoints. The legacy
-`workspace.snapshot.page` contract is still unchanged until #112/#114 coordinate
-its consumers; this draft does not silently remove fields that they use.
+## Bounds and continuations
 
-## Persistence contract for #78 and #113
+Defaults: 50 rows, 512 KiB, 1,000 scanned rows, 50 ms. Maxima: 250 rows, 512 KiB,
+1,000 scanned rows, 50 ms. Byte minimum is 32 KiB. Unknown request fields and
+unsupported sections fail. `expectedRevision` applies to catalog and section
+requests, including the first page.
 
-Catalog rows, counts, membership and presentation rows must change inside the
-same existing Tek9 `:full` write transaction as canonical metadata, sidecars,
-revision and journal. Integration should attach to `%apply-change` and shared
-`%replace-graph`, `%put-node`, `%put-edge`, deletion helpers, including imports.
-Do not add a second transaction or post-commit repair. Count deltas must distinguish
-an insert from an overwrite and handle cascaded edge deletion exactly once.
-Graph replacements/deletions and explicit workspace saves must remove stale
-catalog/index rows. Activation remains workspace metadata, avoiding a catalog
-rewrite for every graph when selection changes.
+The final encoded result envelope is checked against `byteLimit`. Rows reserve
+space for cursor/envelope overhead. A row that cannot fit fails with
+`query.record-too-large`; no single-row overflow exception exists. Previously
+stored large canonical sidecars/documents can still cost their decode size.
+Only catalog/derived presentation rows have the new 8 KiB storage bound.
 
-A versioned per-workspace readiness marker is required. Legacy stores must not
-silently return an empty catalog or lazily decode all graph metadata on reads.
-Before readiness, return a documented migration-required result/error (final
-error registration pending integration). Run explicit migration off startup,
-with bounded batches and a revision-bound durable checkpoint. Build shadow rows;
-publish readiness only after atomic completion at the same canonical revision.
-Concurrent writes must either update the shadow generation or invalidate its
-checkpoint. Failure/restart must never advertise partial indexes. Existing
-legacy graph snapshots remain available before migration. No storage schema
-version bump or destructive rewrite is authorized by this proposal.
+Each request uses one Tek9 read transaction and exclusive primary-key seeks,
+retaining a page plus at most two decoded records (Tek9 lookahead). The reported
+`scanned` counts logical rows; a seek may decode its previous-key lookahead too.
+Deadlines are cooperative between storage calls, not preemptive of one decode.
 
-## Ownership and verification status
+Tokens bind version, authenticated workspace, workspace revision, projection,
+and graph/section where applicable, plus the last scanned key. Page size may
+change. Scope changes return `query.invalid-cursor`; revision changes return
+`query.stale-cursor`. Existing 16,000-character cursor bounds apply. Final token
+or envelope overflow returns an error rather than an oversized response.
 
-#111 owns graph persistence/read contracts; #78 owns transaction internals; #113
-owns validation indexes; #112 owns document continuation; #114 owns client
-consumption. Shared hooks, command registration, capability admission and ASDF
-entries require parent coordination before edits. PR #110 and Android PR #120
-are untouched. This proposal does not claim that those dependencies are complete.
+`complete`, not row count, determines exhaustion. An empty page can carry a
+continuation (for example, a deadline before the first record). Clients stop
+requesting to cancel, keep bounded caches, and never silently fall back to eager
+snapshots. New document-only reads remain `document.search`/`document.batch`;
+#112 provides its additive export continuation. Legacy snapshot pages retain
+compatibility, including graph payloads, until their consumers migrate.
 
-Direct snapshot source complexity changes from all saved graph metadata and
-all topology to one metadata lookup, two requested-namespace topology reads,
-and one canonical lookup per requested node/edge: O(Mg + Vg + Eg) decode work
-for requested graph g, independent of unrelated graphs. The redundant final
-clone is removed because restoration already returns fresh decoded/cloned state.
-This is a source-derived claim, not an allocation benchmark result.
+## Durable updates and explicit migration
 
-The regression added to `phase2-protocol-tests.lisp` instruments exported Tek9
-reads, forbids primary enumeration, checks exact requested namespace/key scope,
-compares membership/presentation/sidecar fields, and expects 4 fetches plus 2
-topology reads for the tiny fixture before/after adding 24 unrelated graphs and
-a restart. Missing-graph and cross-workspace reads remain `graph.not-found`.
-Run via `nix develop --command npm run test:lisp`; unexecuted tests must not be
-reported as passing. Catalog byte/cursor/migration/failure-injection acceptance
-remains pending implementation and integration.
+Canonical storage remains schema v1 with `:full` durability. Compact rows,
+metadata, membership/presentation indexes, sidecars, counts and readiness share
+the caller's existing write transaction. `%apply-change` and shared persistence
+helpers cover graph replacement/deletion, node/edge upsert/delete, explicit
+workspace saves, and first-import default graph creation. Count deltas check
+canonical sidecar existence, making overwrites/repeated deletes idempotent.
+Activation remains workspace metadata; it does not rewrite every catalog row.
+
+The hooks do not change #78 transaction internals. Graph metadata replacement
+currently rebuilds that graph's membership/presentation indexes, O(Mg), because
+the existing mutation contract provides complete metadata. This PR does not
+claim bounded graph metadata writes; a future #78 delta interface can replace
+that cost. Node/edge count updates add only constant record lookups/writes and
+do not scan topology. Preserve these helper calls when integrating #78/#113.
+
+Existing workspaces without the version-1 readiness marker return
+`graph.catalog-migration-required`. Do not auto-migrate during startup or reads.
+An operator can invoke, inside the repository Nix runtime:
+
+```lisp
+(quasar.store:migrate-graph-catalog store "workspace-id" :expected-revision 42)
+```
+
+This is deliberately an explicit, synchronous maintenance operation: it holds
+one write transaction for the workspace rebuild. It reads one legacy metadata
+record at a time and scans sidecars in bounded batches to rebuild counts. Legacy
+metadata decode and membership processing may be large. It is not a bounded
+request endpoint or resumable migration; reserve a maintenance window. Revision
+validation occurs under the transaction. Concurrent writers cannot publish a
+partial generation; on failure/restart LMDB rolls back the rebuild and readiness
+marker together. Retry the operation after fixing the cause. Canonical schema,
+graph snapshots and existing compatibility readers remain unchanged. Empty old
+workspaces receive default graph metadata; fresh persisted writes are indexed
+without needing migration.
+
+## Complexity and verification
+
+Catalog and section requests perform O(page rows) record visits plus seeks,
+independent of unrelated graph topology. Catalog size is O(number of graphs),
+with compact records. Added persistent index space is O(membership + presentation)
+per graph; node/edge sidecars are reused. An exact compatibility `graph.snapshot`
+now restores only the requested namespace: O(Mg + Vg + Eg) decode work, plus
+Tek9's requested-topology sorting. It remains a fully materialized requested graph.
+
+`graph-catalog-tests.lisp` covers row/byte budgets including result envelopes,
+ordered continuation, scope/revision conflicts, empty continuable deadlines,
+compact catalog counts, restart, migration failure/retry, mutation rollback,
+overwrite/delete count idempotency, authorization, and allocation/read isolation
+with 32 unrelated graphs containing 1,000 members and 64 nodes each. The existing
+Phase 2 test also instruments exact graph snapshot namespace/key scope before
+and after unrelated graph growth and restart. Run all with:
+
+```sh
+nix develop --command npm run test:lisp
+```
+
+Only recorded results for the matching commit are test evidence. The first
+snapshot-only commit passed hosted Lisp/stack checks. Local Nix shell setup was
+blocked by dependency downloads; hosted Nix runtime build hit HTTP 502 fetching
+the pinned starintel-biz input. Catalog implementation validation is tracked on
+draft #117; no result for an earlier commit proves this implementation passes.
