@@ -180,14 +180,14 @@ describe("starintel-server client", () => {
     await submitTargetToServer({ serverUrl: "http://localhost:5000" }, target);
 
     expect(fetch.mock.calls[0][0]).toBe("http://localhost:5000/api/v1/targets");
-    expect(fetch.mock.calls[0][1].headers.get("Idempotency-Key")).toBe(target._id);
+    expect(fetch.mock.calls[0][1].headers.get("Idempotency-Key")).toBeNull();
     expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({
       actor: "actor-1",
       target: "starintel:person:one",
       dataset: "test",
       delay: 1,
       recurring: false,
-      options: [],
+      options: {},
       idempotency_key: target._id
     });
   });
@@ -232,13 +232,13 @@ describe("starintel-server client", () => {
       dataset: "test",
       delay: 30,
       recurring: true,
-      options: [],
+      options: {},
       idempotency_key: target.id
     });
     expect(accepted.size).toBe(1);
   });
 
-  it("rejects non-empty canonical option maps rather than inventing an array mapping", async () => {
+  it("preserves canonical option maps", async () => {
     const target = createCanonicalDocument("target", {
       id: "target:options-fixture",
       dataset: "test",
@@ -246,12 +246,13 @@ describe("starintel-server client", () => {
       target: "example.test",
       options: { depth: 2 }
     });
-    const fetch = vi.fn();
+    const fetch = vi.fn(async (_url, options) => {
+      expect(JSON.parse(options.body).options).toEqual({ depth: 2 });
+      return new Response(JSON.stringify({ status: "accepted" }));
+    });
     vi.stubGlobal("fetch", fetch);
-    await expect(
-      submitTargetToServer({ serverUrl: "http://localhost:5000" }, target)
-    ).rejects.toThrow("Target options map has no defined server v1 array mapping");
-    expect(fetch).not.toHaveBeenCalled();
+    await submitTargetToServer({ serverUrl: "http://localhost:5000" }, target);
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it("does not treat an idempotency body error as an unsupported endpoint", async () => {
@@ -286,5 +287,58 @@ describe("starintel-server client", () => {
       submitTargetToServer({ serverUrl: "http://localhost:5000" }, target)
     ).rejects.toThrow();
     expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("v1 authentication and discovery boundaries", () => {
+  it("discovers capabilities without sending credentials and unwraps the envelope", async () => {
+    const fetch = vi.fn(async (_url, options) => {
+      expect(options.headers.get("Authorization")).toBeNull();
+      return Response.json({ status: "ok", data: { endpoints: [] } });
+    });
+    vi.stubGlobal("fetch", fetch);
+    await expect(
+      probeStarIntelServer({ serverUrl: "http://localhost:5000", serverToken: "secret" })
+    ).resolves.toEqual({ mode: "v1", capabilities: { endpoints: [] } });
+  });
+
+  it("does not mask authorization errors with legacy discovery", async () => {
+    const fetch = vi.fn(async () => Response.json({ message: "denied" }, { status: 403 }));
+    vi.stubGlobal("fetch", fetch);
+    await expect(probeStarIntelServer({ serverUrl: "http://localhost:5000" })).rejects.toThrow(
+      "denied"
+    );
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("exchanges username/password once and uses the returned bearer key for v1", async () => {
+    const fetch = vi.fn(async (url, options) => {
+      if (url.endsWith("/auth/login")) {
+        expect(options.headers.get("Authorization")).toBeNull();
+        expect(JSON.parse(options.body)).toEqual({
+          username: "synthetic-user",
+          password: "synthetic-password"
+        });
+        return Response.json({ api_key: "star_sk_v1_synthetic" });
+      }
+      expect(options.headers.get("Authorization")).toBe("Bearer star_sk_v1_synthetic");
+      expect(options.headers.get("Idempotency-Key")).toBeNull();
+      return Response.json({ status: "accepted" });
+    });
+    vi.stubGlobal("fetch", fetch);
+    const configuration = {
+      serverUrl: "http://localhost:5001",
+      serverUsername: "synthetic-user",
+      serverPassword: "synthetic-password"
+    };
+    const target = createCanonicalDocument("target", {
+      id: "target:auth-fixture",
+      dataset: "synthetic",
+      actor: "synthetic",
+      target: "fixture.invalid"
+    });
+    await submitTargetToServer(configuration, target);
+    await submitTargetToServer(configuration, target);
+    expect(fetch).toHaveBeenCalledTimes(3);
   });
 });
