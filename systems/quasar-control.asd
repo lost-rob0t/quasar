@@ -34,6 +34,7 @@
                (:file "phase2-stage-cleanup")
                (:file "phase2-store-reads")
                (:file "bounded-reads")
+               (:file "document-pages")
                (:file "control-plane")
                (:file "pro-actors")
                (:file "command-authority-context")
