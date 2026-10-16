@@ -303,9 +303,8 @@
   (unless
       (%bounded-range
        database (%graph-meta-prefix workspace-id) :limit 1)
-    (%put-record
-     database
-     (%graph-meta-key workspace-id "all-documents")
+    (%put-graph-metadata
+     database workspace-id "all-documents"
      (quasar.protocol:json-object
       (cons "id" "all-documents")
       (cons "name" "all-documents")

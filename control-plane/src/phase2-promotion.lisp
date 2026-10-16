@@ -103,6 +103,8 @@
                         (%workspace-meta-key workspace-id)
                         next-meta))
                      (%ensure-default-graph-metadata database workspace-id)
+                     (unless canonical-meta
+                       (%mark-graph-catalog-ready database workspace-id))
                      (let ((journal
                              (%compact-import-journal
                               workspace-id
