@@ -16,8 +16,9 @@ export async function exportWorkspaceToFile(
   client: ExportClient,
   {
     signal,
-    pickFile = (globalThis as typeof globalThis & { showSaveFilePicker?: PickFile })
-      .showSaveFilePicker
+    pickFile = (
+      globalThis as typeof globalThis & { showSaveFilePicker?: PickFile }
+    ).showSaveFilePicker?.bind(globalThis)
   }: { signal?: AbortSignal; pickFile?: PickFile } = {}
 ) {
   if (!pickFile)
