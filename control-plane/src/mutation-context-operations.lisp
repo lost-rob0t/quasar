@@ -200,7 +200,12 @@
                (or
                 (quasar.protocol:json-value payload "edges")
                 (quasar.protocol:json-array))))
-           (mutation-context-load-edge-dependencies context edge))))
+           (mutation-context-load-edge-dependencies context edge)
+           ;; RESTORE delegates to APPLY-EDGE-CREATE, so hydrate collisions just
+           ;; as graph.edge.create does before duplicate-ID validation.
+           (let ((edge-id (quasar.protocol:json-value edge "id"))
+                 (graph-id (or (quasar.protocol:json-value edge "graphId") "default")))
+             (when edge-id (mutation-context-edge context graph-id edge-id))))))
       ((string= type "graph.edge.create")
        (let* ((graph-id
                 (or (quasar.protocol:json-value payload "graphId") "default"))
@@ -272,7 +277,10 @@
                 :test #'eq)
              (setf
               (gethash graph-id (mutation-context-graph-state context))
-              :partial)))
+              (case (gethash graph-id (mutation-context-graph-state context))
+                (:absent :new)
+                (:deleted :replaced)
+                (otherwise :partial)))))
          (when (and graph-id node-id)
            (setf
             (gethash

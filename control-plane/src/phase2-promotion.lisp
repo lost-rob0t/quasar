@@ -1,6 +1,6 @@
 (in-package #:quasar.store)
 
-(defun %promotion-outcome (store workspace-id stage-id operation-id client now)
+(defun %promotion-outcome (store workspace-id stage-id operation-id client now &key authorize-bytes)
   (let ((database (tek9-store-database store)))
     (tek9:with-write-transaction (database)
       (let* ((meta (%stage-meta-required database workspace-id stage-id))
@@ -45,7 +45,11 @@
                     meta)
                    (%clear-active-stage-if database workspace-id stage-id)
                    (list :conflict current-revision base-revision))
-                 (let* ((old-count
+                 (let* ((quota
+                          (progn
+                            (%quota-ensure-default-graph database workspace-id)
+                            (%quota-state database workspace-id current-revision)))
+                        (old-count
                           (%canonical-document-count
                            database
                            workspace-id
@@ -72,11 +76,11 @@
                    (let ((hook (tek9-store-failure-hook store)))
                      (when hook
                        (funcall hook :before-import-promotion)))
-                   (let ((created
-                           (%promote-stage-documents
-                            database
-                            workspace-id
-                            stage-id)))
+                   (multiple-value-bind (created byte-delta)
+                       (%promote-stage-documents database workspace-id stage-id)
+                     (quasar.protocol:object-set quota "documentSum"
+                      (+ byte-delta (quasar.protocol:json-value quota "documentSum")))
+                     (quasar.protocol:object-set quota "revision" revision)
                      (let ((hook (tek9-store-failure-hook store)))
                        (when hook
                          (funcall hook :before-import-revision)))
@@ -98,6 +102,11 @@
                         next-meta
                         "documentCount"
                         (+ old-count created))
+                       (when authorize-bytes
+                         (funcall authorize-bytes
+                          (%quota-snapshot-size workspace-id revision
+                           (quasar.protocol:json-value next-meta "settings") quota)))
+                       (%put-record database (%quota-key workspace-id) quota)
                        (%put-record
                         database
                         (%workspace-meta-key workspace-id)
@@ -154,7 +163,7 @@
                      (list :ok revision document-count operation-id)))))))))))
 
 (defmethod promote-import-stage
-    ((store tek9-store) workspace-id stage-id operation-id client now)
+    ((store tek9-store) workspace-id stage-id operation-id client now &key authorize-bytes)
   (let ((outcome
           (%promotion-outcome
            store
@@ -162,7 +171,7 @@
            stage-id
            operation-id
            client
-           now)))
+           now :authorize-bytes authorize-bytes)))
     (ecase (first outcome)
       (:ok
        (destructuring-bind

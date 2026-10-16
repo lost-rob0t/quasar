@@ -67,8 +67,11 @@
    (cons "groups" (quasar.protocol:empty-object))))
 
 (defun make-record-mutation-context (store workspace-id)
-  (let* ((metadata
-           (quasar.store:direct-workspace-metadata store workspace-id))
+  (let* ((metadata-values
+           (multiple-value-list
+            (quasar.store:direct-workspace-metadata store workspace-id)))
+         (metadata (first metadata-values))
+         (durable-p (second metadata-values))
          (revision
            (or (quasar.protocol:json-value metadata "revision") 0))
          (workspace
@@ -83,11 +86,9 @@
              :workspace workspace
              :workspace-id workspace-id
              :base-revision revision)))
-      ;; A revision-zero workspace has the same conceptual default graph as
-      ;; MAKE-WORKSPACE even though no graph metadata has been durably written
-      ;; yet. Retain that one bounded record so first graph operations preserve
-      ;; legacy semantics; COMMIT-CHANGE-SET persists the default atomically.
-      (when (zerop revision)
+      ;; Revision zero is valid durable state (e.g. SAVE-WORKSPACE fixtures).
+      ;; Only an absent durable workspace owns a conceptual default graph.
+      (unless durable-p
         (setf
          (quasar.workspace:workspace-graph workspace "all-documents")
          (mutation-default-graph)

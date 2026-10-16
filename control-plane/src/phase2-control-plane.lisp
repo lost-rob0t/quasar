@@ -90,7 +90,10 @@
                 stage-id
                 operation-id
                 (or (quasar.protocol:command-envelope-client envelope) "unknown")
-                (get-universal-time)))
+                (get-universal-time)
+                :authorize-bytes (lambda (used)
+                                   (quasar.plugin:authorize-storage-bytes
+                                    (current-command-principal) used))))
              (revision (quasar.protocol:json-value result "revision"))
              (committed-operation-id
                (or (quasar.protocol:json-value result "operationId") operation-id)))
