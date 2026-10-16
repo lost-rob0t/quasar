@@ -27,8 +27,11 @@
      (format *error-output* "~&FAIL: ~S~%" ',form)))
 
 (defun event-collector ()
-  (lambda (encoded)
-    (push encoded (car *events-box*))))
+  ;; The callback runs on the actor thread, which does not inherit a caller's
+  ;; special bindings. Capture this test's box when subscribing.
+  (let ((box *events-box*))
+    (lambda (encoded)
+      (push encoded (car box)))))
 
 (defun make-envelope (command payload &key (id "test-1") (workspace "default"))
   (quasar.protocol:encode

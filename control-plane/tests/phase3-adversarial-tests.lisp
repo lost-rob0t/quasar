@@ -1,5 +1,13 @@
 (in-package #:quasar.tests)
 
+(defmacro with-global-test-value (((name value)) &body body)
+  "Serialized fixture for hooks invoked by another actor thread."
+  (let ((previous (gensym "PREVIOUS")))
+    `(let ((,previous (symbol-value ',name)))
+       (unwind-protect
+            (progn (setf (symbol-value ',name) ,value) ,@body)
+         (setf (symbol-value ',name) ,previous)))))
+
 (defun phase3-document (&rest pairs)
   "Canonical fixture with test-only attributes in extensions."
   (let* ((id (cdr (assoc "id" pairs :test #'string=)))
@@ -246,7 +254,7 @@
      count
      (lambda (store plane)
        (declare (ignore store))
-       (let ((quasar.control-plane::*mutation-working-set-observer*
+       (with-global-test-value ((quasar.control-plane::*mutation-working-set-observer*
                (lambda (metrics)
                  (setf records
                        (quasar.protocol:json-value metrics "records")))))
@@ -297,7 +305,7 @@
      (declare (ignore store))
      (dolist (count '(1 4 16))
        (let ((records nil))
-         (let ((quasar.control-plane::*mutation-working-set-observer*
+         (with-global-test-value ((quasar.control-plane::*mutation-working-set-observer*
                  (lambda (metrics)
                    (setf records
                          (quasar.protocol:json-value metrics "records")))))

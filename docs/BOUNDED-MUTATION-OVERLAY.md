@@ -30,7 +30,9 @@ byte definition as the materialized path. It must never authorize an overlay's
 partial byte size as though that were the complete workspace. A versioned,
 revision-bound Tek9 accounting record stores sums of document and graph sizes
 (including array separators). The commit updates document sums from old/new
-records and recomputes sizes of explicitly touched graphs in bounded batches.
+records. Per-graph node/edge sums update from the typed sidecar changes, so
+quota checks do not rescan topology for node/edge edits. Explicit graph
+replacement computes counters from its submitted topology.
 Settings, workspace ID and revision overhead are included exactly. The quota
 callback runs inside the write transaction before metadata/journal commit;
 rejection rolls back records and accounting together. Explicit save-workspace
@@ -40,13 +42,18 @@ replacement initializes accounting within its existing write transaction.
 
 This is not completion of #78 and is not merge-ready without runtime checks.
 
-- Missing legacy accounting or a revision changed by the old staged-import
-  writer triggers a bounded-memory accounting scan. Total work/allocation is
-  still proportional to corpus size on that upgrade/post-import path. Import
-  promotion must maintain the same accounting atomically before the strict
-  cold/post-import allocation requirement can pass.
-- Graph quota recomputation scans topology of each touched graph. Per-record
-  graph counters should be coordinated with #111's catalog work.
+- Legacy accounting now migrates once at store initialization, in bounded
+  batches inside one write transaction. This migration necessarily visits the
+  old corpus, does not advance revision or journal, and publishes its version
+  marker only on success. Subsequent cold opens read the marker only. Stale
+  accounting fails closed during mutations; it never triggers a hidden scan.
+  Explicit repair is `migrate-quota-accounting` with `:force t` while the store
+  has exclusive ownership. Concurrent/downgraded legacy writers are unsupported.
+- Staged import promotion computes old/new byte deltas only for staged IDs and
+  commits counters and the quota policy check atomically with canonical data.
+  Retry/replay does not charge twice. Post-import edits do not rebuild counters.
+- Per-graph accounting removes topology recounts. Compact metadata/catalog
+  integration still belongs to #111; large graph metadata remains affected data.
 - Reference sidecar scans and full affected-graph replacement remain; #113
   owns workspace validation indexes. This port does not edit workspace.lisp
   or store.lisp and retains their dispatch/persistence helper interfaces.
@@ -71,3 +78,17 @@ but `cache.nixos.org/nix-cache-info` and the bash 5.3 source fetch from
 runtime suite and benchmarks were not executed. Supplemental SBCL reader and
 host Node structural checks establish only syntax/routing properties, not
 transaction correctness, performance, or a passing merge gate.
+
+## Follow-up correctness checks
+
+Hosted CI for initial head 254c0b2 executed Lisp and exposed a stale test cache
+premise. Follow-up 0532884 reads durable revision/state and retains restart
+assertions; its hosted suite passed that point and exposed actor-thread observer
+fixture isolation. Event collectors now capture their test box and metrics
+hooks install/restore their global value for the serialized test.
+
+Regression tests also cover duplicate edge IDs during node restore (complete
+rollback including quota/journal/events), populated durable revision-zero
+graphs, and implicit graph create/delete state transitions. No PR116 code was
+merged: enabling its transient index binding in overlays requires changing
+lazy hydration to maintain/invalidate those indexes first.

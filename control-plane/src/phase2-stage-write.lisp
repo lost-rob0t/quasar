@@ -281,8 +281,7 @@
 
 (defun %promote-stage-documents (database workspace-id stage-id)
   (let ((prefix (%stage-document-prefix workspace-id stage-id))
-        (start nil)
-        (created 0))
+        (start nil) (created 0) (byte-delta 0))
     (loop
       for rows = (%bounded-range database prefix :start start)
       while rows
@@ -290,14 +289,16 @@
         (dolist (row rows)
           (let* ((document (cdr row))
                  (id (quasar.protocol:starintel-document-id document))
-                 (canonical-key
-                   (%document-key workspace-id id)))
-            (unless (tek9:fetch* database canonical-key)
-              (incf created))
+                 (canonical-key (%document-key workspace-id id))
+                 (previous (tek9:fetch* database canonical-key)))
+            (unless previous (incf created))
+            ;; The staged set contains the final value for each distinct ID.
+            ;; Charge the old/new record delta exactly once during promotion.
+            (incf byte-delta (%quota-record-delta previous document))
             (%put-record database canonical-key document)))
         (setf start (caar (last rows)))
       while (= (length rows) +phase2-range-batch-size+))
-    created))
+    (values created byte-delta)))
 
 (defun %ensure-default-graph-metadata (database workspace-id)
   (unless

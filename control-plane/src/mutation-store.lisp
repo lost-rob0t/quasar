@@ -81,8 +81,9 @@
 (defmethod direct-workspace-metadata ((store tek9-store) workspace-id)
   (let* ((database (tek9-store-database store))
          (meta (tek9:fetch* database (%workspace-meta-key workspace-id))))
-    (quasar.protocol:clone-json
-     (or meta (%default-workspace-meta workspace-id 0 0)))))
+    (values (quasar.protocol:clone-json
+             (or meta (%default-workspace-meta workspace-id 0 0)))
+            (not (null meta)))))
 
 (defmethod direct-graph-metadata ((store memory-store) workspace-id graph-id)
   (let ((graph
@@ -475,7 +476,7 @@
            (format nil
                    "Tek9 workspace ~A is at revision ~A, expected ~A."
                    workspace-id current-revision base-revision)))
-        (%ensure-default-graph-metadata database workspace-id)
+        (%quota-ensure-default-graph database workspace-id)
         (let ((quota (%quota-state database workspace-id base-revision))
               (graphs-before (make-hash-table :test #'equal)))
           (loop for change across changes
@@ -496,6 +497,7 @@
                 (when delta
                   (quasar.protocol:object-set quota "documentSum"
                    (+ delta (quasar.protocol:json-value quota "documentSum")))))
+              (%quota-track-graph-change database workspace-id change)
               (%apply-change store workspace-id change stats))
           (maphash
            (lambda (graph-id previous)
