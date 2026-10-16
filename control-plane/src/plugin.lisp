@@ -73,16 +73,14 @@ actor, parent, sandbox, and resource limits. It must return true to allow."
   (bt:with-lock-held (*policy-lock*)
     (setf *storage-quota-resolver* function)))
 
-(defun authorize-storage-commit (principal workspace)
-  "Reject a candidate workspace that exceeds PRINCIPAL's logical byte quota.
-The check happens before durable commit, so quota failures have no side effects."
+(defun authorize-storage-bytes (principal used)
+  "Apply the trusted quota policy to an exact logical snapshot byte count."
   (when principal
     (let* ((resolver (bt:with-lock-held (*policy-lock*) *storage-quota-resolver*))
            (limit (if resolver (funcall resolver principal)
-                      *default-user-storage-bytes*))
-           (used (length (babel:string-to-octets
-                          (quasar.protocol:encode
-                           (quasar.workspace:workspace-snapshot workspace))))))
+                      *default-user-storage-bytes*)))
+      (unless (and (integerp used) (not (minusp used)))
+        (error "Invalid storage accounting."))
       (unless (and (integerp limit) (plusp limit))
         (error "Invalid storage quota for principal ~A." principal))
       (when (> used limit)
@@ -90,6 +88,16 @@ The check happens before durable commit, so quota failures have no side effects.
                :code "storage.quota-exceeded"
                :message (format nil "Storage quota exceeded (~D of ~D bytes)."
                                 used limit)))))
+  t)
+
+(defun authorize-storage-commit (principal workspace)
+  "Compatibility quota check for a complete materialized workspace."
+  (when principal
+    (authorize-storage-bytes
+     principal
+     (length (babel:string-to-octets
+              (quasar.protocol:encode
+               (quasar.workspace:workspace-snapshot workspace)) :encoding :utf-8))))
   t)
 
 (defun reset-plugin-policy ()
