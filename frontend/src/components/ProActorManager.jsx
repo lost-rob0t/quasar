@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Crown, LockKeyhole, RefreshCw, Send, ServerCog } from "lucide-react";
 import { assertDocument, createDocument, documentLabel } from "starintel_doc/legacy";
 import {
@@ -7,18 +7,19 @@ import {
   cpSystemCapabilities
 } from "../control-plane/mutations";
 import {
-  PRO_ACTOR_MANIFEST_CAPABILITY,
-  PRO_ACTOR_SUBMIT_CAPABILITY,
   actorTargetFromDocument,
   defaultConfigForManifest,
   editableConfigProperties,
   editableTargetOptions,
-  listProActorManifests,
-  normalizeProActorManifest,
   parseManifestValue,
   targetOptionsForRun
 } from "../lib/pro-actors";
 import { useQuasar } from "../store";
+import {
+  discoverProIntegration,
+  normalizeProIntegrationMode,
+  proIntegrationView
+} from "../lib/pro-integration";
 
 function inputValue(value) {
   if (value === undefined || value === null) return "";
@@ -131,18 +132,30 @@ function parseOptions(options, values) {
 export default function ProActorManager() {
   const { documents, selectedDocuments, settings, submitTarget, setNotice, controlPlaneStatus } =
     useQuasar();
-  const [capabilities, setCapabilities] = useState([]);
-  const [manifests, setManifests] = useState([]);
+  const mode = normalizeProIntegrationMode(settings?.proIntegrationMode);
+  const [discovery, setDiscovery] = useState(null);
+  const [refreshGeneration, setRefreshGeneration] = useState(0);
+  const currentDiscovery =
+    discovery?.connection === controlPlaneStatus &&
+    discovery?.mode === mode &&
+    discovery?.generation === refreshGeneration &&
+    discovery?.documentCount === documents.length
+      ? discovery.result
+      : null;
+  const view = proIntegrationView(mode, Boolean(controlPlaneStatus?.connected), currentDiscovery);
+  const manifests = view.manifests;
+  const accessRef = useRef(null);
+  accessRef.current = { mode, connection: controlPlaneStatus, canSubmit: view.canSubmit };
   const [actorId, setActorId] = useState("");
   const [inputId, setInputId] = useState("");
   const [configValues, setConfigValues] = useState({});
   const [optionValues, setOptionValues] = useState({});
-  const [loading, setLoading] = useState(false);
+  const loading = view.loading;
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  const hasManifestAccess = capabilities.includes(PRO_ACTOR_MANIFEST_CAPABILITY);
-  const hasSubmitAccess = capabilities.includes(PRO_ACTOR_SUBMIT_CAPABILITY);
+  const hasManifestAccess = view.available;
+  const hasSubmitAccess = view.canSubmit;
   const actor = manifests.find((item) => item.id === actorId) || manifests[0] || null;
   const configFields = useMemo(() => editableConfigProperties(actor), [actor]);
   const targetOptions = useMemo(() => editableTargetOptions(actor), [actor]);
@@ -158,43 +171,31 @@ export default function ProActorManager() {
   const input =
     candidateInputs.find((document) => document._id === inputId) || candidateInputs[0] || null;
 
-  async function refresh() {
-    setLoading(true);
-    setError("");
-    try {
-      const nextCapabilities = await cpSystemCapabilities();
-      setCapabilities(nextCapabilities);
-      if (!nextCapabilities.includes(PRO_ACTOR_MANIFEST_CAPABILITY)) {
-        setManifests([]);
-        return;
-      }
-      const remoteDocuments = await cpProActorManifests();
-      const remote = remoteDocuments.map(normalizeProActorManifest).filter(Boolean);
-      const local = listProActorManifests(documents || []);
-      const byId = new Map([...local, ...remote].map((manifest) => [manifest.id, manifest]));
-      const next = [...byId.values()].sort((left, right) => left.id.localeCompare(right.id));
-      setManifests(next);
-      setActorId((current) =>
-        next.some((item) => item.id === current) ? current : next[0]?.id || ""
-      );
-    } catch (cause) {
-      setError(cause?.message || String(cause));
-      setManifests([]);
-    } finally {
-      setLoading(false);
-    }
+  function refresh() {
+    setRefreshGeneration((current) => current + 1);
   }
 
   useEffect(() => {
-    if (!controlPlaneStatus?.connected) {
-      setCapabilities([]);
-      setManifests([]);
-      return;
-    }
-    void refresh();
-    // Manifests are document-backed; refresh when the canonical corpus changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [controlPlaneStatus?.connected, documents.length]);
+    let cancelled = false;
+    setDiscovery(null);
+    setError("");
+    if (mode === "off" || !controlPlaneStatus?.connected) return;
+    void discoverProIntegration(cpSystemCapabilities, cpProActorManifests, () => !cancelled).then(
+      (result) => {
+        if (!cancelled)
+          setDiscovery({
+            connection: controlPlaneStatus,
+            mode,
+            generation: refreshGeneration,
+            documentCount: documents.length,
+            result
+          });
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, controlPlaneStatus, documents.length, refreshGeneration]);
 
   useEffect(() => {
     if (!actor) {
@@ -249,7 +250,15 @@ export default function ProActorManager() {
 
       // This is the hard hosted entitlement gate. quasar.ws rejects the command
       // before this handler runs unless starintel-biz granted the paid capability.
+      const access = accessRef.current;
       await cpAuthorizeProActorTarget(targetDocument);
+      if (
+        !accessRef.current.canSubmit ||
+        accessRef.current.mode !== access.mode ||
+        accessRef.current.connection !== access.connection
+      ) {
+        throw new Error("Pro availability changed; refresh before submitting again.");
+      }
       await submitTarget(targetDocument, settings);
       setNotice({
         kind: "success",
@@ -263,6 +272,8 @@ export default function ProActorManager() {
       setSubmitting(false);
     }
   }
+
+  if (!view.visible) return null;
 
   return (
     <section className="page-card actor-manager pro-actor-manager">
@@ -293,11 +304,10 @@ export default function ProActorManager() {
       {controlPlaneStatus?.connected && !hasManifestAccess && (
         <div className="empty-state">
           <LockKeyhole size={28} />
-          <h2>Pro plan required</h2>
+          <h2>{loading ? "Checking Pro availability…" : "Pro integration unavailable"}</h2>
           <p>
-            This session does not have <code>{PRO_ACTOR_MANIFEST_CAPABILITY}</code> or{" "}
-            <code>{PRO_ACTOR_SUBMIT_CAPABILITY}</code>. Free/basic access cannot discover or run the
-            paid actor fleet.
+            {view.error ||
+              "The host must support Pro discovery and grant this session Pro actor access. On does not grant a subscription or permissions."}
           </p>
         </div>
       )}
