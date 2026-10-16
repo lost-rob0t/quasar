@@ -237,8 +237,11 @@
                 for graph = (quasar.protocol:json-object
                              (cons "id" id) (cons "name" id)
                              (cons "documentIds" (cons :array (loop for n below 256 collect (format nil "doc-~D" n))))
-                             (cons "positions" (quasar.protocol:json-object
-                                                 (cons "large" (make-string 65536 :initial-element #\x))))
+                             (cons "positions" (cons :obj
+                                                    (loop for n below 1024
+                                                          collect (cons (format nil "position-~D" n)
+                                                                        (quasar.protocol:json-object
+                                                                         (cons "x" n) (cons "y" n))))))
                              (cons "nodes" (cons :array
                                                   (loop for n below 64
                                                         collect (quasar.protocol:json-object
