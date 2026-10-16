@@ -350,6 +350,20 @@ textarea {
     grid-template-columns: 1fr 1fr;
   }
 
+  .import-source-grid,
+  .import-source-grid.single,
+  .import-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .import-actions .button-row {
+    grid-column: auto;
+  }
+
+  .import-section-heading > span {
+    display: none;
+  }
+
   .form-actions .button {
     width: 100%;
   }

@@ -2071,6 +2071,60 @@ td small {
   font-size: 0.66rem;
 }
 
+.import-form {
+  --import-accent: var(--quasar-brand, var(--accent));
+  display: grid;
+  gap: 1rem;
+}
+.import-form > .panel,
+.import-form > .import-grid {
+  margin: 0;
+}
+.import-source-panel {
+  display: grid;
+  gap: 1rem;
+}
+.import-section-heading {
+  align-items: flex-start;
+  margin-bottom: 0;
+}
+.import-section-heading h2 {
+  margin: 0;
+}
+.import-section-heading p {
+  margin: 0.3rem 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.import-section-heading > span {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.import-source-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.import-source-grid.single {
+  grid-template-columns: minmax(0, 520px);
+}
+.import-source-note {
+  margin: 0;
+  padding: 0.72rem 0.8rem;
+  border-left: 2px solid var(--import-accent);
+  background: color-mix(in srgb, var(--surface) 90%, var(--import-accent));
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+.import-form .field input,
+.import-form .field select {
+  border-color: var(--quasar-line, var(--line));
+  background: var(--quasar-panel-2, var(--surface));
+}
+.import-form .field input:focus,
+.import-form .field select:focus {
+  border-color: var(--import-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--import-accent) 16%, transparent);
+}
 .import-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2082,15 +2136,25 @@ td small {
   gap: 0.45rem;
   min-height: 190px;
   padding: 1.5rem;
-  border: 1px dashed #3a638b;
-  border-radius: 13px;
-  background: #0b192a;
+  border: 1px dashed color-mix(in srgb, var(--line) 76%, var(--import-accent));
+  border-radius: var(--quasar-radius, var(--radius));
+  background: var(--surface);
+  color: var(--text);
   text-align: center;
   cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    transform 150ms ease;
 }
-.upload-card:hover {
-  border-color: var(--accent);
-  background: #10233a;
+.upload-card:hover,
+.upload-card:focus-within {
+  border-color: var(--import-accent);
+  background: color-mix(in srgb, var(--surface) 92%, var(--import-accent));
+  transform: translateY(-1px);
+}
+.upload-card > svg {
+  color: var(--import-accent);
 }
 .upload-card strong {
   color: var(--white);
@@ -2121,7 +2185,24 @@ td small {
   color: var(--muted);
 }
 .import-actions {
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 0.85rem 1rem;
+}
+.import-actions .checkbox {
+  align-items: flex-start;
+  line-height: 1.45;
+}
+.import-actions .checkbox input {
+  flex: 0 0 auto;
+  margin-top: 0.18rem;
+}
+.import-actions .button-row {
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--line);
 }
 .validation-error {
   display: grid;
