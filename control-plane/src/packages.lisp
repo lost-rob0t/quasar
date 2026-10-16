@@ -69,6 +69,8 @@
     #:direct-graph-snapshot
     #:workspace-bootstrap
     #:search-documents
+    #:page-documents
+    #:stream-document-pages
     #:fetch-document-batch
     #:begin-import-stage
     #:accept-import-chunk
