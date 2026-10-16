@@ -18,17 +18,12 @@ import {
   startLiveSync,
   syncOnce
 } from "./lib/db";
-import {
-  cpDocumentCreate,
-  cpDocumentUpdate,
-  cpDocumentDelete,
-  cpImportDocuments,
-  cpSnapshot,
-  cpTransaction
-} from "./control-plane/mutations";
+import { cpImportDocuments, cpSnapshot, cpTransaction } from "./control-plane/mutations";
 import { getControlPlane } from "./control-plane/client";
 import { chunkTransactionOperations } from "./control-plane/transaction-chunks";
-import { documentsToJsonl, downloadText, importFiles } from "./lib/importer";
+import { importFiles } from "./lib/importer";
+import { commitDocumentEdit } from "./control-plane/document-edit";
+import { exportWorkspaceToFile } from "./control-plane/browser-export";
 import { operation } from "./lib/operations";
 import { validateDocumentBatch } from "./lib/document-batch";
 import {
@@ -171,22 +166,22 @@ export function QuasarProvider({ children }) {
     async (command, label = command.type, { recordHistory = true } = {}) => {
       if (command?.type === "save-document") {
         const doc = command.document;
-        const existing =
-          documentsRef.current.find((item) => item._id === (doc.id || doc._id)) || null;
-        let result;
-        if (existing) {
-          result = await cpDocumentUpdate(doc);
-        } else {
-          result = await cpDocumentCreate(doc);
-        }
+        const client = getControlPlane();
+        if (!client) throw new Error("Connect to the workspace before editing.");
+        const { previous: existing, result } = await commitDocumentEdit(
+          client,
+          doc.id || doc._id,
+          doc
+        );
         await refresh();
         const inverse = existing ? operation.save(existing) : operation.remove(doc.id || doc._id);
         if (recordHistory) record({ label, inverse, redo: command });
         return result;
       }
       if (command?.type === "remove-document") {
-        const existing = documentsRef.current.find((item) => item._id === command.id) || null;
-        const result = await cpDocumentDelete(command.id);
+        const client = getControlPlane();
+        if (!client) throw new Error("Connect to the workspace before editing.");
+        const { previous: existing, result } = await commitDocumentEdit(client, command.id);
         await refresh();
         const inverse = existing ? operation.save(existing) : null;
         if (recordHistory) record({ label, inverse, redo: command });
@@ -610,8 +605,10 @@ export function QuasarProvider({ children }) {
     [selectedIds, setLocalWorkspace]
   );
 
-  const exportDocuments = useCallback(() => {
-    downloadText("quasar-documents.jsonl", documentsToJsonl(documentsRef.current));
+  const exportDocuments = useCallback(async ({ signal } = {}) => {
+    const client = getControlPlane();
+    if (!client) throw new Error("Connect to the workspace before exporting.");
+    return exportWorkspaceToFile(client, { signal });
   }, []);
 
   const startSync = useCallback(

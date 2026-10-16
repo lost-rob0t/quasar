@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ChevronLeft,
@@ -168,7 +168,38 @@ function DatasetsPage({ documents, query, setQuery }) {
 }
 
 export function DocumentsPage() {
-  const { documents, execute, setNotice, createGraph, addDocumentsToActiveGraph } = useQuasar();
+  const { documents, execute, setNotice, createGraph, addDocumentsToActiveGraph, exportDocuments } =
+    useQuasar();
+  const exportController = useRef(null);
+  const exportMounted = useRef(true);
+  const [exporting, setExporting] = useState(false);
+  useEffect(() => {
+    exportMounted.current = true;
+    return () => {
+      exportMounted.current = false;
+      exportController.current?.abort();
+    };
+  }, []);
+  const exportWorkspace = async () => {
+    if (exportController.current) return;
+    const controller = new AbortController();
+    exportController.current = controller;
+    setExporting(true);
+    try {
+      const result = await exportDocuments({ signal: controller.signal });
+      if (!controller.signal.aborted)
+        setNotice({
+          kind: "success",
+          message: `Exported ${result.count} canonical documents at workspace revision ${result.revision}.`
+        });
+    } catch (error) {
+      if (!controller.signal.aborted && error.name !== "AbortError")
+        setNotice({ kind: "error", message: error.message });
+    } finally {
+      exportController.current = null;
+      if (exportMounted.current) setExporting(false);
+    }
+  };
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const query = params.get("q") || "";
@@ -332,6 +363,20 @@ export function DocumentsPage() {
           >
             Export historical archive
           </button>
+          <button type="button" className="button" onClick={exportWorkspace} disabled={exporting}>
+            <Download size={16} /> {exporting ? "Exporting workspace…" : "Export workspace"}
+          </button>
+          {exporting ? (
+            <button
+              type="button"
+              className="button"
+              onClick={() => {
+                exportController.current?.abort();
+              }}
+            >
+              Cancel export
+            </button>
+          ) : null}
           <Link className="button primary" to="/documents/new">
             <Plus size={16} /> Add document
           </Link>

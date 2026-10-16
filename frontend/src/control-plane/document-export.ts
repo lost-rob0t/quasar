@@ -82,6 +82,7 @@ export async function streamDocumentExport(
       if (page.complete) {
         check();
         await sink.close();
+        check();
         return { count, revision: page.revision };
       }
       cursor = page.cursor;

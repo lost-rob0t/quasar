@@ -58,8 +58,14 @@ Root `AGENTS.md` and `docs/BOUNDED-WORKBENCH.md` govern this work.
   document write. The sink must implement write/close/abort and discard partial
   output on failure. Navigation, reconnect, mutation events, cancellation, stale
   revisions, malformed pages and sink failures abort without restarting or falling
-  back. The helper does not accumulate output. The existing UI exporter is still
-  materialized; a real durable browser sink and UI wiring remain outstanding.
+  back. The helper does not accumulate output. The Documents page now exposes an explicit Export workspace action through the
+  production provider, using a transactional Save File writer, cancellation, and
+  capability negotiation. Unsupported browsers receive an explicit message; no
+  corpus/Blob fallback runs. Existing filtered results and historical archive
+  exports retain their legacy behavior. File picker waits are bound to the
+  connection/workspace scope; cancellation while close is pending cannot report
+  success, but the browser may already have committed the file before detecting
+  cancellation. Abort is attempted and the original error is preserved.
   Supplemental frontend fixture tests validate this integration contract; they
   do not execute PR118's unverified Lisp backend.
 - #78: canonical ID lookup is available for mutation existence decisions, but the
@@ -85,3 +91,36 @@ production heap, latency, transport-size improvement is claimed. Tests with
 Real 10k/100k server/browser heap evidence, full feature journeys, actual Android
 and device tests, Lisp/auth/atomicity integration, and required Nix checks remain
 merge blockers. The work does not deploy or modify live data.
+
+## Production consumer progress and concrete remaining contracts
+
+Single-document provider save/delete now fetches only the canonical ID via
+bootstrap plus revision-bound batch, and commits one transaction with that exact
+revision. Undo captures the authoritative prior record; eviction cannot decide
+create versus update. A concurrent writer rejects the mutation instead of
+recording a stale inverse. Navigation during lookup cannot mutate the new scope.
+The existing post-write refresh still hydrates snapshots; batch/import existence,
+actor corpus input and sync remain materialized. This is not bounded production
+startup yet.
+
+The remaining #111/#78 integration needs are concrete:
+
+- Authoritative dataset summaries: name, document count, available dtype set and
+  maximum updatedAt, with a revision, pagination/budgets, and explicit legacy
+  migration/unsupported behavior. Counts must not come from a visible page.
+- Compact graph catalog plus requested graph membership, nodes, edges, positions,
+  groups and settings/presentation. All sections must bind to one revision and
+  expose explicit completion. savedGraphId must not activate/load a graph.
+- A partial graph cannot safely be submitted to graph.workspace.put as a complete
+  replacement. Agree atomic membership add/remove and presentation-delta mutation
+  contracts (or a bounded, explicitly complete requested-graph edit boundary)
+  before migrating add-to-graph, undo or graph settings persistence.
+- Define explicit empty-workbench and all-documents graph behavior without
+  creating an implicit full-corpus membership array. Preserve existing render
+  cutoffs and make incomplete membership distinct from an empty graph.
+
+Two synthetic Playwright journeys exercise the real production export button,
+provider/client wire requests and deferred-close cancellation, with mocked
+transport/file sinks. They do not verify native OS save dialogs or backend
+paging. Local Chromium installation failed with HTTP 403 Domain forbidden from
+cdn.playwright.dev; these journeys remain unrun locally.

@@ -97,6 +97,40 @@ describe("canonical streaming export", () => {
     expect(sink.write).not.toHaveBeenCalled();
     expect(sink.abort).toHaveBeenCalledOnce();
   });
+  it("does not report success after cancellation during close, even if abort cannot roll back", async () => {
+    const { run, sink } = fixture([page()]);
+    const controller = new AbortController();
+    let finish!: () => void;
+    sink.close.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        })
+    );
+    sink.abort.mockRejectedValueOnce(new Error("already committed"));
+    const result = run(() => {}, controller.signal);
+    const rejected = expect(result).rejects.toMatchObject({ code: "query.cancelled" });
+    await vi.waitFor(() => expect(sink.close).toHaveBeenCalledOnce());
+    controller.abort();
+    finish();
+    await rejected;
+    expect(sink.abort).toHaveBeenCalledOnce();
+  });
+
+  it("does not report success after scope change during close", async () => {
+    const { run, sink } = fixture([page()]);
+    let valid = true;
+    sink.close.mockImplementationOnce(async () => {
+      valid = false;
+    });
+    await expect(
+      run(() => {
+        if (!valid) throw new ControlPlaneError("query.cancelled", "scope changed");
+      })
+    ).rejects.toMatchObject({ code: "query.cancelled" });
+    expect(sink.abort).toHaveBeenCalledOnce();
+  });
+
   it("preserves sink errors even when abort also fails", async () => {
     const { run, sink, send } = fixture([page("next")]);
     const error = new Error("disk full");
