@@ -17,6 +17,7 @@ import { validateSource } from "../lib/code-validation";
 import { listStarIntelActors } from "../lib/starintel-server";
 import { useQuasar } from "../store";
 import CodeEditor from "./CodeEditor";
+import ServerActorTarget from "./ServerActorTarget";
 import "../actor-manager.css";
 
 const NEW_ACTOR = "__new_actor__";
@@ -136,6 +137,7 @@ export default function ActorManager() {
       return undefined;
     }
     let cancelled = false;
+    setServerActors([]);
     setServerActorState({ state: "loading", message: "Discovering StarIntel actors…" });
     listStarIntelActors(currentSettings)
       .then((nextActors) => {
@@ -421,6 +423,10 @@ export default function ActorManager() {
               {selectedActor.ready ? "ready" : "not ready"} · {selectedActor.sourcePackage}.
               Registry entries are read-only in Quasar.
             </div>
+          )}
+
+          {serverManaged && (
+            <ServerActorTarget actor={selectedActor} configuration={currentSettings} />
           )}
 
           <nav className="actor-editor-tabs" aria-label="Actor editor">
