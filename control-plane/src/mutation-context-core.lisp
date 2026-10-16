@@ -171,11 +171,11 @@
             (return-from mutation-context-install-node nil)))
          (node-id (quasar.protocol:json-value node "id")))
     (unless (quasar.workspace:graph-node graph node-id)
-      (setf
-       (rest (quasar.workspace:graph-nodes graph))
-       (append
-        (rest (quasar.workspace:graph-nodes graph))
-        (list (quasar.protocol:clone-json node)))))
+      ;; Hydration shares the append path with staged creates so an existing
+      ;; transaction-local index sees the durable record and retains its tail.
+      (quasar.workspace::add-array-item
+       (quasar.workspace:graph-nodes graph)
+       (quasar.protocol:clone-json node) "id" "graph.duplicate-id"))
     (setf
      (gethash
       (mutation-record-key graph-id node-id)
@@ -190,11 +190,11 @@
             (return-from mutation-context-install-edge nil)))
          (edge-id (quasar.protocol:json-value edge "id")))
     (unless (quasar.workspace:graph-edge graph edge-id)
-      (setf
-       (rest (quasar.workspace:graph-edges graph))
-       (append
-        (rest (quasar.workspace:graph-edges graph))
-        (list (quasar.protocol:clone-json edge)))))
+      ;; Hydration shares the append path with staged creates so an existing
+      ;; transaction-local index sees the durable record and retains its tail.
+      (quasar.workspace::add-array-item
+       (quasar.workspace:graph-edges graph)
+       (quasar.protocol:clone-json edge) "id" "graph.duplicate-id"))
     (setf
      (gethash
       (mutation-record-key graph-id edge-id)
