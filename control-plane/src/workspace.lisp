@@ -43,15 +43,58 @@
       (rest array)
       array))
 
+(defvar *graph-array-indexes* nil
+  "Transaction-local indexes keyed by JSON array identity; never persisted.
+Overlay callers may bind this to a fresh EQ hash table around their dispatch loop.
+Only dispatch-operation and the array helpers maintain this private context.")
+
+(defvar *graph-index-probes* nil
+  "Bind to zero to count ID membership probes in regression tests.")
+
+(defvar *graph-index-build-visits* nil
+  "Bind to zero to count existing elements visited while building array indexes.")
+
+(defvar *graph-index-appends* nil
+  "Bind to zero to count constant-time indexed tail appends.")
+
+(defun graph-index-get (id table)
+  (when *graph-index-probes* (incf *graph-index-probes*))
+  (gethash id table))
+
+(defun graph-array-index (array)
+  (when *graph-array-indexes*
+    (or (gethash array *graph-array-indexes*)
+        (setf (gethash array *graph-array-indexes*)
+              (let ((ids (make-hash-table :test #'equal))
+                    (tail array))
+                (loop for cell on (rest array)
+                      do (when *graph-index-build-visits*
+                           (incf *graph-index-build-visits*))
+                         (setf (gethash (quasar.protocol:json-value (car cell) "id") ids)
+                               (car cell)
+                               tail cell))
+                (cons ids tail))))))
+
+(defun invalidate-graph-array-index (array)
+  (when *graph-array-indexes* (remhash array *graph-array-indexes*)))
+
 (defun graph-node (graph node-id)
-  (let ((nodes (array-elements (graph-nodes graph))))
-    (find node-id nodes :key (lambda (n) (quasar.protocol:json-value n "id"))
-                        :test #'string=)))
+  (let* ((nodes (graph-nodes graph))
+         (index (graph-array-index nodes)))
+    (if index
+        (graph-index-get node-id (car index))
+        (find node-id (array-elements nodes)
+              :key (lambda (n) (quasar.protocol:json-value n "id"))
+              :test #'string=))))
 
 (defun graph-edge (graph edge-id)
-  (let ((edges (array-elements (graph-edges graph))))
-    (find edge-id edges :key (lambda (e) (quasar.protocol:json-value e "id"))
-                        :test #'string=)))
+  (let* ((edges (graph-edges graph))
+         (index (graph-array-index edges)))
+    (if index
+        (graph-index-get edge-id (car index))
+        (find edge-id (array-elements edges)
+              :key (lambda (e) (quasar.protocol:json-value e "id"))
+              :test #'string=))))
 
 (defun ensure-graph (workspace graph-id)
   (let ((graph (workspace-graph workspace graph-id)))
@@ -267,6 +310,8 @@
 
 (defun remove-node-from-graph (graph node-id)
   "Remove a node and all edges that reference it from a graph."
+  (invalidate-graph-array-index (graph-nodes graph))
+  (invalidate-graph-array-index (graph-edges graph))
   (let ((nodes (graph-nodes graph))
         (edges (graph-edges graph)))
     (setf (rest nodes)
@@ -298,7 +343,7 @@
                :message (format nil "Node references nonexistent document ~A." doc-ref)))))
   node)
 
-(defun require-valid-edge (workspace edge graph)
+(defun require-valid-edge (workspace edge graph &optional node-index)
   (quasar.protocol:ensure-object edge "edge" "graph.invalid-reference")
   (quasar.protocol:ensure-string (quasar.protocol:json-value edge "id") "id"
                                  "graph.invalid-reference")
@@ -307,11 +352,11 @@
         (document-id (quasar.protocol:json-value edge "documentId")))
     (quasar.protocol:ensure-string source "source" "graph.invalid-reference")
     (quasar.protocol:ensure-string target "target" "graph.invalid-reference")
-    (unless (graph-node graph source)
+    (unless (if node-index (graph-index-get source node-index) (graph-node graph source))
       (error 'quasar.protocol:quasar-error
              :code "graph.invalid-reference"
              :message (format nil "Edge source ~A does not exist." source)))
-    (unless (graph-node graph target)
+    (unless (if node-index (graph-index-get target node-index) (graph-node graph target))
       (error 'quasar.protocol:quasar-error
              :code "graph.invalid-reference"
              :message (format nil "Edge target ~A does not exist." target)))
@@ -330,18 +375,28 @@
 ;;; --- Array helpers ---
 
 (defun add-array-item (array item id-field error-code)
-  (let ((items (rest array)))
-    (when (find (quasar.protocol:json-value item id-field) items
-                :key (lambda (n) (quasar.protocol:json-value n id-field))
-                :test #'string=)
+  (let* ((id (quasar.protocol:json-value item id-field))
+         (index (and (string= id-field "id") (graph-array-index array))))
+    (when (if index
+              (graph-index-get id (car index))
+              (find id (rest array)
+                    :key (lambda (n) (quasar.protocol:json-value n id-field))
+                    :test #'string=))
       (error 'quasar.protocol:quasar-error
              :code error-code
-             :message (format nil "Duplicate id ~A."
-                              (quasar.protocol:json-value item id-field))))
-    (setf (rest array) (append items (list item))))
+             :message (format nil "Duplicate id ~A." id)))
+    (if index
+        (let ((cell (list item)))
+          (when *graph-index-appends* (incf *graph-index-appends*))
+          ;; The tail belongs to this candidate's list, never a source graph.
+          (setf (cdr (cdr index)) cell
+                (cdr index) cell
+                (gethash id (car index)) item))
+        (setf (rest array) (append (rest array) (list item)))))
   item)
 
 (defun replace-array-item (array item id-field not-found-code)
+  (invalidate-graph-array-index array)
   (let* ((items (rest array))
          (id (quasar.protocol:json-value item id-field))
          (position (position id items
@@ -355,6 +410,7 @@
   item)
 
 (defun remove-array-item (array id id-field code not-found-message)
+  (invalidate-graph-array-index array)
   (let* ((items (rest array))
          (position (position id items
                             :key (lambda (n) (quasar.protocol:json-value n id-field))
@@ -650,12 +706,12 @@
        canonical "edges"
        (apply #'quasar.protocol:json-array
               (mapcar #'quasar.protocol:clone-json (array-elements edges))))
-      (let ((seen (make-hash-table :test #'equal)))
+      (let ((node-index (make-hash-table :test #'equal)))
         (dolist (node (array-elements (graph-nodes canonical)))
           (require-valid-node workspace node)
           (let ((node-id (quasar.protocol:json-value node "id"))
                 (node-graph-id (quasar.protocol:json-value node "graphId")))
-            (when (gethash node-id seen)
+            (when (graph-index-get node-id node-index)
               (error 'quasar.protocol:quasar-error
                      :code "graph.duplicate-id"
                      :message (format nil "Duplicate node id ~A." node-id)))
@@ -664,22 +720,22 @@
                      :code "graph.invalid-reference"
                      :message (format nil "Node belongs to graph ~A, not ~A."
                                       node-graph-id id)))
-            (setf (gethash node-id seen) t))))
-      (let ((seen (make-hash-table :test #'equal)))
-        (dolist (edge (array-elements (graph-edges canonical)))
-          (require-valid-edge workspace edge canonical)
-          (let ((edge-id (quasar.protocol:json-value edge "id"))
-                (edge-graph-id (quasar.protocol:json-value edge "graphId")))
-            (when (gethash edge-id seen)
-              (error 'quasar.protocol:quasar-error
-                     :code "graph.duplicate-id"
-                     :message (format nil "Duplicate edge id ~A." edge-id)))
-            (when (and edge-graph-id (not (string= edge-graph-id id)))
-              (error 'quasar.protocol:quasar-error
-                     :code "graph.invalid-reference"
-                     :message (format nil "Edge belongs to graph ~A, not ~A."
-                                      edge-graph-id id)))
-            (setf (gethash edge-id seen) t)))))
+            (setf (gethash node-id node-index) node)))
+        (let ((seen (make-hash-table :test #'equal)))
+          (dolist (edge (array-elements (graph-edges canonical)))
+            (require-valid-edge workspace edge canonical node-index)
+            (let ((edge-id (quasar.protocol:json-value edge "id"))
+                  (edge-graph-id (quasar.protocol:json-value edge "graphId")))
+              (when (graph-index-get edge-id seen)
+                (error 'quasar.protocol:quasar-error
+                       :code "graph.duplicate-id"
+                       :message (format nil "Duplicate edge id ~A." edge-id)))
+              (when (and edge-graph-id (not (string= edge-graph-id id)))
+                (error 'quasar.protocol:quasar-error
+                       :code "graph.invalid-reference"
+                       :message (format nil "Edge belongs to graph ~A, not ~A."
+                                        edge-graph-id id)))
+              (setf (gethash edge-id seen) t))))))
     (setf (workspace-graph workspace id) canonical)
     (make-applied-op
      :event (if previous "graph.updated" "graph.created")
@@ -819,6 +875,12 @@
   (let ((type (quasar.protocol:json-value operation "type"))
         (payload (or (quasar.protocol:json-value operation "payload")
                      (quasar.protocol:empty-object))))
+    ;; Destructive operations can rewrite arrays outside the common helpers.
+    ;; Drop transient state before them; append-only runs retain their indexes.
+    (when (and *graph-array-indexes*
+               (not (member type '("graph.node.create" "graph.edge.create")
+                            :test #'string=)))
+      (clrhash *graph-array-indexes*))
     (cond
       ((string= type "document.create")
        (apply-document-create workspace payload))
@@ -857,7 +919,8 @@
   "Apply every operation, collecting events and inverses. Signals on the first
 failure and leaves WORKSPACE unchanged (caller is responsible for using a
 candidate copy for transaction isolation)."
-  (let ((applied-operations '())
+  (let ((*graph-array-indexes* (make-hash-table :test #'eq))
+        (applied-operations '())
         (inverses '()))
     (dolist (operation operations)
       (let ((applied (dispatch-operation workspace operation)))
