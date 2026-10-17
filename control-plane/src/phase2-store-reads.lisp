@@ -33,13 +33,8 @@
           (error 'quasar.protocol:quasar-error
                  :code "graph.not-found"
                  :message (format nil "Graph ~A does not exist." graph-id)))
-        (let* ((workspace-meta
-                 (or (tek9:fetch* database (%workspace-meta-key workspace-id))
-                     (%default-workspace-meta workspace-id 0 0)))
-               (workspace (%restore-metadata-workspace store workspace-id workspace-meta))
-               (graph (quasar.workspace:workspace-graph workspace graph-id)))
-          (unless graph
-            (error 'quasar.protocol:quasar-error
-                   :code "graph.not-found"
-                   :message (format nil "Graph ~A does not exist." graph-id)))
-          (quasar.protocol:clone-json graph))))))
+        ;; The compatibility snapshot still materializes the requested graph,
+        ;; but must never enumerate or decode any unrelated saved graph.
+        ;; %RESTORE-GRAPH reads only this namespace and its canonical sidecars.
+        (let ((workspace (quasar.workspace:make-workspace :id workspace-id)))
+          (%restore-graph store workspace meta))))))

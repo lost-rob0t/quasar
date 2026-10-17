@@ -69,7 +69,14 @@
     #:direct-graph-snapshot
     #:workspace-bootstrap
     #:search-documents
+    #:page-documents
+    #:stream-document-pages
     #:fetch-document-batch
+    #:graph-catalog-page
+    #:graph-content-page
+    #:migrate-graph-catalog
+    #:dataset-catalog-page
+    #:migrate-dataset-catalog
     #:begin-import-stage
     #:accept-import-chunk
     #:promote-import-stage

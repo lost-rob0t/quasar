@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { readFile } from "node:fs/promises";
 
 test("native canonical create, reload, edit, cancel, export and validation", async ({

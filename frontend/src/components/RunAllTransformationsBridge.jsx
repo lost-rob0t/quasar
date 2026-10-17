@@ -1,3 +1,5 @@
+import { getControlPlaneOrThrow } from "../control-plane/client";
+import { transformationEvidence } from "../control-plane/agent-input";
 import { useEffect, useMemo, useState } from "react";
 import { Play } from "lucide-react";
 import { createPortal } from "react-dom";
@@ -133,7 +135,12 @@ export default function RunAllTransformationsBridge() {
         }
 
         const actorScope = corpus.filter((document) => scopeIds.has(document._id));
-        const candidates = transformationCandidates(actor, actorScope, corpus);
+        const evidence = await transformationEvidence(
+          getControlPlaneOrThrow(),
+          [...scopeIds],
+          actor.id
+        );
+        const candidates = transformationCandidates(actor, actorScope, corpus, evidence);
         const batches = transformationBatches(actor, candidates);
         if (!batches.length) {
           reports.push({

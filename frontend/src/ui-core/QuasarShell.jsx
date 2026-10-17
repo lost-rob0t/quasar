@@ -117,7 +117,9 @@ export default function QuasarShell({ children }) {
     canRedo,
     undo,
     redo,
-    documents = [],
+    bootstrap,
+    graphCatalogPage,
+    nextGraphPage,
     graphs = [],
     activeGraph,
     switchGraph,
@@ -186,18 +188,30 @@ export default function QuasarShell({ children }) {
         </nav>
 
         {graphRoute && (
-          <SidebarGraphs
-            graphs={graphs}
-            activeGraph={activeGraph}
-            switchGraph={switchGraph}
-            createGraph={createGraph}
-          />
+          <>
+            <SidebarGraphs
+              graphs={graphs}
+              activeGraph={activeGraph}
+              switchGraph={switchGraph}
+              createGraph={createGraph}
+            />
+            {graphCatalogPage && !graphCatalogPage.complete && (
+              <button className="button small" onClick={nextGraphPage}>
+                More graphs
+              </button>
+            )}
+          </>
         )}
 
         <div className="sidebar-foot">
           <div className="sidebar-corpus-count">
             <Database size={14} />
-            <span>{documents.length.toLocaleString()} documents</span>
+            <span>
+              {bootstrap?.documentCount == null
+                ? "Unknown"
+                : bootstrap.documentCount.toLocaleString()}{" "}
+              documents
+            </span>
           </div>
           <div className="sidebar-runtime-label">{runtime.label}</div>
           <div className="sidebar-user">
@@ -287,7 +301,7 @@ export default function QuasarShell({ children }) {
               </strong>
               <p>
                 {controlPlaneStatus?.phase === "synchronizing"
-                  ? "The WebSocket is connected. Your documents are being loaded."
+                  ? "The WebSocket is connected. Workspace metadata is being synchronized."
                   : "Waiting for the control plane. Retrying automatically."}
               </p>
               {progress && (
