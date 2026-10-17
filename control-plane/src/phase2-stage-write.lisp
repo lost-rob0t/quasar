@@ -294,7 +294,7 @@
                    (%document-key workspace-id id)))
             (unless (tek9:fetch* database canonical-key)
               (incf created))
-            (%put-record database canonical-key document)))
+            (%put-cataloged-document database workspace-id id document)))
         (setf start (caar (last rows)))
       while (= (length rows) +phase2-range-batch-size+))
     created))
@@ -317,7 +317,8 @@
     ;; Also covers #78's first overlay commit, which calls this helper before
     ;; writing workspace metadata. Never mark an existing legacy workspace ready.
     (unless (tek9:fetch* database (%workspace-meta-key workspace-id))
-      (%mark-graph-catalog-ready database workspace-id))))
+      (%mark-graph-catalog-ready database workspace-id)
+      (%mark-dataset-ready database workspace-id))))
 
 (defun %compact-import-journal
     (workspace-id stage-id operation-id client
