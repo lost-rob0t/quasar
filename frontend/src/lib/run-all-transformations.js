@@ -19,7 +19,9 @@ function transformationActors(document) {
 function relationEndpoints(document) {
   if (document?.dtype !== "relation") return [];
   const data = document.data || {};
-  return [data.subject || data.source, data.object || data.target].filter(Boolean);
+  return [data.subject || data.source, data.object || data.target]
+    .map((endpoint) => (typeof endpoint === "string" ? endpoint : endpoint?.id))
+    .filter(Boolean);
 }
 
 export function linkedDocumentIds(documents) {
@@ -77,12 +79,13 @@ export function recordTransformationRun(
 export function transformationCandidates(
   actorManifest,
   scopeDocuments,
-  corpusDocuments = scopeDocuments
+  corpusDocuments = scopeDocuments,
+  evidence
 ) {
   const actor = normalizeActorManifest(actorManifest);
   const accepted = new Set(actor.accepts);
-  const linked = linkedDocumentIds(corpusDocuments);
-  const touched = actorTouchedDocumentIds(corpusDocuments, actor.id);
+  const linked = evidence?.linked || linkedDocumentIds(corpusDocuments);
+  const touched = evidence?.touched || actorTouchedDocumentIds(corpusDocuments, actor.id);
   const seen = new Set();
 
   return (scopeDocuments || []).filter((document) => {
