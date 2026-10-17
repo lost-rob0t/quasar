@@ -89,7 +89,7 @@ describe("actor manifests", () => {
     expect(actor.capabilities).toEqual(["network.fetch"]);
     expect(
       BUILTIN_ACTORS.find((item) => item.id === "quasar.actor.city-legistar-calendar")?.capabilities
-    ).toEqual(["network.fetch"]);
+    ).toEqual(["network.fetch", "documents.query"]);
   });
 
   it("ships executable worker function sources", () => {
