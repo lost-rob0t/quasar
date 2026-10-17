@@ -318,6 +318,7 @@
     ;; writing workspace metadata. Never mark an existing legacy workspace ready.
     (unless (tek9:fetch* database (%workspace-meta-key workspace-id))
       (%mark-graph-catalog-ready database workspace-id)
+      (%mark-statistics-ready database workspace-id)
       (%mark-dataset-ready database workspace-id))))
 
 (defun %compact-import-journal

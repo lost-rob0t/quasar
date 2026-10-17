@@ -198,7 +198,7 @@ whole topology. A failed transaction leaves the prior generation unchanged."
                          (append
                           (list (cons "revision" revision) (cons "projection" projection)
                                 (cons (cond ((string= projection "graph-catalog.v1") "graphs")
-                                            ((string= projection "dataset-catalog.v1") "datasets")
+                                            ((member projection '("dataset-catalog.v1" "workspace-statistics-datasets.v1") :test #'equal) "datasets")
                                             (t "records"))
                                       (cons :array (nreverse rows)))
                                 (cons "complete" (if complete t :false))
