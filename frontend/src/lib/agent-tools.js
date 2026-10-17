@@ -17,7 +17,7 @@ function text(value) {
     .toLowerCase();
 }
 
-function documentMatches(document, query) {
+export function documentMatches(document, query) {
   if (query.ids?.length && !query.ids.includes(document._id)) return false;
   if (query.objectTypes?.length && !query.objectTypes.includes(document.dtype)) return false;
   if (query.datasets?.length && !query.datasets.includes(document.dataset)) return false;
@@ -135,7 +135,7 @@ export function createAgentToolRegistry(environment) {
     async execute(args, context) {
       const limit = boundedInteger(args.limit, 25, 1, MAX_QUERY_RESULTS);
       const allowedDatasets = new Set(context.agent.datasetAccess || ["*"]);
-      const documents = (await environment.getDocuments())
+      const documents = (await environment.getDocuments(args, context))
         .filter((document) => allowedDatasets.has("*") || allowedDatasets.has(document.dataset))
         .filter((document) => documentMatches(document, args))
         .slice(0, limit);

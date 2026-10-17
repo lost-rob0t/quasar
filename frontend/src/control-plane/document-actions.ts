@@ -78,8 +78,10 @@ export async function graphDocumentsForScope(client: ControlPlaneClient, scope: 
 }
 
 /** Exact transitive relation closure; each pass streams, retaining only bounded IDs. */
-export async function relatedDeletionIds(client: ControlPlaneClient, id: string) {
-  const selected = new Set([id]);
+export async function relatedDeletionIds(client: ControlPlaneClient, id: string | string[]) {
+  const selected = new Set(Array.isArray(id) ? id : [id]);
+  if (selected.size > 1000)
+    throw new Error("Related deletion exceeds the atomic transaction limit.");
   let revision: number | undefined;
   for (;;) {
     const size = selected.size;
@@ -102,4 +104,29 @@ export async function relatedDeletionIds(client: ControlPlaneClient, id: string)
     revision = result.revision;
     if (selected.size === size) return { ids: [...selected], revision };
   }
+}
+
+export async function connectingRelationIds(client: ControlPlaneClient, members: string[]) {
+  const ids = new Set(members);
+  const relations: string[] = [];
+  if (ids.size > 2000) throw new Error("Graph membership exceeds the renderer budget.");
+  await client.exportDocuments({
+    write: async (document) => {
+      if (document.dtype !== "relation") return;
+      const source = document.source as { id?: string } | undefined;
+      const destination = document.destination as { id?: string } | undefined;
+      if (
+        !ids.has(String(document.id)) &&
+        ids.has(source?.id || "") &&
+        ids.has(destination?.id || "")
+      ) {
+        if (relations.length + ids.size >= 2000)
+          throw new Error("Graph membership exceeds the renderer budget.");
+        relations.push(String(document.id));
+      }
+    },
+    close: async () => {},
+    abort: async () => {}
+  });
+  return relations;
 }

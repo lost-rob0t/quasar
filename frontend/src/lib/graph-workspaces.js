@@ -2,7 +2,7 @@ const DEFAULT_GRAPH_ID = "all-documents";
 const MAX_GRAPHS = 100;
 
 function uniqueStrings(values) {
-  return [...new Set((values || []).map(String).filter(Boolean))];
+  return [...new Set((Array.isArray(values) ? values : []).map(String).filter(Boolean))];
 }
 
 function cleanPositions(value) {

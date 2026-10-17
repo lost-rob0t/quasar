@@ -720,10 +720,13 @@ export function createControlPlaneClient(
 
 let globalClient: ControlPlaneClient | null = null;
 
-export function initializeControlPlane(url?: string): ControlPlaneClient {
+export function initializeControlPlane(
+  url?: string,
+  options?: Parameters<typeof createControlPlaneClient>[1]
+): ControlPlaneClient {
   if (globalClient && !url) return globalClient;
   globalClient?.dispose();
-  globalClient = createControlPlaneClient(url);
+  globalClient = createControlPlaneClient(url, options);
   return globalClient;
 }
 
