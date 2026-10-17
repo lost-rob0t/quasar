@@ -77,7 +77,16 @@
       ;; A staged overwrite moves the existing document between datasets.
       (tek9:with-write-transaction (db)
         (quasar.store::%put-record db (quasar.store::%stage-document-key "datasets" "stage" "a")
-                                  (dataset-test-document "a" "imported" "organization" 30))
+                                  (dataset-test-document "a" "imported" "organization" 30)))
+      (check (handler-case
+                 (tek9:with-write-transaction (db)
+                   (quasar.store::%promote-stage-documents db "datasets" "stage")
+                   (error "failure after dataset import changes"))
+               (error () t)))
+      (check (equal "old" (quasar.protocol:json-value (first (dataset-test-rows store)) "name")))
+      (check (equal "old" (quasar.protocol:json-value
+                           (tek9:fetch* db (quasar.store::%document-key "datasets" "a")) "dataset")))
+      (tek9:with-write-transaction (db)
         (check (= 0 (quasar.store::%promote-stage-documents db "datasets" "stage"))))
       (let ((row (first (dataset-test-rows store))))
         (check (= 1 (length (dataset-test-rows store))))
@@ -117,8 +126,40 @@
       (check (stringp (quasar.protocol:json-value page "cursor")))
       (check (null (quasar.workspace:array-elements (quasar.protocol:json-value page "datasets")))))))
 
+(defun test-dataset-catalog-limits-and-null-time ()
+  (with-temporary-tek9-store (store path "dataset-limits")
+    (let ((document (dataset-test-document "a" "alpha" "person" 0)))
+      (setf (cdr document) (remove "updatedAt" (cdr document) :key #'car :test #'equal))
+      (dataset-test-change store :document-upsert "a" document))
+    (check (eq :null (quasar.protocol:json-value (first (dataset-test-rows store)) "updatedAt")))
+    (dataset-test-change store :document-upsert "b" (dataset-test-document "b" "alpha" "person" 0))
+    (check (eql 0 (quasar.protocol:json-value (first (dataset-test-rows store)) "updatedAt")))
+    (dataset-test-change store :document-delete "b")
+    (check (eq :null (quasar.protocol:json-value (first (dataset-test-rows store)) "updatedAt")))
+    (check (bounded-error-p "dataset.catalog-invalid"
+                            (lambda () (dataset-test-change store :document-upsert "a"
+                                         (dataset-test-document "a" "alpha" "person" (ash 1 257))))))
+    (check (= 1 (quasar.protocol:json-value (first (dataset-test-rows store)) "documentCount")))
+    (let ((fetch (symbol-function 'tek9:fetch*))
+          (range (symbol-function 'tek9:select-primary-range)))
+      (unwind-protect
+           (progn
+             (setf (symbol-function 'tek9:fetch*)
+                   (lambda (db key &rest arguments)
+                     (assert (not (quasar.store::%prefix-p (quasar.store::%document-prefix "datasets") key)))
+                     (apply fetch db key arguments)))
+             (setf (symbol-function 'tek9:select-primary-range)
+                   (lambda (db start &rest arguments)
+                     (assert (quasar.store::%prefix-p (quasar.store::%dataset-prefix "datasets") start))
+                     (apply range db start arguments)))
+             (let ((page (dataset-test-page store (cons "byteLimit" 32768))))
+               (check (<= (quasar.store::%utf8-length (quasar.protocol:encode-result "datasets" page)) 32768))))
+        (setf (symbol-function 'tek9:fetch*) fetch
+              (symbol-function 'tek9:select-primary-range) range)))))
+
 (defun run-dataset-catalog-tests ()
   (let ((*failures* 0))
+    (test-dataset-catalog-limits-and-null-time)
     (test-dataset-catalog-deltas)
     (test-dataset-catalog-migration-and-import)
     (test-dataset-catalog-pages)
