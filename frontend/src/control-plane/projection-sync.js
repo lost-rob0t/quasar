@@ -34,7 +34,9 @@ export function synchronizeProjection(client, database, createStage) {
       const result = await client.exportDocuments({
         write: async (document) => {
           check();
-          await stage.put(toPouchDocument(document));
+          const staged = toPouchDocument(document);
+          delete staged._rev;
+          await stage.put(staged);
         },
         close: async () => {},
         abort: async () => {}
