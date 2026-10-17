@@ -25,6 +25,7 @@
 (defun test-statistics-review-semantics ()
   (let ((doc (statistics-document "a" "person")))
     (check (quasar.store::%statistics-reviewed-p doc))
+    (check (quasar.store::%statistics-reviewed-p (jsown:with-injective-reader (jsown:parse (quasar.protocol:encode doc)))))
     (let ((v (quasar.protocol:json-value (quasar.store::%statistics-legacy doc) "verification")))
       (quasar.protocol:object-set v "verified" :false)
       (quasar.protocol:object-set v "status" "verified")
@@ -50,7 +51,9 @@
   (with-temporary-tek9-store (store path "statistics-deltas")
     (check (= 0 (quasar.protocol:json-value (statistics-summary store) "documents")))
     (check (null (statistics-top store)))
-    (dataset-test-change store :document-upsert "a" (statistics-document "a" "person" :name "Alice" :related '("a" "ghost" "ghost")))
+    (dataset-test-change store :document-upsert "a"
+                         (jsown:with-injective-reader (jsown:parse (quasar.protocol:encode
+                          (statistics-document "a" "person" :name "Alice" :related '("a" "ghost" "ghost"))))))
     (dataset-test-change store :document-upsert "b" (statistics-document "b" "organization" :dataset "beta" :reviewed nil))
     (dataset-test-change store :document-upsert "r" (statistics-document "r" "relation" :source "b" :target "a"))
     (dataset-test-change store :document-upsert "z" (statistics-document "z" "event" :name "Zero"))

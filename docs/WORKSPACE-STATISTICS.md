@@ -41,7 +41,8 @@ scanLimit?, deadlineMs?}`. Same budgets as `dataset.catalog` (50 default rows,
 250 max, 1000 scanned rows, 50 ms). Response:
 `{revision, projection:"workspace-statistics-datasets.v1",
 datasets:[{name,documentCount}], complete, cursor, performance}`.
-Only REVIEWED documents count. Zero-reviewed datasets are omitted. Order is
+Only REVIEWED documents count. Empty dataset names use `unknown`, matching the
+frontend countBy fallback. Zero-reviewed datasets are omitted. Order is
 count descending then exact name in UTF-8 lexical order. Replace the visible page;
 do not drain it. A deadline may yield an empty continuable page. Cursor is null
 exactly when complete; cursors bind workspace, section and revision. Use the summary
