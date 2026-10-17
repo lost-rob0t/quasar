@@ -29,6 +29,12 @@ const client = (documents, interrupt = false) => ({
 });
 const project = (documents, destination, interrupt = false) =>
   synchronizeProjection(client(documents, interrupt), destination, () => database(false));
+const reopen = async (db) => {
+  await db.close();
+  const opened = new PouchDB(db.name);
+  databases[databases.indexOf(db)] = opened;
+  return opened;
+};
 
 afterEach(async () => {
   await Promise.all(databases.splice(0).map((db) => db.destroy()));
@@ -42,10 +48,13 @@ it("accepts a pulled PouchDB revision during the following push", async () => {
   const pulled = fromPouchDocument(await local.get("pulled"));
   expect(pulled.rev).toMatch(/^1-/);
 
-  await project([pulled], local);
+  await local.put({ ...(await local.get("pulled")), name: "local edit" });
+  await project([{ ...pulled, name: "canonical" }], local);
   expect((await local.get("pulled")).id).toBe("pulled");
+  expect((await local.get("pulled")).name).toBe("canonical");
+  expect((await local.get("pulled"))._rev).toMatch(/^3-/);
   await local.replicate.to(remote);
-  expect((await remote.get("pulled")).id).toBe("pulled");
+  expect((await remote.get("pulled")).name).toBe("canonical");
 });
 
 it("reconciles both directions and repeats without losing canonical identity", async () => {
@@ -68,11 +77,13 @@ it("reconciles both directions and repeats without losing canonical identity", a
 });
 
 it("leaves the destination durable on interruption and recovers on retry", async () => {
-  const local = database();
+  let local = database();
   await local.put(toPouchDocument(document("old")));
   await expect(project([document("new")], local, true)).rejects.toThrow("interrupted export");
+  local = await reopen(local);
   expect((await local.allDocs()).rows.map((row) => row.id)).toEqual(["old"]);
   await project([document("new")], local);
+  local = await reopen(local);
   expect((await local.allDocs()).rows.map((row) => row.id)).toEqual(["new"]);
   expect((await local.get("new")).id).toBe("new");
 });
