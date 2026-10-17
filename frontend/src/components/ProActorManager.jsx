@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Crown, LockKeyhole, RefreshCw, Send, ServerCog } from "lucide-react";
 import { assertDocument, createDocument, documentLabel } from "starintel_doc/legacy";
 import {
@@ -144,6 +144,14 @@ export default function ProActorManager() {
       : null;
   const view = proIntegrationView(mode, Boolean(controlPlaneStatus?.connected), currentDiscovery);
   const manifests = view.manifests;
+  const submissionEpoch = useRef(0);
+  useLayoutEffect(
+    () => () => {
+      // Route unmount must invalidate pending authorization before it can submit.
+      submissionEpoch.current += 1;
+    },
+    []
+  );
   const accessRef = useRef(null);
   accessRef.current = { mode, connection: controlPlaneStatus, canSubmit: view.canSubmit };
   const [actorId, setActorId] = useState("");
@@ -224,6 +232,8 @@ export default function ProActorManager() {
   async function run(event) {
     event.preventDefault();
     if (!actor || !input) return;
+    const epoch = submissionEpoch.current;
+    const isCurrentSubmission = () => submissionEpoch.current === epoch;
     setSubmitting(true);
     setError("");
     try {
@@ -252,6 +262,7 @@ export default function ProActorManager() {
       // before this handler runs unless starintel-biz granted the paid capability.
       const access = accessRef.current;
       await cpAuthorizeProActorTarget(targetDocument);
+      if (!isCurrentSubmission()) return;
       if (
         !accessRef.current.canSubmit ||
         accessRef.current.mode !== access.mode ||
@@ -260,16 +271,18 @@ export default function ProActorManager() {
         throw new Error("Pro availability changed; refresh before submitting again.");
       }
       await submitTarget(targetDocument, settings);
+      if (!isCurrentSubmission()) return;
       setNotice({
         kind: "success",
         message: `Submitted ${documentLabel(input)} to Pro actor ${actor.id}.`
       });
     } catch (cause) {
+      if (!isCurrentSubmission()) return;
       const message = cause?.message || String(cause);
       setError(message);
       setNotice({ kind: "error", message });
     } finally {
-      setSubmitting(false);
+      if (isCurrentSubmission()) setSubmitting(false);
     }
   }
 

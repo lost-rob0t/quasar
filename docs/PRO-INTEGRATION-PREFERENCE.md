@@ -34,7 +34,9 @@ Disconnect, refresh and changed connection state discard previous availability.
 Late discovery replies cannot restore a hidden panel. Switching Off prevents a
 pending capability check from starting manifest discovery. Requests already sent
 cannot be undone. After target authorization returns, the component rechecks the
-current preference/connection before submitting; server authorization is still
+current preference/connection before submitting. Route unmount synchronously
+invalidates the submission epoch, so delayed authorization success or failure
+cannot submit or publish a stale notice after navigating to Settings; server authorization is still
 required and remains the security boundary.
 
 ## Scope and coordination
@@ -55,7 +57,10 @@ this preference does not claim to solve bounded manifest discovery.
 Tests cover unknown/missing/partial grants, supported access, absent integration,
 offline/errors, Off/Auto/On rendering, delayed discovery and persistence. The
 Chromium journey mounts the real settings and Pro components against synthetic
-host replies and uses real PouchDB. It does not exercise a live billing plugin.
+host replies and uses real PouchDB. Route regression cases mount Actors and
+Settings separately through React Router, begin Run with a real manifest/input,
+navigate to Settings, save Off, then release delayed authorization success or
+denial. Both assert zero target submissions and no stale run notice. It does not exercise a live billing plugin.
 The focused browser journey can also run without a Lisp server:
 `nix develop --command bash -c 'cd frontend && npx playwright test --config playwright.pro-integration.config.ts'`.
 Set `QUASAR_CHROMIUM_EXECUTABLE_PATH` only to use an installed Chromium instead
