@@ -50,7 +50,14 @@ for (const holdClose of [false, true]) {
                     revision: 4,
                     documents: request.payload.cursor
                       ? []
-                      : [{ id: "fixture:a", schemaVersion: "0.10.1", dtype: "person" }],
+                      : [
+                          {
+                            id: "fixture:a",
+                            schemaVersion: "0.10.1",
+                            dtype: "person",
+                            dataset: "test"
+                          }
+                        ],
                     complete: Boolean(request.payload.cursor),
                     cursor: request.payload.cursor ? null : "next"
                   }
@@ -63,6 +70,8 @@ for (const holdClose of [false, true]) {
     );
     await page.goto("/documents");
     await expect.poll(() => commands.includes("workspace.snapshot")).toBe(true);
+    await expect(page.getByText("Loading documents…", { exact: true })).toHaveCount(0);
+    const priorPages = commands.filter((command) => command === "document.page").length;
     await page.getByRole("button", { name: "Export workspace", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.exportFixture.writes.length)).toBe(1);
     if (holdClose) {
@@ -82,9 +91,9 @@ for (const holdClose of [false, true]) {
       expect(await page.evaluate(() => window.exportFixture.closed)).toBe(1);
       expect(await page.evaluate(() => window.exportFixture.aborted)).toBe(0);
     }
-    expect(commands.filter((command) => command === "document.page")).toHaveLength(2);
+    expect(commands.filter((command) => command === "document.page")).toHaveLength(priorPages + 2);
     expect(await page.evaluate(() => window.exportFixture.writes[0])).toBe(
-      '{"id":"fixture:a","schemaVersion":"0.10.1","dtype":"person"}\n'
+      '{"id":"fixture:a","schemaVersion":"0.10.1","dtype":"person","dataset":"test"}\n'
     );
   });
 }

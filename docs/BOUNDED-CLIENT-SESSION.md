@@ -191,3 +191,38 @@ The integration branch includes PR117 dataset backend `10d81c1`. A real-backend
 Playwright case creates 51 datasets, checks canonical counts, traverses a page
 and refreshes without accumulating rows. It is authored for hosted execution;
 local browser/Lisp execution remains blocked by runtime dependencies.
+
+### Document list and explicit result actions
+
+The production Documents route no longer reads `provider.documents`. It negotiates
+`document.page`, displays complete canonical records, and preserves the previous
+nested-field/source substring predicate through the legacy display adapter.
+The existing `document.search` contract remains unchanged (top-level strings
+only). A list pull scans at most 1,000 canonical records / 20 requests, stops
+cooperatively after 250 ms between requests, retains <=512 KiB of matches and
+requests <=50 records/512 KiB at once. The user-selected row limit remains capped
+at 250. Network latency and one-record conversion are not preempted. Empty
+continuable pages are explicit. Only the current page is retained; First/Next
+navigation replaces offset/random-page navigation and does not invent totals.
+Dataset suggestions come from the bounded catalog; an exact dataset can always
+be typed even if absent from that suggestion page.
+
+Result/historical exports traverse canonical pages on explicit action and apply
+the same predicate, preserving all-results scope. Save File browsers stream to
+the existing transactional writer. Other browsers retain at most 2 MiB for a
+compatibility download, then fail explicitly without a partial download; this
+is not an unbounded Blob fallback. Search-to-graph similarly traverses all
+matches only on action, caps retained input at 2,000 documents/8 MiB and retains
+the existing node/element renderer cutoffs. It never imports only the visible page.
+
+Related deletion retains at most 1,000 IDs and streams until the transitive
+relation closure stabilizes, including canonical typed endpoint IDs. It compares
+revision across passes and again inside mutation preflight before atomic commit.
+This preserves closure/undo, with O(N * closure-depth) visits in the worst case;
+it is bounded retained state, not an indexed/constant-work deletion claim.
+
+Remaining startup blockers include complete graph edit/delta boundaries and
+whole-corpus actor contexts, plus StatsPage's exact reviewed/unreviewed graph
+aggregates absent from graph/dataset catalogs. Replacing these with a visible
+page would report incorrect metrics and change actor deduplication/reference
+behavior. The provider startup switch remains pending these migrations.
