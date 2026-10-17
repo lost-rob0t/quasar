@@ -167,7 +167,11 @@ export function QuasarProvider({ children }) {
   }, []);
 
   const execute = useCallback(
-    async (command, label = command.type, { recordHistory = true } = {}) => {
+    async (
+      command,
+      label = command.type,
+      { recordHistory = true, expectedRevision: requiredRevision } = {}
+    ) => {
       if (command?.type === "save-document") {
         const doc = command.document;
         const client = getControlPlane();
@@ -271,9 +275,11 @@ export function QuasarProvider({ children }) {
                 ? [op.id]
                 : []
           );
-          return withMutationBase(client, ids, ({ documents, revision }) =>
-            applyBatch(documents, revision)
-          );
+          return withMutationBase(client, ids, ({ documents, revision }) => {
+            if (requiredRevision !== undefined && revision !== requiredRevision)
+              throw new Error("Documents changed before the operation could commit. Retry it.");
+            return applyBatch(documents, revision);
+          });
         }
         return applyBatch(
           new Map(documentsRef.current.map((document) => [document.id || document._id, document]))

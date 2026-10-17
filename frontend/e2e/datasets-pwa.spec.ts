@@ -4,7 +4,7 @@ test("opens the datasets navigation as a dataset index", async ({ page }) => {
   await page.goto("/documents?group=dataset");
 
   await expect(page.getByRole("heading", { name: "Datasets" })).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Search datasets" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Filter this dataset page" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Documents" })).toHaveCount(0);
 });
 
