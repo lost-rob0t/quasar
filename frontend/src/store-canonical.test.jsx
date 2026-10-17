@@ -138,3 +138,14 @@ it("skip-existing policy uses canonical presence even when the provider cache is
   expect(report.skipped).toEqual([{ id: document.id, reason: "exists" }]);
   expect(cp.cpTransaction).not.toHaveBeenCalled();
 });
+
+it("rejects a relation deletion plan if its revision changed before commit", async () => {
+  await expect(
+    context.execute(
+      { type: "batch", operations: [{ type: "remove-document", id: "event:provider" }] },
+      "Delete related documents",
+      { expectedRevision: 999 }
+    )
+  ).rejects.toThrow("Documents changed");
+  expect(cp.cpTransaction).not.toHaveBeenCalled();
+});
