@@ -1,228 +1,132 @@
-# Bounded client session: issue #114 integration boundary
+# Bounded client session: issue #114
 
-This is an independent, opt-in client foundation, **not completion of #114**.
-The production provider still uses legacy snapshot hydration. Do not close #114
-or advertise bounded production startup on the basis of this draft.
+Draft PR119 owns the client; draft PR120 combines it with #111 graph/dataset
+catalogs and #112 document paging. This is not yet completion of #114: exact
+review/degree statistics, real-stack acceptance, and the required Nix gates
+remain open. No deployment or merge is authorized by this document.
 
-## Client contract
+## Startup and graph ownership
 
-Create a client with `createControlPlaneClient(url, { synchronization: "bootstrap" })`.
-Initial connection, reconnect, and workspace switching request only
-`workspace.bootstrap`. `onBootstrap` receives metadata; `onSnapshot` is not
-called with a misleading partial document array. A saved graph ID never triggers
-graph restoration. Unsupported servers fail synchronization explicitly without a
-snapshot fallback. `snapshot()` rejects in this mode. The default remains
-`legacy-snapshot` until the provider's dependent consumers are migrated.
+The production initializer selects bootstrap synchronization. Connection,
+reconnection and workspace changes request `workspace.bootstrap`; snapshots
+are disabled in this mode. The provider requests one compact `graph.catalog`
+page (50 rows / 512 KiB) and opens an empty workbench. A saved graph ID never
+auto-loads or activates a graph. More graphs replaces the catalog page; there is
+no catalog drain or implicit migration. Unsupported/unmigrated servers fail
+explicitly. The client factory retains legacy mode for compatibility callers.
 
-`client.reads` provides a single route's `search(filters)`, `next()`, and
-`inspect(id)`. Search returns one `search-row.v1` page at a time (50 records,
-512 KiB maximum accepted response). An empty page with a cursor is continuable.
-Filters are copied, bounded to 8192 serialized UTF-8 bytes, and reused across
-continuations. The client neither accumulates rows nor fetches another page
-without an explicit `next()`. Callers must replace their visible page, not append.
-Projections never enter the canonical document cache.
+Opening a graph is an explicit action. `graph.page` reconstructs descriptor,
+membership, presentation collections and canonical node/edge sidecars; canonical
+member bodies arrive in revision-bound ID batches of at most 50. The complete
+requested graph must fit 2,000 members, 1,500 nodes, 3,000 edges, 8 MiB serialized
+metadata/document data and the existing renderer limits. Each section has at
+most 100 requests. Oversized, malformed, stale or cancelled reads fail before
+activation or any graph replacement. Null/array/object container kinds and
+unknown metadata are retained. UI normalization does not become the canonical
+source: edits merge changed UI fields into the original complete metadata.
+Selection is transient; refresh preserves it. Graph writes are serialized and
+revision-checked. Opening a graph sends only `graph.activate`, not `graph.put`.
 
-`inspect(id)` always resolves an uncached ID via revision-bound `document.batch`.
-Only the server's explicit `missingIds` establishes absence. Canonical documents
-are cached with LRU eviction at 250 records / 2 MiB serialized UTF-8 data. Cache
-values are serialized so caller/editor mutations cannot alter cached content or
-its byte accounting. Byte accounting bounds serialized data, not JS object heap
-exactly; Map/string/parse overhead and the current response also consume memory.
-The wire frame is parsed before this client validates its response budget; this
-is not a transport-level defense against an unbounded/malicious server frame.
+This bounds startup retained content independently of corpus size. Explicit
+graph opening remains O(requested graph size), and complete graph metadata
+replacement remains O(Mg), as documented by #111. It is not a delta-write claim.
+The selected graph may be refreshed after changes; unrelated graphs stay compact.
 
-Navigation must call `reads.cancel()` and release its own page/selection references.
-Workspace switch, socket close, disposal, resynchronization and delivered events
-invalidate all cached canonical data and continuation state. Cancellation discards
-late responses; it does not preempt a backend request. Only one route read may be
-in flight, including a cancelled read until it settles/times out, so cancelled
-requests cannot accumulate through this API. Transport commands outside this API
-retain their existing semantics. After invalidation or `query.stale-cursor`, call
-`client.resynchronize()` and restart the query rather than mixing revisions.
-Read failures are propagated; there is no automatic continuation retry loop.
+## Canonical pages, cache and mutations
 
-## Ownership and integration blockers
+`client.reads` retains one search projection page (50 rows / 512 KiB) and a
+canonical LRU capped at 250 records / 2 MiB serialized data. Projections never
+enter the canonical cache. Only explicit missing IDs establish absence. Cache
+serialization prevents editor mutations from corrupting canonical cache state.
+Navigation, revision changes, reconnect and workspace changes cancel/invalidate
+reads. One route pull is in flight at a time; cancellation discards late output
+rather than preempting a backend request. Wire frames are parsed before response
+budget validation; serialized byte limits are not exact JS heap limits.
 
-Changes are confined to the client/read session, their tests, and this document.
-No edits to backend workspace/store files, #78's draft #115 mutation modules,
-#110 actor submission work, or Android #120. Parent coordination is required
-before shared-file integration. Ownership/interface proposal is recorded on #114.
-No `.agents/skills` exists in this main checkout or the workspace `.agents` directory.
-Root `AGENTS.md` and `docs/BOUNDED-WORKBENCH.md` govern this work.
+Inspection and editors resolve canonical IDs independently of graph membership.
+Reversible mutations/undo fetch only touched IDs (maximum 1,000, batches of 50),
+preserve repeated-ID operation order and bind commit to the preflight revision.
+Imports retain incoming IDs for create/update decisions while discarding prior
+canonical bodies after each bounded lookup; staged commit retains its atomicity.
+The #78 transaction overlay remains separately owned; no backend mutation files
+are changed here.
 
-- #111: agree compact graph/dataset catalogs and requested graph membership/topology
-  paging before provider startup switches. Never restore unrelated graphs.
-- #112: this module consumes opaque revision-bound search cursors. The additive
-  `client.exportDocuments(sink, signal)` consumes PR118's `document.page` contract
-  (39fd4c48), explicitly negotiating the capability and awaiting each canonical
-  document write. The sink must implement write/close/abort and discard partial
-  output on failure. Navigation, reconnect, mutation events, cancellation, stale
-  revisions, malformed pages and sink failures abort without restarting or falling
-  back. The helper does not accumulate output. The Documents page now exposes an explicit Export workspace action through the
-  production provider, using a transactional Save File writer, cancellation, and
-  capability negotiation. Unsupported browsers receive an explicit message; no
-  corpus/Blob fallback runs. Existing filtered results and historical archive
-  exports retain their legacy behavior. File picker waits are bound to the
-  connection/workspace scope; cancellation while close is pending cannot report
-  success, but the browser may already have committed the file before detecting
-  cancellation. Abort is attempted and the original error is preserved.
-  Supplemental frontend fixture tests validate this integration contract; they
-  do not execute PR118's unverified Lisp backend.
-- #78: canonical ID lookup is available for mutation existence decisions, but the
-  provider/adapters/undo/redo/import/actor consumers still need to adopt it instead
-  of interpreting their current global arrays as complete. The mutation overlay
-  remains a separate workstream.
-- Migrate Documents/Datasets, selection and add-to-graph, editors, undo/redo,
-  actor input, imports, exports and sync together with route cancellation. Only
-  then switch the production `initializeControlPlane` path to bootstrap mode.
+The Documents route uses canonical `document.page` and the existing nested/source
+substring predicate. A pull scans at most 1,000 records / 20 requests, has a
+cooperative 250 ms deadline between requests, retains <=512 KiB of matches and
+requests <=50 records at once. User row limits are <=250. Empty continuable pages
+are supported. First/Next replaces offset navigation and invented exact totals.
+Dataset pages use the authoritative `dataset.catalog` (50 rows / 512 KiB), including
+Unix-second max updatedAt, scoped continuations and explicit migration errors.
 
-## Complexity and evidence limits
+## Explicit corpus operations
 
-For this opt-in path, startup makes one metadata request. Route-retained canonical
-content is O(min(selected records, 250)) and at most 2 MiB serialized bytes; search
-retains a bounded filter/cursor and returns at most one bounded page. Retention is
-independent of unrelated corpus size N. LRU lookup/refresh is expected O(1), plus
-serialization proportional to the selected document; eviction can remove up to
-250 entries. Server search work remains the existing bounded primary scan.
+Exports traverse canonical continuations only on user action, await every sink
+write/close, and abort on cancellation, scope/revision changes or sink failure.
+Workspace export uses transactional Save File output with no Blob fallback.
+Filtered/historical exports retain the full match predicate; a compatibility
+browser fallback is capped at 2 MiB and never downloads partial output.
+Search-to-graph retains at most 2,000 documents / 8 MiB and fails rather than
+silently importing a visible page. Relation closure deletion retains <=1,000 IDs,
+compares revisions across scans and again at commit, preserving undo. Worst-case
+work is O(N * closure depth), with bounded retained IDs.
 
-Production startup remains Θ(N) documents / Θ(B) canonical content. No measured
-production heap, latency, transport-size improvement is claimed. Tests with
-10k/100k _declared counts_ are synthetic contract tests, not real corpus benchmarks.
-Real 10k/100k server/browser heap evidence, full feature journeys, actual Android
-and device tests, Lisp/auth/atomicity integration, and required Nix checks remain
-merge blockers. The work does not deploy or modify live data.
+Builtin actor inputs use canonical selected/reference/generated IDs for reference
+resolution and duplicate suppression outside the open graph. Legistar's declared
+`documents.query` capability resolves its generated event/relation IDs. Actor
+output validation, worker isolation, custom actor restrictions, abort signals,
+ordered transforms and canonical commit preflight remain in place. Run-all's
+linked/touched evidence streams the corpus but retains only IDs from its bounded
+graph scope. Research input/dependency resolution is canonical and scoped;
+reconnect invalidates the runner before late saves.
 
-## Production consumer progress and concrete remaining contracts
+Agent queries and mutation preflight stream canonical records with bounded
+retained matches; operations needing complete scope fail on overflow. Agent
+prompt construction retains <=90 candidates before its existing 30-record prompt
+limit while counting all matching records. These explicit actions may perform
+O(N) visits; they are not indexed query-work claims. No startup scan is added.
 
-Single-document provider save/delete now fetches only the canonical ID via
-bootstrap plus revision-bound batch, and commits one transaction with that exact
-revision. Undo captures the authoritative prior record; eviction cannot decide
-create versus update. A concurrent writer rejects the mutation instead of
-recording a stale inverse. Navigation during lookup cannot mutate the new scope.
-The existing post-write refresh still hydrates snapshots; batch/import existence,
-actor corpus input and sync remain materialized. This is not bounded production
-startup yet.
+CouchDB projection synchronization stages a consistent complete canonical export
+on disk before reconciling local projection rows in batches of 51. Tombstone
+revisions are preserved for resurrection. Live sync is stopped before rebuilding.
+Local projection storage is O(N) on disk; JavaScript retains a bounded batch.
+A failed/cancelled reconciliation can leave the local projection partially
+updated, but replication is not restarted and canonical storage is unchanged.
+Retry reconciliation before pushing. Pull imports use staged bounded chunks.
 
-The remaining #111/#78 integration needs are concrete:
+## Remaining blocker and evidence
 
-- Authoritative dataset summaries: name, document count, available dtype set and
-  maximum updatedAt, with a revision, pagination/budgets, and explicit legacy
-  migration/unsupported behavior. Counts must not come from a visible page.
-- Compact graph catalog plus requested graph membership, nodes, edges, positions,
-  groups and settings/presentation. All sections must bind to one revision and
-  expose explicit completion. savedGraphId must not activate/load a graph.
-- A partial graph cannot safely be submitted to graph.workspace.put as a complete
-  replacement. Agree atomic membership add/remove and presentation-delta mutation
-  contracts (or a bounded, explicitly complete requested-graph edit boundary)
-  before migrating add-to-graph, undo or graph settings persistence.
-- Define explicit empty-workbench and all-documents graph behavior without
-  creating an implicit full-corpus membership array. Preserve existing render
-  cutoffs and make incomplete membership distinct from an empty graph.
+`dataset.catalog` cannot supply StatsPage's reviewed/unreviewed totals, reviewed
+dtype/dataset counts or top-connected reviewed nodes. The exact
+`workspace.statistics` proposal is recorded on #111, comment 6227623043, for parent
+assignment to the catalog owner. No agreed implementation/head has arrived.
+The draft dashboard shows the authoritative bootstrap document count and an
+explicit unavailable state for review metrics; it never treats a graph/cache as
+the corpus. This is a known feature gap, not a completed statistics migration.
 
-Two synthetic Playwright journeys exercise the real production export button,
-provider/client wire requests and deferred-close cancellation, with mocked
-transport/file sinks. They do not verify native OS save dialogs or backend
-paging. Local Chromium installation failed with HTTP 403 Domain forbidden from
-cdn.playwright.dev; these journeys remain unrun locally.
+Unit tests cover actual provider startup with a 100,000-document bootstrap,
+activation-only graph switching, metadata preservation on edits, graph budgets,
+canonical actor dedup, bounded agent inputs, revision/cancellation, and staged
+projection reconciliation. Browser startup/export/list/editor cases are authored
+but not claimed executed locally. Existing real-stack graph/dashboard journeys
+must be validated against the deliberate empty-workbench startup behavior.
 
-## Canonical route and reversible-batch migration
+Required commands use the repository Nix shell per AGENTS.md. Local setup is
+blocked by proxy CONNECT 403 to cache.nixos.org/GNU sources after trusted CA setup;
+Playwright Chromium download is also blocked. Hosted Nix previously failed at
+the pinned private Forgejo dependency. No credentials/mirror/dependency changes
+are made. Host frontend checks are supplemental, not substitutes for Nix,
+Lisp/Tek9, real-browser or 10k/100k allocation/heap acceptance. Consult draft PR
+comments for exact-head test counts and logs rather than assuming an earlier
+passing run proves a later head.
 
-Document inspection and the canonical editor now resolve IDs through bootstrap
-and a revision-bound canonical batch instead of provider-array membership.
-Only explicit missingIds produces a not-found view. Navigation/workspace changes
-cancel late responses. Inspection coalesces event refreshes to one in-flight
-lookup; an editor keeps its opened draft across reconnect, but clears the old
-scope on workspace change. Canonical create/edit carries explicit intent, so a
-cache miss cannot overwrite a duplicate ID or recreate a deleted edit target.
-
-Reversible batch preflight and skip-existing decisions now look up distinct
-touched IDs (at most the 1,000-ID transaction bound), 50 at a time at one revision.
-Oversized/deadline batches split; a single oversized record fails explicitly.
-The ordered transaction retains only touched canonical records for inverse
-construction and commits at expectedRevision. This retention scales with the
-explicit transaction's touched bytes, not unrelated corpus size. It is not the
-2 MiB read cache. Existing undo-history retention and post-write snapshot refresh
-are unchanged. Non-history import staging and actor full-corpus input still need
-separate migration; they are not advertised as bounded here.
-
-A separate integration checkout/branch combines PR117 f4ac9ca, PR118 39fd4c48 and
-PR119 for hosted combined-stack checks. Conflicts are limited to retaining both
-read command registrations and both ASDF component entries. No backend-owner
-branch was rewritten. Combined results must be read from that integration head;
-individual PR test results are not combined-stack evidence.
-
-### Dataset catalog consumer
-
-The Datasets route now consumes `dataset.catalog` / `dataset-catalog.v1` from
-#111. It requests one 50-row / 512 KiB page, binds continuations to the bootstrap
-revision, replaces each displayed page, and never derives totals from cached
-canonical documents. The filter explicitly applies to the current page. Empty
-continuable pages remain navigable. Counts are authoritative; `updatedAt` is
-interpreted as Unix seconds, including zero. Reconnects, workspace switches and
-write events discard the old page; an in-flight request must settle before a
-replacement request starts. Migration-required errors are displayed without a
-snapshot/search fallback. This route requires the dataset catalog backend in
-PR117; graph and document endpoints alone do not provide it.
-
-Route retention/aggregation changes from O(N) document aggregation to O(P) catalog
-rows with P <= 50 and a 512 KiB response bound. The provider still hydrates O(N)
-legacy startup state, so this is not a claim of bounded production startup. Actor,
-nonhistory import, graph editing and provider refresh migration remain pending.
-
-### Research and graph synchronization follow-up
-
-Research input/dependency/current-node resolution now awaits canonical ID reads,
-serializing remote lookup instead of consulting the provider corpus or fanning
-out requests. Pause/kill during lookup prevents actor execution. A runner is
-bound to its synchronized workspace: disconnect disposes it, invalidates future
-saves and requires a fresh runner. Browser actor execution similarly aborts its
-signal and rejects output after a workspace/reconnect change. PR110's full
-`context.documents` contract and ordered transform/undo behavior are retained;
-this does not claim bounded actor context memory.
-
-Graph selection now flushes pending edits and sends only `graph.activate`.
-It no longer sends a complete `graph.put` merely to select an existing graph,
-which could replace membership/presentation with a stale local copy. Actual
-metadata edits still require complete graph metadata; paged partial metadata
-must not be submitted as a replacement. The #78 owner has been notified of the
-remaining delta-interface/complete-requested-graph boundary.
-
-The integration branch includes PR117 dataset backend `10d81c1`. A real-backend
-Playwright case creates 51 datasets, checks canonical counts, traverses a page
-and refreshes without accumulating rows. It is authored for hosted execution;
-local browser/Lisp execution remains blocked by runtime dependencies.
-
-### Document list and explicit result actions
-
-The production Documents route no longer reads `provider.documents`. It negotiates
-`document.page`, displays complete canonical records, and preserves the previous
-nested-field/source substring predicate through the legacy display adapter.
-The existing `document.search` contract remains unchanged (top-level strings
-only). A list pull scans at most 1,000 canonical records / 20 requests, stops
-cooperatively after 250 ms between requests, retains <=512 KiB of matches and
-requests <=50 records/512 KiB at once. The user-selected row limit remains capped
-at 250. Network latency and one-record conversion are not preempted. Empty
-continuable pages are explicit. Only the current page is retained; First/Next
-navigation replaces offset/random-page navigation and does not invent totals.
-Dataset suggestions come from the bounded catalog; an exact dataset can always
-be typed even if absent from that suggestion page.
-
-Result/historical exports traverse canonical pages on explicit action and apply
-the same predicate, preserving all-results scope. Save File browsers stream to
-the existing transactional writer. Other browsers retain at most 2 MiB for a
-compatibility download, then fail explicitly without a partial download; this
-is not an unbounded Blob fallback. Search-to-graph similarly traverses all
-matches only on action, caps retained input at 2,000 documents/8 MiB and retains
-the existing node/element renderer cutoffs. It never imports only the visible page.
-
-Related deletion retains at most 1,000 IDs and streams until the transitive
-relation closure stabilizes, including canonical typed endpoint IDs. It compares
-revision across passes and again inside mutation preflight before atomic commit.
-This preserves closure/undo, with O(N * closure-depth) visits in the worst case;
-it is bounded retained state, not an indexed/constant-work deletion claim.
-
-Remaining startup blockers include complete graph edit/delta boundaries and
-whole-corpus actor contexts, plus StatsPage's exact reviewed/unreviewed graph
-aggregates absent from graph/dataset catalogs. Replacing these with a visible
-page would report incorrect metrics and change actor deduplication/reference
-behavior. The provider startup switch remains pending these migrations.
+Hosted evidence for the previous published heads: PR119 `d620086` passed the
+Fresh Nix runtime/startup job 117262930004 (run 38987708636), but its browser
+job failed three cases, including the dataset endpoint absent from that isolated
+branch. Combined PR120 `d25067c` passed Lisp/stack smoke and 71 browser cases,
+with canonical editor and mobile pan failures; its Nix job remained blocked by
+the private dependency. These results do not certify the startup migration.
+The new browser fixtures isolate canonical writes and persist mobile-pan graph
+data; successful document commits also no longer fail merely because subsequent
+metadata refresh failed. Hosted reruns must confirm these fixes. Browser gates
+are retained; the catalog dependency is not hidden by skipping its test.

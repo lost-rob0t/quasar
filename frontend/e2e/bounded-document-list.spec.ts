@@ -12,6 +12,23 @@ test("document list reads canonical pages even when the provider snapshot is emp
       socket.onMessage((raw) => {
         const request = JSON.parse(String(raw));
         let result;
+        if (request.command === "graph.catalog") {
+          socket.send(
+            JSON.stringify({
+              protocol: "quasar.control.v1",
+              id: request.id,
+              status: "ok",
+              result: {
+                revision: 4,
+                projection: "graph-catalog.v1",
+                graphs: [],
+                complete: true,
+                cursor: null
+              }
+            })
+          );
+          return;
+        }
         if (request.command === "system.capabilities") result = ["document.page"];
         else if (request.command === "document.page") {
           requested.push(request.payload);
