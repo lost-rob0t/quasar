@@ -22,10 +22,12 @@
                                      (quasar.protocol:empty-object))))
            (payload (quasar.protocol:json-object
                      (cons "operations" (quasar.protocol:json-array
-                      (phase3-transaction-operation "document.create" (make-doc "quota:雪"))
+                      (phase3-transaction-operation "document.create" (make-doc "quota:unicode"))
                       (phase3-transaction-operation "document.update"
-                        (phase3-document (cons "id" "quota:雪") (cons "dtype" "person")
+                        (phase3-document (cons "id" "quota:unicode") (cons "dtype" "person")
                                          (cons "text" "λ雪\"\\"))))))))
+      ;; Canonical IDs are ASCII. Unicode and JSON escaping remain in the
+      ;; permitted extensions.text value built by PHASE3-DOCUMENT above.
       ;; This direct single-writer test binds the actual authenticated principal;
       ;; quota rejection must roll back records, accounting, revision and events.
       (let ((quasar.control-plane::*command-principal* "quota-test")
@@ -43,18 +45,22 @@
                                    (quasar.protocol:quasar-error-code condition)))))
                (check (null events))
                (check (zerop (quasar.store:direct-workspace-revision store workspace-id)))
-               (check (null (quasar.store:direct-document store workspace-id "quota:雪")))
+               (check (null (quasar.store:direct-document store workspace-id "quota:unicode")))
                (check (null (tek9:fetch* (quasar.store::tek9-store-database store)
                                         (quasar.store::%quota-key workspace-id))))
                (quasar.plugin:set-storage-quota-resolver
                 (lambda (principal) (declare (ignore principal)) 1000000))
                (quasar.control-plane::handle-record-transaction plane payload envelope)
                (check (= 2 (length events)))
+               (let ((stored (quasar.store:direct-document store workspace-id "quota:unicode")))
+                 (check (string= "λ雪\"\\"
+                          (quasar.protocol:json-value
+                           (quasar.protocol:json-value stored "extensions") "text"))))
                (assert-mutation-quota-exact store workspace-id)
                (quasar.control-plane::run-record-operation
                 plane envelope (phase3-transaction-operation
                                 "document.delete"
-                                (quasar.protocol:json-object (cons "id" "quota:雪"))))
+                                (quasar.protocol:json-object (cons "id" "quota:unicode"))))
                (assert-mutation-quota-exact store workspace-id))
           (quasar.plugin:reset-plugin-policy))))))
 
