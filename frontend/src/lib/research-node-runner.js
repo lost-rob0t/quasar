@@ -120,9 +120,7 @@ export function createResearchNodeRunner({
         ? plan.actorIds.indexOf(node.data.current_actor_id)
         : -1;
     let actorIndex = mode === "run" ? 0 : Math.max(0, currentIndex);
-    let selection = unique([...plan.inputIds, ...plan.targetIds, ...node.data.output_ids])
-      .map((id) => resolveDocument(id))
-      .filter(Boolean);
+    let selection = [];
     let successfulRuns = 0;
     let failedRuns = 0;
 
@@ -143,10 +141,23 @@ export function createResearchNodeRunner({
 
       if (record.requested !== "running") return settleRequested(node, record);
 
-      const blockedDependency = plan.dependencyIds
-        ?.map((id) => resolveDocument(id))
-        .find((dependency) => dependency?.data?.status !== "completed");
-      const missingDependency = plan.dependencyIds?.find((id) => !resolveDocument(id));
+      // Resolve serially: remote canonical readers must not fan out one request per ID.
+      for (const id of unique([...plan.inputIds, ...plan.targetIds, ...node.data.output_ids])) {
+        if (record.requested !== "running") return settleRequested(node, record);
+        const document = await resolveDocument(id, record.controller.signal);
+        if (document) selection.push(document);
+      }
+      if (record.requested !== "running") return settleRequested(node, record);
+      const dependencies = new Map();
+      for (const id of plan.dependencyIds || []) {
+        if (record.requested !== "running") return settleRequested(node, record);
+        dependencies.set(id, await resolveDocument(id, record.controller.signal));
+      }
+      if (record.requested !== "running") return settleRequested(node, record);
+      const blockedDependency = [...dependencies.values()].find(
+        (dependency) => dependency && dependency.data?.status !== "completed"
+      );
+      const missingDependency = [...dependencies].find(([, document]) => !document)?.[0];
       if (missingDependency || blockedDependency) {
         const dependencyId = missingDependency || blockedDependency._id;
         return move(node, "blocked", {
@@ -322,10 +333,10 @@ export function createResearchNodeRunner({
     pause(id, reason = "Paused by operator") {
       return request(id, "paused", reason);
     },
-    kill(id, reason = "Killed by operator") {
+    async kill(id, reason = "Killed by operator") {
       const record = active.get(id);
       if (record) return request(id, "killed", reason);
-      const document = resolveDocument(id);
+      const document = await resolveDocument(id);
       if (!document) throw new Error(`Research node not found: ${id}`);
       return move(document, "killed", { message: reason });
     },
