@@ -1,0 +1,7 @@
+projection_revision_owner(canonical_export, canonical_store).
+projection_revision_owner(staging_database, staging_database).
+projection_revision_owner(replication_database, replication_database).
+projection_revision_rule(staging_insert, omit_foreign_revision).
+projection_revision_rule(destination_update, use_current_destination_revision).
+projection_revision_rule(destination_tombstone_restore, use_destination_tombstone_revision).
+projection_revision_regression('frontend/tests/integration/projection-sync-pouchdb.test.js', real_pouchdb_browser).
