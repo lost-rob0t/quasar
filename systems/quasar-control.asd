@@ -36,6 +36,7 @@
                (:file "bounded-reads")
                (:file "graph-catalog")
                (:file "document-pages")
+               (:file "dataset-catalog")
                (:file "control-plane")
                (:file "pro-actors")
                (:file "command-authority-context")
