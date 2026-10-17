@@ -17,6 +17,23 @@ test("inspection and editing resolve an ID absent from the provider snapshot", a
       socket.onMessage((raw) => {
         const request = JSON.parse(String(raw));
         let result;
+        if (request.command === "graph.catalog") {
+          socket.send(
+            JSON.stringify({
+              protocol: "quasar.control.v1",
+              id: request.id,
+              status: "ok",
+              result: {
+                revision: 4,
+                projection: "graph-catalog.v1",
+                graphs: [],
+                complete: true,
+                cursor: null
+              }
+            })
+          );
+          return;
+        }
         if (request.command === "workspace.bootstrap")
           result = {
             id: request.metadata.workspace,

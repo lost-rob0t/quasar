@@ -11,6 +11,7 @@ const cp = vi.hoisted(() => ({
 vi.mock("./control-plane/mutations", () => cp);
 const client = vi.hoisted(() => ({
   send: vi.fn(),
+  getConnected: vi.fn(() => false),
   transaction: vi.fn(),
   onConnectionStateChange: (listener) => {
     listener({ synchronized: true });
@@ -51,6 +52,7 @@ const document = {
 };
 beforeEach(() => {
   vi.clearAllMocks();
+  client.getConnected.mockReturnValue(false);
   let current = null;
   let revision = 0;
   client.send.mockImplementation(async (command, payload) => {
@@ -148,4 +150,98 @@ it("rejects a relation deletion plan if its revision changed before commit", asy
     )
   ).rejects.toThrow("Documents changed");
   expect(cp.cpTransaction).not.toHaveBeenCalled();
+});
+
+it("actual provider startup requests only bootstrap and compact catalog, never saved graph content", async () => {
+  client.getConnected.mockReturnValue(true);
+  client.send.mockImplementation(async (command) => {
+    if (command === "workspace.bootstrap") return { revision: 4, documentCount: 100000 };
+    if (command === "graph.catalog")
+      return {
+        revision: 4,
+        projection: "graph-catalog.v1",
+        graphs: [
+          { id: "huge", name: "Saved huge graph", membershipMode: "all", documentCount: 100000 }
+        ],
+        savedGraphId: "huge",
+        complete: true,
+        cursor: null
+      };
+    throw new Error(`Unexpected eager read ${command}`);
+  });
+  await context.refresh();
+  expect(client.send.mock.calls.map(([command]) => command)).toEqual([
+    "workspace.bootstrap",
+    "graph.catalog"
+  ]);
+  expect(cp.cpSnapshot).not.toHaveBeenCalled();
+  expect(client.transaction).not.toHaveBeenCalled();
+});
+
+it("opening a graph only activates it; subsequent rename preserves unknown metadata and containers", async () => {
+  const graph = { id: "small", name: "Saved graph", custom: { keep: true } };
+  client.send.mockImplementation(async (command, payload) => {
+    if (command === "workspace.bootstrap") return { revision: 4, documentCount: 0 };
+    if (command === "graph.page")
+      return {
+        revision: 4,
+        projection: "graph-page.v1",
+        graphId: "small",
+        section: payload.section,
+        records:
+          payload.section === "descriptor"
+            ? [
+                {
+                  metadata: graph,
+                  collectionKinds: {
+                    documentIds: "array",
+                    positions: "null",
+                    groups: "array",
+                    selectedIds: "array"
+                  }
+                }
+              ]
+            : payload.section === "groups"
+              ? [{ index: 0, value: { custom: "group" } }]
+              : [],
+        complete: true,
+        cursor: null
+      };
+    throw new Error(command);
+  });
+  client.transaction.mockResolvedValue({ revision: 5 });
+  await context.switchGraph("small");
+  expect(client.transaction).toHaveBeenCalledWith(
+    [{ type: "graph.activate", payload: { id: "small" } }],
+    4
+  );
+  expect(cp.cpTransaction).not.toHaveBeenCalled();
+  context.renameGraph("Renamed");
+  await context.flushWorkspace();
+  expect(cp.cpTransaction).toHaveBeenCalledWith(
+    [
+      {
+        type: "graph.put",
+        payload: {
+          ...graph,
+          name: "Renamed",
+          documentIds: [],
+          positions: null,
+          groups: [{ custom: "group" }],
+          selectedIds: [],
+          nodes: [],
+          edges: []
+        }
+      },
+      { type: "graph.activate", payload: { id: "small" } }
+    ],
+    5
+  );
+});
+it("returns a successful edit even if metadata refresh fails after commit", async () => {
+  client.getConnected.mockReturnValue(true);
+  await expect(
+    context.execute({ type: "save-document", document, intent: "create" })
+  ).resolves.toEqual({ revision: 1 });
+  expect(client.transaction).toHaveBeenCalledOnce();
 });

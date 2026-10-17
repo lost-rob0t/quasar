@@ -61,7 +61,21 @@ for (const holdClose of [false, true]) {
                     complete: Boolean(request.payload.cursor),
                     cursor: request.payload.cursor ? null : "next"
                   }
-                : { id: request.metadata.workspace, revision: 4, documents: [], graphs: [] };
+                : request.command === "graph.catalog"
+                  ? {
+                      revision: 4,
+                      projection: "graph-catalog.v1",
+                      graphs: [],
+                      complete: true,
+                      cursor: null
+                    }
+                  : {
+                      id: request.metadata.workspace,
+                      revision: 4,
+                      documentCount: 1,
+                      documents: [],
+                      graphs: []
+                    };
           socket.send(
             JSON.stringify({ protocol: "quasar.control.v1", id: request.id, status: "ok", result })
           );
@@ -69,7 +83,7 @@ for (const holdClose of [false, true]) {
       }
     );
     await page.goto("/documents");
-    await expect.poll(() => commands.includes("workspace.snapshot")).toBe(true);
+    await expect.poll(() => commands.includes("workspace.bootstrap")).toBe(true);
     await expect(page.getByText("Loading documents…", { exact: true })).toHaveCount(0);
     const priorPages = commands.filter((command) => command === "document.page").length;
     await page.getByRole("button", { name: "Export workspace", exact: true }).click();

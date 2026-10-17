@@ -62,7 +62,8 @@ export function buildAgentContext(input, customLimits = {}) {
       ? {
           id: input.graph.id,
           name: input.graph.name,
-          documentCount: input.graph.documentIds?.length ?? documents.length,
+          documentCount:
+            input.graph.documentIds?.length ?? input.graph.documentCount ?? documents.length,
           layout: input.graph.layout
         }
       : null,

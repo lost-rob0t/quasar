@@ -122,7 +122,7 @@ async function bootstrap(): Promise<void> {
   }
 
   initializeTheme();
-  const controlPlane = initializeControlPlane();
+  const controlPlane = initializeControlPlane(undefined, { synchronization: "bootstrap" });
   let lastControlPlanePhase = "connecting";
   controlPlane.onConnectionStateChange((state) => {
     if (state.connected && state.synchronized) {

@@ -1,57 +1,75 @@
-import type { Locator } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
 
 type Point = { x: number; y: number };
 type GraphState = { node: Point; pan: Point };
 
-async function seedUsernameActorOutput(canvas: Locator): Promise<string> {
-  return canvas.evaluate((element) => {
-    const graphElement = element as HTMLElement & {
-      __quasarGraphAdapter?: {
-        add: (elements: unknown[]) => void;
-        getElementById: (id: string) => {
-          select: () => void;
-        };
-      };
-    };
-    const cy = graphElement.__quasarGraphAdapter;
-    if (!cy) throw new Error("Development graph adapter is unavailable");
-
-    const suffix = Date.now().toString(36);
-    const sourceId = `mobile-pan-person-${suffix}`;
-    const candidates = Array.from({ length: 8 }, (_, index) => ({
-      id: `mobile-pan-username-${suffix}-${index}`,
-      label: `@candidate${index}`,
-      position: {
+async function seedUsernameActorOutput(page: Page): Promise<string> {
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const path = "/src/control-plane/client.ts";
+        return (await import(path)).getControlPlane()?.getConnected();
+      })
+    )
+    .toBe(true);
+  const { sourceId, graphId } = await page.evaluate(async () => {
+    const path = "/src/control-plane/client.ts";
+    const client = (await import(path)).getControlPlane();
+    const suffix = Date.now().toString(36),
+      sourceId = `person:pan-${suffix}`,
+      graphId = `pan-${suffix}`;
+    const documents: Record<string, unknown>[] = [
+      { id: sourceId, dtype: "person", fullName: "Andrew Tyler Meek" }
+    ];
+    const positions: Record<string, { x: number; y: number }> = { [sourceId]: { x: 195, y: 300 } };
+    for (let index = 0; index < 8; index += 1) {
+      const id = `entity:pan-${suffix}-${index}`;
+      documents.push({ id, dtype: "entity", name: `@candidate${index}` });
+      documents.push({
+        id: `relation:pan-${suffix}-${index}`,
+        dtype: "relation",
+        source: { schema: "org.starintel/core@1/document", id: sourceId },
+        destination: { schema: "org.starintel/core@1/document", id },
+        predicate: "may-use-username"
+      });
+      positions[id] = {
         x: 195 + Math.cos((index / 8) * Math.PI * 2) * 105,
         y: 300 + Math.sin((index / 8) * Math.PI * 2) * 105
-      }
-    }));
-
-    cy.add([
-      {
-        group: "nodes",
-        data: { id: sourceId, label: "Andrew Tyler Meek", dtype: "person" },
-        position: { x: 195, y: 300 }
-      },
-      ...candidates.map((candidate) => ({
-        group: "nodes",
-        data: { id: candidate.id, label: candidate.label, dtype: "entity" },
-        position: candidate.position
-      })),
-      ...candidates.map((candidate) => ({
-        group: "edges",
-        data: {
-          id: `${sourceId}-may-use-${candidate.id}`,
-          source: sourceId,
-          target: candidate.id,
-          predicate: "may-use-username"
+      };
+    }
+    await client.transaction([
+      ...documents.map((payload) => ({
+        type: "document.create",
+        payload: {
+          ...payload,
+          dataset: "pan-fixture",
+          schemaVersion: "0.10.1",
+          extensions: { quasarLegacy090: { verification: { verified: true } } }
         }
-      }))
+      })),
+      {
+        type: "graph.put",
+        payload: {
+          id: graphId,
+          name: "Pan actor output",
+          documentIds: documents.map((doc) => doc.id),
+          positions,
+          selectedIds: [sourceId],
+          layout: "preset"
+        }
+      }
     ]);
-    cy.getElementById(sourceId).select();
-    return sourceId;
+    return { sourceId, graphId };
   });
+  await expect(
+    page.getByLabel("Open graph", { exact: true }).locator(`option[value="${graphId}"]`)
+  ).toHaveCount(1);
+  await page.getByLabel("Open graph", { exact: true }).selectOption(graphId);
+  await expect
+    .poll(async () => (await graphState(page.locator(".graph-canvas"), sourceId)).node)
+    .toBeTruthy();
+  return sourceId;
 }
 
 async function graphState(canvas: Locator, nodeId: string): Promise<GraphState> {
@@ -79,7 +97,7 @@ test("mobile pan remains authoritative after username actor output", async ({ pa
 
   const canvas = page.locator(".graph-canvas");
   await expect(canvas).toBeVisible();
-  const sourceId = await seedUsernameActorOutput(canvas);
+  const sourceId = await seedUsernameActorOutput(page);
   const before = await graphState(canvas, sourceId);
 
   await canvas.evaluate((element) => {
