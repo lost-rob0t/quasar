@@ -150,3 +150,21 @@ PR119 for hosted combined-stack checks. Conflicts are limited to retaining both
 read command registrations and both ASDF component entries. No backend-owner
 branch was rewritten. Combined results must be read from that integration head;
 individual PR test results are not combined-stack evidence.
+
+### Dataset catalog consumer
+
+The Datasets route now consumes `dataset.catalog` / `dataset-catalog.v1` from
+#111. It requests one 50-row / 512 KiB page, binds continuations to the bootstrap
+revision, replaces each displayed page, and never derives totals from cached
+canonical documents. The filter explicitly applies to the current page. Empty
+continuable pages remain navigable. Counts are authoritative; `updatedAt` is
+interpreted as Unix seconds, including zero. Reconnects, workspace switches and
+write events discard the old page; an in-flight request must settle before a
+replacement request starts. Migration-required errors are displayed without a
+snapshot/search fallback. This route requires the dataset catalog backend in
+PR117; graph and document endpoints alone do not provide it.
+
+Route retention/aggregation changes from O(N) document aggregation to O(P) catalog
+rows with P <= 50 and a 512 KiB response bound. The provider still hydrates O(N)
+legacy startup state, so this is not a claim of bounded production startup. Actor,
+nonhistory import, graph editing and provider refresh migration remain pending.
