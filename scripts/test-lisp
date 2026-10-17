@@ -22,7 +22,12 @@ cd "$repo_root"
 output_file="$(mktemp)"
 trap 'rm -f "$output_file"' EXIT
 
-sbcl --non-interactive \
+sbcl_options=()
+if [[ -n "${QUASAR_TEST_DYNAMIC_SPACE_MB:-}" ]]; then
+  sbcl_options+=(--dynamic-space-size "$QUASAR_TEST_DYNAMIC_SPACE_MB")
+fi
+
+sbcl "${sbcl_options[@]}" --non-interactive \
   --eval '(setf asdf:*central-registry* nil)' \
   --eval '(asdf:clear-configuration)' \
   --eval '(ql:quickload (list :starintel-0101 :babel :bordeaux-threads :clack :clog :dexador :jsown :log4cl :quri :sento :tek9 :websocket-driver) :silent t)' \

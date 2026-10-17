@@ -1,0 +1,46 @@
+name: Graph index regression tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - control-plane/src/mutation-*.lisp
+      - control-plane/tests/mutation-overlay-regression-tests.lisp
+      - scripts/test-bounded-mutations
+      - scripts/test-lisp
+      - control-plane/src/workspace.lisp
+      - control-plane/src/debug-logging.lisp
+      - control-plane/tests/workspace-integrity-tests.lisp
+      - .github/workflows/graph-index-validation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: graph-index-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  graph-index:
+    name: Exact-head Lisp graph regressions in Nix
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: DeterminateSystems/nix-installer-action@v22
+      - name: Run Lisp regressions using repository sources and pinned Tek9
+        run: |
+          git rev-parse HEAD
+          nix develop --command bash -lc '
+            set -euo pipefail
+            curl --fail --silent --show-error --output /tmp/quicklisp.lisp https://beta.quicklisp.org/quicklisp.lisp
+            sbcl --non-interactive --load /tmp/quicklisp.lisp \
+              --eval "(quicklisp-quickstart:install :path #p\"$HOME/quicklisp/\")"
+            printf "%s\n" "(load #p\"$HOME/quicklisp/setup.lisp\")" > "$HOME/.sbclrc"
+            bash scripts/bootstrap-lisp-deps
+            bash scripts/test-bounded-mutations
+            npm run test:lisp
+          '
