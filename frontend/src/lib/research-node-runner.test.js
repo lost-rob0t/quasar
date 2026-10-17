@@ -39,7 +39,7 @@ function output(id) {
   return { ...input, _id: id, title: id, data: { name: id } };
 }
 
-function harness({ node = researchNode(), runActor, actors, now } = {}) {
+function harness({ node = researchNode(), runActor, actors, now, resolveDocument } = {}) {
   const documents = new Map([
     [input._id, input],
     [node._id, node]
@@ -51,7 +51,7 @@ function harness({ node = researchNode(), runActor, actors, now } = {}) {
   const saves = [];
   const runner = createResearchNodeRunner({
     resolveActor: (id) => actorList.find((actor) => actor.id === id),
-    resolveDocument: (id) => documents.get(id),
+    resolveDocument: resolveDocument || ((id) => documents.get(id)),
     runActor:
       runActor ||
       vi.fn(async (actor) => {
@@ -168,4 +168,42 @@ describe("research node runner", () => {
       cost: 0
     });
   });
+});
+
+it("awaits canonical asynchronous inputs and dependencies", async () => {
+  const node = researchNode({ dependencyIds: ["research:dependency"] });
+  const runActor = vi.fn(async (_actor, selection) => {
+    expect(selection).toEqual([input]);
+    return { documents: [], newDocumentIds: [] };
+  });
+  const resolveDocument = vi.fn(async (id) => {
+    await Promise.resolve();
+    return id === input._id ? input : { _id: id, data: { status: "completed" } };
+  });
+  const { runner } = harness({ node, runActor, resolveDocument });
+  expect((await runner.run(node)).data.status).toBe("completed");
+  expect(resolveDocument).toHaveBeenCalledWith(input._id, expect.any(AbortSignal));
+  expect(runActor).toHaveBeenCalled();
+});
+
+it("does not run an actor after a pause during canonical lookup", async () => {
+  let release;
+  const lookup = new Promise((resolve) => {
+    release = resolve;
+  });
+  const runActor = vi.fn();
+  const node = researchNode();
+  const { runner } = harness({ node, runActor, resolveDocument: () => lookup });
+  const running = runner.run(node);
+  const paused = runner.pause(node._id);
+  release(input);
+  expect((await paused).data.status).toBe("paused");
+  await running;
+  expect(runActor).not.toHaveBeenCalled();
+});
+
+it("resolves inactive kill targets asynchronously", async () => {
+  const node = researchNode();
+  const { runner } = harness({ node, resolveDocument: async () => node });
+  expect((await runner.kill(node._id)).data.status).toBe("killed");
 });

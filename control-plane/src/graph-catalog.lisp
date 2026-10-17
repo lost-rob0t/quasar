@@ -197,7 +197,9 @@ whole topology. A failed transaction leaves the prior generation unchanged."
     (let ((result (apply #'quasar.protocol:json-object
                          (append
                           (list (cons "revision" revision) (cons "projection" projection)
-                                (cons (if (string= projection "graph-catalog.v1") "graphs" "records")
+                                (cons (cond ((string= projection "graph-catalog.v1") "graphs")
+                                            ((string= projection "dataset-catalog.v1") "datasets")
+                                            (t "records"))
                                       (cons :array (nreverse rows)))
                                 (cons "complete" (if complete t :false))
                                 (cons "cursor" (if complete :null (%search-cursor workspace-id revision scope start)))

@@ -186,7 +186,7 @@
            (progn
              (setf (symbol-function 'quasar.ws::send-connection-text)
                    (lambda (connection encoded) (declare (ignore connection)) (setf response encoded)))
-             (dolist (command '("graph.catalog" "graph.page"))
+             (dolist (command '("graph.catalog" "graph.page" "dataset.catalog"))
                (let ((connection (make-instance 'quasar.ws::ws-connection
                                                :id "catalog-auth" :ws nil :session-id "catalog-auth"
                                                :session-token "catalog-auth" :principal "reader"

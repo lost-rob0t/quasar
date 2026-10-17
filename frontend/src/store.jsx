@@ -1,4 +1,4 @@
-import { fromPouchDocument } from "./lib/canonical-document";
+import { fromPouchDocument, toLegacyUiDocument } from "./lib/canonical-document";
 import {
   createContext,
   useCallback,
@@ -23,6 +23,9 @@ import { getControlPlane } from "./control-plane/client";
 import { chunkTransactionOperations } from "./control-plane/transaction-chunks";
 import { importFiles } from "./lib/importer";
 import { withMutationBase } from "./control-plane/mutation-base";
+import { activateGraph } from "./control-plane/graph-activation";
+import { withWorkspaceScope } from "./control-plane/workspace-scope";
+import { readCanonicalDocument } from "./control-plane/canonical-read";
 import { commitDocumentEdit } from "./control-plane/document-edit";
 import { exportWorkspaceToFile } from "./control-plane/browser-export";
 import { operation } from "./lib/operations";
@@ -586,9 +589,18 @@ export function QuasarProvider({ children }) {
 
   const switchGraph = useCallback(
     (id) => {
-      return commitWorkspace(switchGraphWorkspace(workspaceRef.current || {}, id));
+      const normalized = switchGraphWorkspace(workspaceRef.current || {}, id);
+      const client = getControlPlane();
+      if (!client) throw new Error("Connect to the workspace before switching graphs.");
+      const pending = flushWorkspace();
+      const version = ++graphCommitVersion.current;
+      setLocalWorkspace(normalized);
+      const commit = activateGraph(client, id, pending);
+      workspaceCommit.current = commit;
+      commit.catch((error) => reportGraphFailure(version, error));
+      return normalized;
     },
-    [commitWorkspace]
+    [flushWorkspace, reportGraphFailure, setLocalWorkspace]
   );
 
   const renameGraph = useCallback(
@@ -751,45 +763,53 @@ export function QuasarProvider({ children }) {
     async (actor, requestedSelection = selectedIds, runOptions = {}) => {
       if (!isBuiltinActor(actor) && !settings?.actorsEnabled)
         throw new Error("Custom browser actors are disabled in settings");
-      const requested = Array.isArray(requestedSelection)
-        ? requestedSelection
-        : [requestedSelection];
-      const explicitDocuments = requested.filter((item) => item && typeof item === "object");
-      const requestedIds = requested
-        .map((item) => (typeof item === "string" ? item : item?._id))
-        .filter(Boolean);
-      const corpus = new Map(documents.map((document) => [document._id, document]));
-      explicitDocuments.forEach((document) => corpus.set(document._id, document));
-      const selection = requestedIds.map((id) => corpus.get(id)).filter(Boolean);
-      const availability = actorApplicability(actor, selection);
-      if (!availability.applicable) throw new Error(availability.reason);
-      const corpusDocuments = [...corpus.values()];
-      const result = await runBrowserActor(
-        actorWithTransformEnvelope(actor),
-        {
-          selection,
-          documents: corpusDocuments.map((document) => ({ ...document })),
-          workspace: { layout: workspace?.layout || "cose" },
-          researchNodeId: runOptions.researchNodeId || "",
-          runId: runOptions.runId || ""
-        },
-        {
-          signal: runOptions.signal,
-          trusted: isBuiltinActor(actor)
+      const client = getControlPlane();
+      if (!client) throw new Error("Connect to the workspace before running actors.");
+      return withWorkspaceScope(client, async (checkScope, scopeSignal) => {
+        const requested = Array.isArray(requestedSelection)
+          ? requestedSelection
+          : [requestedSelection];
+        const explicitDocuments = requested.filter((item) => item && typeof item === "object");
+        const requestedIds = requested
+          .map((item) => (typeof item === "string" ? item : item?._id))
+          .filter(Boolean);
+        const corpus = new Map(documents.map((document) => [document._id, document]));
+        explicitDocuments.forEach((document) => corpus.set(document._id, document));
+        const selection = requestedIds.map((id) => corpus.get(id)).filter(Boolean);
+        const availability = actorApplicability(actor, selection);
+        if (!availability.applicable) throw new Error(availability.reason);
+        const corpusDocuments = [...corpus.values()];
+        const result = await runBrowserActor(
+          actorWithTransformEnvelope(actor),
+          {
+            selection,
+            documents: corpusDocuments.map((document) => ({ ...document })),
+            workspace: { layout: workspace?.layout || "cose" },
+            researchNodeId: runOptions.researchNodeId || "",
+            runId: runOptions.runId || ""
+          },
+          {
+            signal: runOptions.signal
+              ? AbortSignal.any([runOptions.signal, scopeSignal])
+              : scopeSignal,
+            trusted: isBuiltinActor(actor)
+          }
+        );
+        checkScope();
+        const label = `Actor: ${actor.label}`;
+        const transform = buildActorTransform(result, corpusDocuments, label);
+        const existingIds = new Set(corpusDocuments.map((document) => document._id));
+        const newDocumentIds = transform.documents
+          .map((document) => document._id)
+          .filter((id) => !existingIds.has(id));
+        if (transform.command) await execute(transform.command, label);
+        checkScope();
+        if (transform.documents.length) {
+          addDocumentsToActiveGraph(transform.documents.map((document) => document._id));
         }
-      );
-      const label = `Actor: ${actor.label}`;
-      const transform = buildActorTransform(result, corpusDocuments, label);
-      const existingIds = new Set(corpusDocuments.map((document) => document._id));
-      const newDocumentIds = transform.documents
-        .map((document) => document._id)
-        .filter((id) => !existingIds.has(id));
-      if (transform.command) await execute(transform.command, label);
-      if (transform.documents.length) {
-        addDocumentsToActiveGraph(transform.documents.map((document) => document._id));
-      }
-      if (!runOptions.quiet) setNotice({ kind: "success", message: transform.message });
-      return { ...result, ...transform, documents: transform.documents, newDocumentIds };
+        if (!runOptions.quiet) setNotice({ kind: "success", message: transform.message });
+        return { ...result, ...transform, documents: transform.documents, newDocumentIds };
+      });
     },
     [
       addDocumentsToActiveGraph,
@@ -804,31 +824,72 @@ export function QuasarProvider({ children }) {
 
   const getResearchRunner = useCallback(() => {
     if (!researchRunnerRef.current) {
-      researchRunnerRef.current = createResearchNodeRunner({
-        resolveActor: (id) => actorsRef.current.find((actor) => actor.id === id),
-        resolveDocument: (id) => documentsRef.current.find((document) => document._id === id),
-        runActor: (...args) => runActorRef.current(...args),
-        saveNode: (document, label) => executeRef.current(operation.save(document), label),
+      const client = getControlPlane();
+      if (!client) throw new Error("Connect to the workspace before running research.");
+      let valid = true;
+      const checkScope = () => {
+        if (!valid) throw new Error("Research workspace changed; restart the run.");
+      };
+      const unsubscribe = client.onConnectionStateChange((state) => {
+        if (!state.synchronized) {
+          valid = false;
+          researchRunnerRef.current?.dispose();
+          researchRunnerRef.current = null;
+        }
+      });
+      if (!valid) {
+        unsubscribe();
+        checkScope();
+      }
+      const runner = createResearchNodeRunner({
+        resolveActor: (id) => {
+          checkScope();
+          return actorsRef.current.find((actor) => actor.id === id);
+        },
+        resolveDocument: async (id, signal) => {
+          checkScope();
+          const document = await readCanonicalDocument(client, id, signal);
+          checkScope();
+          return document ? toLegacyUiDocument(document) : null;
+        },
+        runActor: (...args) => {
+          checkScope();
+          return runActorRef.current(...args);
+        },
+        saveNode: (document, label) => {
+          checkScope();
+          return executeRef.current(operation.save(document), label);
+        },
         onStatus: (status) =>
           setResearchRunState((current) => ({
             ...current,
             [status.id]: status
           }))
       });
+      researchRunnerRef.current = {
+        ...runner,
+        dispose() {
+          valid = false;
+          unsubscribe();
+          runner.dispose();
+        }
+      };
     }
     return researchRunnerRef.current;
   }, []);
 
-  const currentResearchNode = useCallback((documentOrId) => {
+  const currentResearchNode = useCallback(async (documentOrId) => {
     const id = typeof documentOrId === "string" ? documentOrId : documentOrId?._id;
-    const current = documentsRef.current.find((document) => document._id === id);
+    const client = getControlPlane();
+    if (!client) throw new Error("Connect to the workspace before running research.");
+    const current = await readCanonicalDocument(client, id);
     if (!current) throw new Error(`Research node not found: ${id || "<missing>"}`);
-    return current;
+    return toLegacyUiDocument(current);
   }, []);
 
   const runResearchNode = useCallback(
     async (documentOrId) => {
-      const result = await getResearchRunner().run(currentResearchNode(documentOrId));
+      const result = await getResearchRunner().run(await currentResearchNode(documentOrId));
       setNotice({
         kind: "success",
         message: `Research node ${result.data.status}: ${result.title}`
@@ -840,7 +901,7 @@ export function QuasarProvider({ children }) {
 
   const pauseResearchNode = useCallback(
     async (documentOrId) => {
-      const node = currentResearchNode(documentOrId);
+      const node = await currentResearchNode(documentOrId);
       const result = await getResearchRunner().pause(node._id);
       setNotice({ kind: "success", message: `Paused research node: ${node.title}` });
       return result;
@@ -850,7 +911,7 @@ export function QuasarProvider({ children }) {
 
   const resumeResearchNode = useCallback(
     async (documentOrId) => {
-      const result = await getResearchRunner().resume(currentResearchNode(documentOrId));
+      const result = await getResearchRunner().resume(await currentResearchNode(documentOrId));
       setNotice({
         kind: "success",
         message: `Research node ${result.data.status}: ${result.title}`
@@ -862,7 +923,7 @@ export function QuasarProvider({ children }) {
 
   const retryResearchNode = useCallback(
     async (documentOrId) => {
-      const result = await getResearchRunner().retry(currentResearchNode(documentOrId));
+      const result = await getResearchRunner().retry(await currentResearchNode(documentOrId));
       setNotice({
         kind: "success",
         message: `Research node ${result.data.status}: ${result.title}`
@@ -874,7 +935,7 @@ export function QuasarProvider({ children }) {
 
   const killResearchNode = useCallback(
     async (documentOrId) => {
-      const node = currentResearchNode(documentOrId);
+      const node = await currentResearchNode(documentOrId);
       const result = await getResearchRunner().kill(node._id);
       setNotice({ kind: "success", message: `Killed research node: ${node.title}` });
       return result;

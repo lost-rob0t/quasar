@@ -168,3 +168,26 @@ Route retention/aggregation changes from O(N) document aggregation to O(P) catal
 rows with P <= 50 and a 512 KiB response bound. The provider still hydrates O(N)
 legacy startup state, so this is not a claim of bounded production startup. Actor,
 nonhistory import, graph editing and provider refresh migration remain pending.
+
+### Research and graph synchronization follow-up
+
+Research input/dependency/current-node resolution now awaits canonical ID reads,
+serializing remote lookup instead of consulting the provider corpus or fanning
+out requests. Pause/kill during lookup prevents actor execution. A runner is
+bound to its synchronized workspace: disconnect disposes it, invalidates future
+saves and requires a fresh runner. Browser actor execution similarly aborts its
+signal and rejects output after a workspace/reconnect change. PR110's full
+`context.documents` contract and ordered transform/undo behavior are retained;
+this does not claim bounded actor context memory.
+
+Graph selection now flushes pending edits and sends only `graph.activate`.
+It no longer sends a complete `graph.put` merely to select an existing graph,
+which could replace membership/presentation with a stale local copy. Actual
+metadata edits still require complete graph metadata; paged partial metadata
+must not be submitted as a replacement. The #78 owner has been notified of the
+remaining delta-interface/complete-requested-graph boundary.
+
+The integration branch includes PR117 dataset backend `10d81c1`. A real-backend
+Playwright case creates 51 datasets, checks canonical counts, traverses a page
+and refreshes without accumulating rows. It is authored for hosted execution;
+local browser/Lisp execution remains blocked by runtime dependencies.
