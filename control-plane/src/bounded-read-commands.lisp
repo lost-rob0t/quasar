@@ -49,4 +49,10 @@
                        (quasar.store:dataset-catalog-page
                         (control-plane-store plane) (phase2-workspace-id envelope) payload)
                        envelope (quasar.protocol:json-value payload "byteLimit" quasar.store::*query-max-bytes*))))
+  (register-command plane "workspace.statistics"
+                    (lambda (payload envelope)
+                      (bounded-wire-result
+                       (quasar.store:workspace-statistics
+                        (control-plane-store plane) (phase2-workspace-id envelope) payload)
+                       envelope (quasar.protocol:json-value payload "byteLimit" quasar.store::*query-max-bytes*))))
   plane)

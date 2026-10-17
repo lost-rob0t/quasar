@@ -74,10 +74,12 @@
 
 (defun %put-cataloged-document (database workspace-id id document)
   (let ((key (%document-key workspace-id id)))
+    (%maintain-statistics-document database workspace-id (tek9:fetch* database key) document)
     (%maintain-dataset-document database workspace-id (tek9:fetch* database key) document)
     (%put-record database key document)))
 (defun %delete-cataloged-document (database workspace-id id)
   (let ((key (%document-key workspace-id id)))
+    (%maintain-statistics-document database workspace-id (tek9:fetch* database key) nil)
     (%maintain-dataset-document database workspace-id (tek9:fetch* database key) nil)
     (tek9:delete-document database key)))
 
