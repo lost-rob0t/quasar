@@ -49,7 +49,7 @@
             version = "0.2.0";
             src = self;
 
-            npmDepsHash = "sha256-sIrtSsGRbzlCxmac4Xj549aQtadIPsgqZWg//APFr8A=";
+            npmDepsHash = "sha256-MGE4c8IjVDZnHjJ+SVmhLu26cDmc1wXSla7A2Bx9NRw=";
             makeCacheWritable = true;
             forceGitDeps = true;
             nativeBuildInputs = [ pkgs.git ];
