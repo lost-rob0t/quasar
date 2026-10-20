@@ -79,7 +79,7 @@ function ReviewSummary({ stats }) {
   );
 }
 
-export default function StatsPage() {
+function MaterializedStatistics() {
   const { documents, workspace } = useQuasar();
   const reviewGroups = useMemo(() => partitionDocumentsByReview(documents), [documents]);
   const reviewedGraph = useMemo(
@@ -223,6 +223,43 @@ export default function StatsPage() {
             </div>
           ))}
           {!stats.topConnected.length && <p className="muted">No reviewed connections.</p>}
+        </div>
+      </section>
+    </section>
+  );
+}
+
+// Review and degree metrics require the authoritative indexed statistics contract.
+// A selected graph or bounded cache is never a substitute for corpus statistics.
+export default function StatsPage() {
+  const { bootstrap } = useQuasar();
+  if (bootstrap === undefined) return <MaterializedStatistics />;
+  return (
+    <section className="dashboard-empty-page">
+      <div className="page-heading">
+        <div>
+          <span className="eyebrow">Corpus telemetry</span>
+          <h1>Statistics dashboard</h1>
+          <p>Reviewed and unreviewed StarIntel records are counted separately.</p>
+        </div>
+      </div>
+      <section className="panel">
+        <h2>
+          {bootstrap
+            ? `${bootstrap.documentCount?.toLocaleString() ?? "Unknown"} documents in the workspace`
+            : "Loading workspace metadata…"}
+        </h2>
+        <p>
+          Review totals and connection rankings are unavailable until indexed workspace statistics
+          are supported. Opening a graph does not change these corpus totals.
+        </p>
+        <div className="button-row">
+          <Link className="button" to="/documents">
+            Browse documents
+          </Link>
+          <Link className="button" to="/graph">
+            Open graph explorer
+          </Link>
         </div>
       </section>
     </section>

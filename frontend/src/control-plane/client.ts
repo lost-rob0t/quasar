@@ -7,6 +7,8 @@ import {
   type EventHandler,
   type ResponseEnvelope
 } from "./protocol";
+import { createWorkbenchReads, type WorkbenchReads, type WorkspaceBootstrap } from "./workbench";
+import { streamDocumentExport, type DocumentExportSink } from "./document-export";
 import { createEventBus } from "./events";
 import { createReconnectManager } from "./reconnect";
 
@@ -25,6 +27,7 @@ export interface ConnectionState {
   connected: boolean;
   synchronized: boolean;
   attempts: number;
+  workspaceId?: string;
   progress?: { received: number; total: number };
 }
 
@@ -44,6 +47,13 @@ export interface ControlPlaneClient {
   onConnectionStateChange(listener: ConnectionListener): () => void;
   onSnapshot(listener: SnapshotListener): () => void;
   snapshot(): Promise<Record<string, unknown>>;
+  onBootstrap(listener: (bootstrap: WorkspaceBootstrap) => void): () => void;
+  reads: WorkbenchReads;
+  resynchronize(): Promise<void>;
+  exportDocuments(
+    sink: DocumentExportSink,
+    signal?: AbortSignal
+  ): Promise<{ count: number; revision: number }>;
   transaction(operations: unknown[], expectedRevision?: number): Promise<unknown>;
   importDocuments(chunks: unknown[][]): Promise<unknown>;
   documentCreate(doc: Record<string, unknown>): Promise<unknown>;
@@ -131,16 +141,30 @@ function defaultWebSocketUrl(): string {
   return `${scheme}://${window.location.hostname}:8081${query}`;
 }
 
-export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPlaneClient {
+export function createControlPlaneClient(
+  url = defaultWebSocketUrl(),
+  options: { synchronization: "bootstrap" | "legacy-snapshot" } = {
+    synchronization: "legacy-snapshot"
+  }
+): ControlPlaneClient {
   const eventBus = createEventBus();
   const pending = new Map<string, PendingRequest>();
   const connectionListeners = new Set<ConnectionListener>();
   const snapshotListeners = new Set<SnapshotListener>();
+  const bootstrapListeners = new Set<(bootstrap: WorkspaceBootstrap) => void>();
+  const reads = createWorkbenchReads(send);
+  let eventGeneration = 0;
+  eventBus.subscribe((event) => {
+    eventGeneration += 1;
+    const cachedRevision = reads.stats().revision;
+    if (cachedRevision !== null && event.revision > cachedRevision) reads.invalidate();
+  });
   let socket: WebSocket | null = null;
   let workspaceId =
     typeof window === "undefined"
       ? "default"
       : window.sessionStorage.getItem("quasar-workspace") || "default";
+  eventBus.setWorkspace(workspaceId);
   let disposed = false;
   let openedOnce = false;
   let synchronization = 0;
@@ -148,11 +172,12 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
     phase: "connecting",
     connected: false,
     synchronized: false,
-    attempts: 0
+    attempts: 0,
+    workspaceId
   };
 
   function publishState(next: Partial<ConnectionState>): void {
-    state = { ...state, ...next };
+    state = { ...state, workspaceId, ...next };
     traceTransport("state", { ...state });
     for (const listener of connectionListeners) {
       try {
@@ -231,7 +256,14 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
       }
       const result = response.result as Record<string, unknown> | null;
       if (typeof result?.revision === "number") {
-        eventBus.setRevision(result.revision, request.workspaceId);
+        const cachedRevision = reads.stats().revision;
+        if (cachedRevision !== null && result.revision > cachedRevision) reads.invalidate();
+        eventBus.setRevision(
+          options.synchronization === "bootstrap"
+            ? Math.max(eventBus.getRevision(request.workspaceId), result.revision)
+            : result.revision,
+          request.workspaceId
+        );
       }
       request.resolve(response.result);
     });
@@ -239,8 +271,10 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
 
   async function synchronize(): Promise<void> {
     const attempt = ++synchronization;
+    reads.invalidate();
     const synchronizingSocket = socket;
     const synchronizedWorkspace = workspaceId;
+    const startingEvents = eventGeneration;
     publishState({
       phase: "synchronizing",
       connected: false,
@@ -249,11 +283,14 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
     });
     traceTransport("synchronize-start", { attempt, workspace: synchronizedWorkspace });
     try {
-      const current = await snapshot((progress) => {
-        if (attempt === synchronization && socket === synchronizingSocket && !disposed) {
-          publishState({ progress });
-        }
-      });
+      const current =
+        options.synchronization === "bootstrap"
+          ? await send<Record<string, unknown>>("workspace.bootstrap", {})
+          : await snapshot((progress) => {
+              if (attempt === synchronization && socket === synchronizingSocket && !disposed) {
+                publishState({ progress });
+              }
+            });
       if (
         disposed ||
         socket?.readyState !== WebSocket.OPEN ||
@@ -261,11 +298,41 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
         synchronizedWorkspace !== workspaceId
       )
         return;
+      if (options.synchronization === "bootstrap" && startingEvents !== eventGeneration) {
+        throw new ControlPlaneError(
+          "query.stale-cursor",
+          "Workspace changed during bootstrap; retry required."
+        );
+      }
       eventBus.reset(synchronizedWorkspace);
       if (typeof current.revision === "number") {
         eventBus.setRevision(current.revision, synchronizedWorkspace);
       }
-      for (const listener of snapshotListeners) {
+      if (options.synchronization === "bootstrap") {
+        if (
+          current.id !== synchronizedWorkspace ||
+          "documents" in current ||
+          "graphs" in current ||
+          !(
+            current.documentCount === null ||
+            (Number.isSafeInteger(current.documentCount) && Number(current.documentCount) >= 0)
+          ) ||
+          !(current.savedGraphId === null || typeof current.savedGraphId === "string") ||
+          new TextEncoder().encode(JSON.stringify(current)).byteLength > 512 * 1024
+        ) {
+          throw new ControlPlaneError("protocol.invalid-envelope", "Invalid bounded bootstrap.");
+        }
+        const bootstrap = current as unknown as WorkspaceBootstrap;
+        reads.reset(bootstrap);
+        for (const listener of bootstrapListeners) {
+          try {
+            listener(bootstrap);
+          } catch {
+            /* Observers do not own synchronization. */
+          }
+        }
+      }
+      for (const listener of options.synchronization === "bootstrap" ? [] : snapshotListeners) {
         try {
           listener(current);
         } catch {
@@ -365,6 +432,7 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
       };
       traceTransport("close", closeDetails);
       synchronization += 1;
+      reads.invalidate();
       rejectAllPending("WebSocket connection closed.");
       if (disposed) return;
       publishState({
@@ -446,12 +514,26 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
   async function snapshot(
     onProgress?: (progress: { received: number; total: number }) => void
   ): Promise<Record<string, unknown>> {
+    if (options.synchronization === "bootstrap") {
+      throw new ControlPlaneError(
+        "query.invalid",
+        "Materialized snapshots are disabled in bootstrap mode."
+      );
+    }
+    const snapshotWorkspace = workspaceId;
+    const snapshotSocket = socket;
     let offset = 0;
     let revision: number | null = null;
     let metadata: Record<string, unknown> | null = null;
     const documents: unknown[] = [];
 
     for (let pageNumber = 0; pageNumber < MAX_SNAPSHOT_PAGES; pageNumber += 1) {
+      if (disposed) {
+        throw new ControlPlaneError("control-plane.unavailable", "Client disposed.");
+      }
+      if (workspaceId !== snapshotWorkspace || socket !== snapshotSocket) {
+        throw new ControlPlaneError("query.cancelled", "Snapshot scope changed.");
+      }
       const page = await send<Record<string, unknown>>(
         "workspace.snapshot",
         { documentOffset: offset, documentByteLimit: SNAPSHOT_PAGE_BYTES },
@@ -540,6 +622,9 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
 
   function setWorkspace(id: string): void {
     traceTransport("workspace", { from: workspaceId, to: id });
+    synchronization += 1;
+    reads.invalidate();
+    rejectAllPending("Workspace changed.");
     workspaceId = id;
     eventBus.setWorkspace(id);
     if (socket?.readyState === WebSocket.OPEN) void synchronize();
@@ -557,6 +642,8 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
     rejectAllPending("Client disposed.");
     eventBus.reset(workspaceId);
     snapshotListeners.clear();
+    bootstrapListeners.clear();
+    reads.invalidate();
     publishState({ phase: "disposed", connected: false, synchronized: false });
     connectionListeners.clear();
   }
@@ -577,6 +664,38 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
       return () => snapshotListeners.delete(listener);
     },
     snapshot,
+    reads,
+    resynchronize: synchronize,
+    exportDocuments(sink, signal) {
+      const started = synchronization;
+      const events = eventGeneration;
+      const exportingSocket = socket;
+      const exportingWorkspace = workspaceId;
+      return streamDocumentExport(
+        send,
+        sink,
+        () => {
+          if (
+            disposed ||
+            !state.synchronized ||
+            socket !== exportingSocket ||
+            workspaceId !== exportingWorkspace ||
+            synchronization !== started ||
+            eventGeneration !== events
+          ) {
+            throw new ControlPlaneError(
+              "query.cancelled",
+              "Export scope changed; discard partial output."
+            );
+          }
+        },
+        signal
+      );
+    },
+    onBootstrap(listener) {
+      bootstrapListeners.add(listener);
+      return () => bootstrapListeners.delete(listener);
+    },
     transaction,
     importDocuments,
     documentCreate: (document) => send("document.create", document),
@@ -601,10 +720,13 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
 
 let globalClient: ControlPlaneClient | null = null;
 
-export function initializeControlPlane(url?: string): ControlPlaneClient {
+export function initializeControlPlane(
+  url?: string,
+  options?: Parameters<typeof createControlPlaneClient>[1]
+): ControlPlaneClient {
   if (globalClient && !url) return globalClient;
   globalClient?.dispose();
-  globalClient = createControlPlaneClient(url);
+  globalClient = createControlPlaneClient(url, options);
   return globalClient;
 }
 

@@ -1,3 +1,10 @@
+import { getControlPlaneOrThrow } from "../control-plane/client";
+import {
+  queryCanonicalDocuments,
+  canonicalAgentContext,
+  agentOperationBase
+} from "../control-plane/agent-input";
+import { documentMatches } from "../lib/agent-tools";
 import {
   createContext,
   useCallback,
@@ -202,7 +209,18 @@ export function AgentSystemProvider({ children }) {
 
   const environment = useMemo(
     () => ({
-      getDocuments: async () => quasarRef.current.documents,
+      getDocuments: async (args = {}, context) => {
+        const allowed = new Set(context?.agent?.datasetAccess || ["*"]);
+        return (
+          await queryCanonicalDocuments(
+            getControlPlaneOrThrow(),
+            (document) =>
+              (allowed.has("*") || allowed.has(document.dataset)) &&
+              documentMatches(document, args),
+            Math.min(args.limit || 25, 100)
+          )
+        ).documents;
+      },
       getGraphDocuments: async () => {
         const current = quasarRef.current;
         const membership = current.activeGraph?.documentIds;
@@ -281,38 +299,39 @@ export function AgentSystemProvider({ children }) {
         const current = quasarRef.current;
         const allowedDatasets = new Set(context.agent.datasetAccess || ["*"]);
         const query = args.query || {};
-        let selected = current.documents.filter(
-          (document) =>
-            (allowedDatasets.has("*") || allowedDatasets.has(document.dataset)) &&
-            (!query.datasets?.length || query.datasets.includes(document.dataset)) &&
-            (!query.objectTypes?.length || query.objectTypes.includes(document.dtype)) &&
-            (!query.text ||
-              JSON.stringify(document).toLowerCase().includes(String(query.text).toLowerCase()))
-        );
-        if (args.documentIds?.length) {
-          const ids = new Set(args.documentIds);
-          selected = current.documents.filter(
+        const selected = (
+          await queryCanonicalDocuments(
+            getControlPlaneOrThrow(),
             (document) =>
-              ids.has(document._id) &&
-              (allowedDatasets.has("*") || allowedDatasets.has(document.dataset))
-          );
-        }
-        selected = selected.filter((document) => document.dtype !== "relation").slice(0, 500);
+              document.dtype !== "relation" &&
+              (allowedDatasets.has("*") || allowedDatasets.has(document.dataset)) &&
+              (args.documentIds?.length
+                ? args.documentIds.includes(document._id)
+                : (!query.datasets?.length || query.datasets.includes(document.dataset)) &&
+                  (!query.objectTypes?.length || query.objectTypes.includes(document.dtype)) &&
+                  (!query.text ||
+                    JSON.stringify(document)
+                      .toLowerCase()
+                      .includes(String(query.text).toLowerCase()))),
+            500
+          )
+        ).documents;
         const ids = new Set(selected.map((document) => document._id));
         if (args.includeRelations !== false) {
-          current.documents
-            .filter((document) => {
-              if (document.dtype !== "relation") return false;
-              const source = document.data?.subject || document.data?.source;
-              const target = document.data?.object || document.data?.target;
-              return (
-                typeof source === "string" &&
-                typeof target === "string" &&
-                ids.has(source) &&
-                ids.has(target)
-              );
-            })
-            .forEach((document) => ids.add(document._id));
+          const endpoint = (value) => (typeof value === "string" ? value : value?.id);
+          const relations = (
+            await queryCanonicalDocuments(
+              getControlPlaneOrThrow(),
+              (document) =>
+                document.dtype === "relation" &&
+                (allowedDatasets.has("*") || allowedDatasets.has(document.dataset)) &&
+                ids.has(endpoint(document.data?.subject || document.data?.source)) &&
+                ids.has(endpoint(document.data?.object || document.data?.target)),
+              1500,
+              { requireComplete: true }
+            )
+          ).documents;
+          relations.forEach((document) => ids.add(document._id));
         }
         const graph = current.createGraph(args.name);
         current.addDocumentsToActiveGraph([...ids], { layout: args.layout || "cose" });
@@ -329,7 +348,8 @@ export function AgentSystemProvider({ children }) {
         };
       },
       async previewGraphOperations(operations, context) {
-        const plan = previewAgentGraphOperations(quasarRef.current.documents, operations, {
+        const base = await agentOperationBase(getControlPlaneOrThrow(), operations);
+        const plan = previewAgentGraphOperations(base.documents, operations, {
           agentId: context.agent.id,
           runId: context.run.id
         });
@@ -341,14 +361,16 @@ export function AgentSystemProvider({ children }) {
         };
       },
       async applyGraphOperations(operations, context) {
-        const plan = previewAgentGraphOperations(quasarRef.current.documents, operations, {
+        const base = await agentOperationBase(getControlPlaneOrThrow(), operations);
+        const plan = previewAgentGraphOperations(base.documents, operations, {
           agentId: context.agent.id,
           runId: context.run.id
         });
         return applyAgentGraphPlan(
           plan,
           {
-            execute: quasarRef.current.execute,
+            execute: (command, label) =>
+              quasarRef.current.execute(command, label, { expectedRevision: base.revision }),
             async applyWorkspaceOperation(workspaceOperation) {
               const current = quasarRef.current;
               if (workspaceOperation.op === "move_node") {
@@ -426,19 +448,18 @@ export function AgentSystemProvider({ children }) {
       async validateActor(actorInput, sampleDocumentIds, context) {
         const actor = normalizeActorManifest(actorInput);
         const current = quasarRef.current;
-        const sample = current.documents.filter((document) =>
-          sampleDocumentIds.includes(document._id)
-        );
+        const documents = (
+          await queryCanonicalDocuments(getControlPlaneOrThrow(), () => true, 2000, {
+            requireComplete: true
+          })
+        ).documents;
+        const sample = documents.filter((document) => sampleDocumentIds.includes(document._id));
         const result = await runBrowserActor(actorWithTransformEnvelope(actor), {
           selection: sample,
-          documents: current.documents.map((document) => ({ ...document })),
+          documents,
           workspace: { layout: current.workspace?.layout || "cose" }
         });
-        const transform = buildActorTransform(
-          result,
-          current.documents,
-          `Test actor: ${actor.label}`
-        );
+        const transform = buildActorTransform(result, documents, `Test actor: ${actor.label}`);
         const candidate = await saveAgentRecord(
           {
             id: `actor-candidate:${crypto.randomUUID()}`,
@@ -518,12 +539,11 @@ export function AgentSystemProvider({ children }) {
             (server) => agent.mcpServerIds?.includes(server.id) && server.enabled !== false
           );
           const current = quasarRef.current;
-          const context = buildAgentContext({
-            documents: current.documents,
+          const context = await canonicalAgentContext(getControlPlaneOrThrow(), {
             selectionIds: run.selectionIds,
             targetIds: run.targetIds,
             dataset: run.dataset,
-            graph: current.activeGraph,
+            graph: { ...current.activeGraph, documentCount: current.documents.length },
             filters: run.filters
           });
           const skillInstructions = assignedSkills
