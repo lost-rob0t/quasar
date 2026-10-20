@@ -8,6 +8,19 @@ test("opens the datasets navigation as a dataset index", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Documents" })).toHaveCount(0);
 });
 
+test("document search preserves useful browser history and explains an empty corpus", async ({
+  page
+}) => {
+  await page.goto("/datasets");
+  await page.getByRole("link", { name: "Documents", exact: true }).click();
+  await expect(page.getByText("No documents loaded yet.")).toBeVisible();
+
+  await page.getByRole("textbox", { name: "Search documents" }).pressSequentially("missing");
+  await expect(page.getByText("No documents match these filters.")).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(/\/datasets$/);
+});
+
 test("exposes browser app installation from the Common Lisp port", async ({ page }) => {
   await page.goto("/graph");
 

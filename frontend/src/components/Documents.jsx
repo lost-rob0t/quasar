@@ -204,12 +204,12 @@ export function DocumentsPage() {
   const pages = useMemo(() => paginationRange(page, pageCount), [page, pageCount]);
   const graphDecision = useMemo(() => graphRenderDecision(visible), [visible]);
 
-  const set = (key, value, { resetPage = true } = {}) => {
+  const set = (key, value, { resetPage = true, replace = false } = {}) => {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value);
     else next.delete(key);
     if (resetPage) next.delete("page");
-    setParams(next);
+    setParams(next, { replace });
   };
 
   function setPage(nextPage) {
@@ -278,7 +278,11 @@ export function DocumentsPage() {
 
   if (group === "dataset") {
     return (
-      <DatasetsPage documents={documents} query={query} setQuery={(value) => set("q", value)} />
+      <DatasetsPage
+        documents={documents}
+        query={query}
+        setQuery={(value) => set("q", value, { replace: true })}
+      />
     );
   }
 
@@ -288,7 +292,7 @@ export function DocumentsPage() {
         <div>
           <span className="eyebrow">Corpus</span>
           <h1>Documents</h1>
-          <p>Search and inspect the local StarIntel v0.9 corpus.</p>
+          <p>Search and inspect the local StarIntel corpus.</p>
         </div>
         <div className="button-row">
           <button
@@ -344,7 +348,7 @@ export function DocumentsPage() {
             <Search size={19} aria-hidden="true" />
             <input
               value={query}
-              onChange={(event) => set("q", event.target.value)}
+              onChange={(event) => set("q", event.target.value, { replace: true })}
               aria-label="Search documents"
               placeholder="Search names, IDs, summaries, sources, and document fields…"
               autoComplete="off"
@@ -353,7 +357,7 @@ export function DocumentsPage() {
               <button
                 className="document-search-clear"
                 type="button"
-                onClick={() => set("q", "")}
+                onClick={() => set("q", "", { replace: true })}
                 title="Clear search"
                 aria-label="Clear document search"
               >
@@ -406,7 +410,7 @@ export function DocumentsPage() {
         <span>
           {visible.length
             ? `Showing ${(pageStart + 1).toLocaleString()}–${pageEnd.toLocaleString()} of ${visible.length.toLocaleString()}`
-            : "No matching documents"}
+            : "Showing 0 documents"}
         </span>
         <label className="document-page-size">
           <span>Rows</span>
@@ -469,7 +473,11 @@ export function DocumentsPage() {
             ))}
           </tbody>
         </table>
-        {!visible.length && <div className="empty-state compact">No matching documents.</div>}
+        {!visible.length && (
+          <div className="empty-state compact">
+            {hasSearchScope ? "No documents match these filters." : "No documents loaded yet."}
+          </div>
+        )}
       </div>
 
       {visible.length > 0 && (
