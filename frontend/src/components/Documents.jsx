@@ -12,7 +12,7 @@ import {
   Trash2,
   X
 } from "lucide-react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { dtypes } from "starintel_doc";
 import { documentLabel } from "starintel_doc/legacy";
 import { connectedDocumentIds } from "../lib/document-delete";
@@ -169,6 +169,7 @@ function DatasetsPage({ documents, query, setQuery }) {
 
 export function DocumentsPage() {
   const { documents, execute, setNotice, createGraph, addDocumentsToActiveGraph } = useQuasar();
+  const location = useLocation();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const query = params.get("q") || "";
@@ -443,6 +444,7 @@ export function DocumentsPage() {
                   <Link
                     className="document-link"
                     to={`/documents/${encodeURIComponent(document._id)}`}
+                    state={{ documentList: `${location.pathname}${location.search}` }}
                   >
                     {documentLabel(document)}
                   </Link>
@@ -542,7 +544,13 @@ function KeyValue({ label, children }) {
 
 export function DocumentPage() {
   const { id } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
+  const documentList = location.state?.documentList;
+  const listPath =
+    typeof documentList === "string" && /^\/documents(?:\?|$)/.test(documentList)
+      ? documentList
+      : "/documents";
   const { documents, execute, setNotice } = useQuasar();
   const document = documents.find((item) => item._id === id);
   const website = safeExternalUrl(document?.data?.website);
@@ -552,7 +560,7 @@ export function DocumentPage() {
       <section className="empty-state">
         <h1>Document not found</h1>
         <code>{id}</code>
-        <Link className="button" to="/documents">
+        <Link className="button" to={listPath}>
           Back to documents
         </Link>
       </section>
@@ -574,7 +582,7 @@ export function DocumentPage() {
         ),
         `Delete ${deleteIds.length} corpus document(s)`
       );
-      navigate("/documents");
+      navigate(listPath);
     } catch (error) {
       setNotice({ kind: "error", message: error.message });
     }
@@ -584,8 +592,8 @@ export function DocumentPage() {
     <article>
       <div className="page-heading document-heading">
         <div>
-          <Link className="back-link" to="/documents">
-            <ArrowLeft size={15} /> Documents
+          <Link className="back-link" to={listPath}>
+            <ArrowLeft size={15} /> {listPath === "/documents" ? "Documents" : "Back to results"}
           </Link>
           <span className="eyebrow">
             {document.dtype} · {document.dataset}
@@ -609,6 +617,7 @@ export function DocumentPage() {
           <Link
             className="button primary"
             to={`/documents/${encodeURIComponent(document._id)}/edit`}
+            state={location.state}
           >
             <Edit3 size={16} /> Edit
           </Link>

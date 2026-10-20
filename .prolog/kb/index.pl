@@ -2,3 +2,4 @@
 :- ensure_loaded('websocket_lifecycle.pl').
 :- ensure_loaded('bounded_reads.pl').
 :- ensure_loaded('documents_usability.pl').
+:- ensure_loaded('datasets_usability.pl').

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { dtypes } from "starintel_doc";
 import {
   parseBrowserDocumentJson,
@@ -51,6 +51,7 @@ function Editor({ initial, mode, params, draftToken }) {
     runTargetActors
   } = useQuasar();
   const navigate = useNavigate();
+  const location = useLocation();
   const [document, setDocument] = useState(initial);
   const [raw, setRaw] = useState(null);
   const [error, setError] = useState("");
@@ -104,7 +105,7 @@ function Editor({ initial, mode, params, draftToken }) {
         navigate(`/graph?node=${encodeURIComponent(validated.id)}`, {
           state: { revealUnreviewed: true, createdIds: mode === "edit" ? [] : [validated.id] }
         });
-      } else navigate(`/documents/${encodeURIComponent(validated.id)}`);
+      } else navigate(`/documents/${encodeURIComponent(validated.id)}`, { state: location.state });
     } catch (failure) {
       setError(failure.message);
     } finally {
@@ -234,7 +235,16 @@ function Editor({ initial, mode, params, draftToken }) {
         <button
           type="button"
           disabled={busy}
-          onClick={() => navigate(params.get("returnTo") === "graph" ? "/graph" : "/documents")}
+          onClick={() =>
+            navigate(
+              params.get("returnTo") === "graph"
+                ? "/graph"
+                : mode === "edit" && location.state?.documentList
+                  ? `/documents/${encodeURIComponent(document.id)}`
+                  : "/documents",
+              { state: location.state }
+            )
+          }
         >
           Cancel
         </button>

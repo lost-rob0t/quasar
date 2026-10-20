@@ -1,4 +1,4 @@
-import { Network, Plus, Search } from "lucide-react";
+import { Network, Plus, Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuasar } from "../store";
@@ -61,6 +61,11 @@ export default function DatasetsPage() {
             placeholder="Filter datasets by name or object type…"
           />
         </label>
+        {query && (
+          <button className="button small" type="button" onClick={() => setQuery("")}>
+            <X size={14} aria-hidden="true" /> Clear search
+          </button>
+        )}
         <span className="result-count">
           {visible.length} / {rows.length}
         </span>
@@ -118,7 +123,13 @@ export default function DatasetsPage() {
             ))}
           </tbody>
         </table>
-        {!visible.length && <div className="empty-state compact">No matching datasets.</div>}
+        {!visible.length && (
+          <div className="empty-state compact">
+            {rows.length
+              ? "No datasets match this search."
+              : "No datasets yet. Add a document to get started."}
+          </div>
+        )}
       </div>
     </section>
   );
