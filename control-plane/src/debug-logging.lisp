@@ -51,7 +51,8 @@
 
 (defun commit-operations (workspace operations)
   "Apply every operation with per-operation diagnostics and enriched failures."
-  (let ((applied-operations '())
+  (let ((*graph-array-indexes* (make-hash-table :test #'eq))
+        (applied-operations '())
         (inverses '()))
     (loop for operation in operations
           for index from 1
