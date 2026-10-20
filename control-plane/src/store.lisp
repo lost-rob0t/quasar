@@ -327,6 +327,8 @@ the store lifetime; canonical data uses Tek9's full durability profile."))
 (defun %put-node (database workspace-id graph-id canonical)
   (let ((node-id (quasar.protocol:json-value canonical "id"))
         (namespace (%graph-namespace workspace-id graph-id)))
+    (%graph-count-delta database workspace-id graph-id "nodeCount"
+                        (if (tek9:fetch* database (%node-key workspace-id graph-id node-id)) 0 1))
     (%put-record database (%node-key workspace-id graph-id node-id) canonical)
     (tek9:put-node database
                    (make-instance 'tek9:node
@@ -337,6 +339,8 @@ the store lifetime; canonical data uses Tek9's full durability profile."))
 (defun %put-edge (database workspace-id graph-id canonical)
   (let ((edge-id (quasar.protocol:json-value canonical "id"))
         (namespace (%graph-namespace workspace-id graph-id)))
+    (%graph-count-delta database workspace-id graph-id "edgeCount"
+                        (if (tek9:fetch* database (%edge-key workspace-id graph-id edge-id)) 0 1))
     (%put-record database (%edge-key workspace-id graph-id edge-id) canonical)
     (tek9:put-edge database
                    (make-instance 'tek9:edge
@@ -352,6 +356,8 @@ the store lifetime; canonical data uses Tek9's full durability profile."))
          (edge (tek9:fetch-edge database edge-id :database-name namespace)))
     (when edge
       (tek9:delete-edge database edge :database-name namespace))
+    (%graph-count-delta database workspace-id graph-id "edgeCount"
+                        (if (tek9:fetch* database (%edge-key workspace-id graph-id edge-id)) -1 0))
     (tek9:delete-document database (%edge-key workspace-id graph-id edge-id))))
 
 (defun %replace-graph (database workspace-id graph-id graph)
@@ -359,8 +365,8 @@ the store lifetime; canonical data uses Tek9's full durability profile."))
     (tek9:clear-graph database namespace)
     (%delete-prefix database (%node-prefix workspace-id graph-id))
     (%delete-prefix database (%edge-prefix workspace-id graph-id))
-    (%put-record database (%graph-meta-key workspace-id graph-id)
-                 (%graph-metadata graph))
+    (%delete-graph-index database workspace-id graph-id)
+    (%put-graph-metadata database workspace-id graph-id graph)
     (dolist (node (quasar.workspace:array-elements
                    (quasar.workspace:graph-nodes graph)))
       (%put-node database workspace-id graph-id node))
@@ -372,6 +378,7 @@ the store lifetime; canonical data uses Tek9's full durability profile."))
   (tek9:clear-graph database (%graph-namespace workspace-id graph-id))
   (%delete-prefix database (%node-prefix workspace-id graph-id))
   (%delete-prefix database (%edge-prefix workspace-id graph-id))
+  (%delete-graph-index database workspace-id graph-id)
   (tek9:delete-document database (%graph-meta-key workspace-id graph-id)))
 
 (defun %fresh-commit-stats ()
@@ -397,14 +404,13 @@ the store lifetime; canonical data uses Tek9's full durability profile."))
          (value (quasar.workspace:persistence-change-value change)))
     (ecase kind
       (:document-upsert
-       (%put-record database (%document-key workspace-id id) value)
+       (%put-cataloged-document database workspace-id id value)
        (%inc-stat stats :document-upserts))
       (:document-delete
-       (tek9:delete-document database (%document-key workspace-id id))
+       (%delete-cataloged-document database workspace-id id)
        (%inc-stat stats :document-deletes))
       (:graph-metadata-upsert
-       (%put-record database (%graph-meta-key workspace-id graph-id)
-                    (%graph-metadata value))
+       (%put-graph-metadata database workspace-id graph-id value)
        (%inc-stat stats :graph-metadata-upserts))
       (:graph-replace
        (%replace-graph database workspace-id graph-id value)
@@ -416,6 +422,8 @@ the store lifetime; canonical data uses Tek9's full durability profile."))
        (%put-node database workspace-id graph-id value)
        (%inc-stat stats :node-upserts))
       (:node-delete
+       (%graph-count-delta database workspace-id graph-id "nodeCount"
+                           (if (tek9:fetch* database (%node-key workspace-id graph-id id)) -1 0))
        (tek9:delete-node database id
                          :database-name (%graph-namespace workspace-id graph-id))
        (tek9:delete-document database (%node-key workspace-id graph-id id))
@@ -447,8 +455,9 @@ the store lifetime; canonical data uses Tek9's full durability profile."))
     (unless (tek9:fetch* database (%workspace-meta-key workspace-id))
       (loop for graph-id being the hash-keys of (quasar.workspace:workspace-graphs workspace)
             using (hash-value graph)
-            do (%put-record database (%graph-meta-key workspace-id graph-id)
-                            (%graph-metadata graph))))))
+            do (%put-graph-metadata database workspace-id graph-id graph))
+      (%mark-graph-catalog-ready database workspace-id)
+      (%mark-dataset-ready database workspace-id))))
 
 (defmethod commit-workspace ((store tek9-store) workspace operation)
   (let* ((database (tek9-store-database store))
@@ -509,5 +518,7 @@ the store lifetime; canonical data uses Tek9's full durability profile."))
       (dolist (change (%full-workspace-changes workspace))
         (%apply-change store workspace-id change (%fresh-commit-stats)))
       (%put-record database (%workspace-meta-key workspace-id)
-                   (%workspace-meta workspace))))
+                   (%workspace-meta workspace))
+      (%mark-graph-catalog-ready database workspace-id)
+      (%mark-dataset-ready database workspace-id)))
   workspace)

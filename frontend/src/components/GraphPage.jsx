@@ -1,3 +1,7 @@
+import { useDocumentList } from "../control-plane/use-document-list";
+import { getControlPlaneOrThrow } from "../control-plane/client";
+import { toLegacyUiDocument } from "../lib/canonical-document";
+import { relatedDeletionIds, connectingRelationIds } from "../control-plane/document-actions";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -326,7 +330,16 @@ function Modal({ title, children, onClose, className = "" }) {
   );
 }
 
-function GraphList({ graphs, activeGraph, onSwitch, onCreate, onRename, onDelete }) {
+function GraphList({
+  graphs,
+  activeGraph,
+  onSwitch,
+  onCreate,
+  onRename,
+  onDelete,
+  onNext,
+  hasNext
+}) {
   const activeDocumentCount = activeGraph?.documentIds?.length || 0;
   return (
     <aside className="graph-list-panel" aria-label="Graphs">
@@ -354,7 +367,7 @@ function GraphList({ graphs, activeGraph, onSwitch, onCreate, onRename, onDelete
             onChange={(event) => onSwitch(event.target.value)}
           >
             {(graphs || []).map((graphView) => {
-              const documentCount = graphView.documentIds?.length || 0;
+              const documentCount = graphView.documentCount ?? graphView.documentIds?.length ?? 0;
               const count =
                 graphView.documentIds === null
                   ? "entire corpus"
@@ -405,7 +418,7 @@ function GraphList({ graphs, activeGraph, onSwitch, onCreate, onRename, onDelete
       <div className="graph-list">
         {(graphs || []).map((graphView) => {
           const active = graphView.id === activeGraph?.id;
-          const documentCount = graphView.documentIds?.length || 0;
+          const documentCount = graphView.documentCount ?? graphView.documentIds?.length ?? 0;
           return (
             <div
               className={active ? "graph-list-item active" : "graph-list-item"}
@@ -454,6 +467,11 @@ function GraphList({ graphs, activeGraph, onSwitch, onCreate, onRename, onDelete
           );
         })}
       </div>
+      {hasNext && (
+        <button className="button small full" type="button" onClick={onNext}>
+          More graphs
+        </button>
+      )}
       <button className="button small full graph-create-button" type="button" onClick={onCreate}>
         <Plus size={14} /> New graph
       </button>
@@ -490,28 +508,26 @@ function GraphCreate({ onClose, onCreate }) {
   );
 }
 
-function GraphMembershipAdd({ documents, existingIds, onAdd, onClose }) {
+function GraphMembershipAdd({ existingIds, onAdd, onClose }) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState([]);
   const existing = useMemo(() => new Set(existingIds || []), [existingIds]);
+  const result = useDocumentList({ q: query, dtype: "", dataset: "" }, 50);
   const visible = useMemo(
     () =>
-      documents
-        .filter((document) => document.dtype !== "relation" && !existing.has(document._id))
-        .filter((document) => {
-          const needle = query.trim().toLowerCase();
-          if (!needle) return true;
-          return `${document._id} ${document.title || ""} ${JSON.stringify(document.data || {})}`
-            .toLowerCase()
-            .includes(needle);
-        })
-        .slice(0, 100),
-    [documents, existing, query]
+      (result.page?.documents || [])
+        .map(toLegacyUiDocument)
+        .filter((document) => document.dtype !== "relation" && !existing.has(document._id)),
+    [result.page, existing]
   );
 
   function toggle(id) {
     setSelected((current) =>
-      current.includes(id) ? current.filter((value) => value !== id) : [...current, id]
+      current.includes(id)
+        ? current.filter((value) => value !== id)
+        : current.length + existing.size < 2000
+          ? [...current, id]
+          : current
     );
   }
   function submit(event) {
@@ -546,6 +562,15 @@ function GraphMembershipAdd({ documents, existingIds, onAdd, onClose }) {
             </label>
           ))}
           {!visible.length && <p className="muted">No available corpus documents match.</p>}
+          {result.error && <p role="alert">{result.error}</p>}
+          <button
+            type="button"
+            className="button small"
+            onClick={result.next}
+            disabled={result.loading || !result.page || result.page.complete}
+          >
+            Next results
+          </button>
         </div>
         <div className="form-actions">
           <button type="button" className="button" onClick={onClose}>
@@ -674,6 +699,8 @@ export default function GraphPage() {
     settings,
     setNotice,
     graphs,
+    graphCatalogPage,
+    nextGraphPage,
     activeGraph,
     addDocumentsToActiveGraph,
     removeDocumentsFromActiveGraph,
@@ -1118,17 +1145,16 @@ export default function GraphPage() {
     }
   }
 
-  function addExistingDocuments(ids) {
-    const members = new Set([...(activeGraph?.documentIds || []), ...ids]);
-    const relationIds = documents
-      .filter((document) => document.dtype === "relation")
-      .filter(
-        (document) => members.has(document.data?.subject) && members.has(document.data?.object)
-      )
-      .map((document) => document._id);
-    addDocumentsToActiveGraph([...ids, ...relationIds], { selectedIds: ids });
-    setReviewStatus("all");
-    clearFilters();
+  async function addExistingDocuments(ids) {
+    try {
+      const members = [...new Set([...(activeGraph?.documentIds || []), ...ids])];
+      const relationIds = await connectingRelationIds(getControlPlaneOrThrow(), members);
+      addDocumentsToActiveGraph([...ids, ...relationIds], { selectedIds: ids });
+      setReviewStatus("all");
+      clearFilters();
+    } catch (error) {
+      setNotice({ kind: "error", message: error.message });
+    }
   }
 
   function removeSelectionFromGraph() {
@@ -1166,20 +1192,21 @@ export default function GraphPage() {
   }
 
   async function deleteCorpusDocuments(ids) {
-    const deleteIds = connectedDocumentIds(documents, ids);
-    if (
-      !window.confirm(
-        `Delete ${deleteIds.length} corpus document(s)? This includes connected relation documents and can be undone.`
-      )
-    )
-      return;
     try {
+      const { ids: deleteIds, revision } = await relatedDeletionIds(getControlPlaneOrThrow(), ids);
+      if (
+        !window.confirm(
+          `Delete ${deleteIds.length} corpus document(s)? This includes connected relation documents and can be undone.`
+        )
+      )
+        return;
       await execute(
         operation.batch(
           deleteIds.map((id) => operation.remove(id)),
           "Delete graph documents"
         ),
-        `Delete ${deleteIds.length} graph document(s)`
+        `Delete ${deleteIds.length} graph document(s)`,
+        { expectedRevision: revision }
       );
       if (activeGraph?.documentIds !== null) removeDocumentsFromActiveGraph(deleteIds);
       select([]);
@@ -1527,6 +1554,8 @@ export default function GraphPage() {
           activeGraph={activeGraph}
           onSwitch={changeGraph}
           onCreate={() => setShowGraphCreate(true)}
+          onNext={nextGraphPage}
+          hasNext={graphCatalogPage && !graphCatalogPage.complete}
           onRename={renameCurrentGraph}
           onDelete={deleteCurrentGraph}
         />

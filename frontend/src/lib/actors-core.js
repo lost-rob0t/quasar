@@ -712,6 +712,16 @@ export async function cityLegistarCalendarActor(context, api) {
       ? payload.value
       : [];
   const existing = new Set((context.documents || []).map((document) => document._id));
+  if (api.documents?.query) {
+    const ids = events.slice(0, limit).flatMap((event) => {
+      const eventIdValue = String(event.EventId || hash(JSON.stringify(event))).slice(0, 80);
+      const eventId = `starintel:event:legistar-${client}-${eventIdValue}`;
+      return [eventId, `starintel:relation:legistar-calendar:${hash(`${source._id}\0${eventId}`)}`];
+    });
+    for (const document of await api.documents.query({ ids, limit: 1000 }))
+      existing.add(document._id);
+  }
+
   const documents = [];
 
   for (const event of events.slice(0, limit)) {
@@ -910,7 +920,7 @@ export const BUILTIN_ACTORS = Object.freeze([
     version: 1,
     accepts: ["target", "location", "org", "entity"],
     triggers: [],
-    capabilities: ["network.fetch"],
+    capabilities: ["network.fetch", "documents.query"],
     minSelection: 1,
     maxSelection: 1,
     source: cityLegistarCalendarActor.toString()
@@ -1159,7 +1169,7 @@ function eventEmitService(payload) {
 export async function runBrowserActor(
   manifest,
   context,
-  { timeout = DEFAULT_ACTOR_TIMEOUT_MS, signal, onEvent, trusted = false } = {}
+  { timeout = DEFAULT_ACTOR_TIMEOUT_MS, signal, onEvent, trusted = false, documentServices } = {}
 ) {
   if (!trusted) {
     throw new Error(
@@ -1172,8 +1182,8 @@ export async function runBrowserActor(
   }
   const runtime = createBrowserActorRuntime({
     services: {
-      "documents.get": documentGetService,
-      "documents.query": documentQueryService,
+      "documents.get": documentServices?.get || documentGetService,
+      "documents.query": documentServices?.query || documentQueryService,
       "network.fetch": networkFetchService,
       "browser.open": browserOpenService,
       "events.emit": eventEmitService

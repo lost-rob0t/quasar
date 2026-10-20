@@ -215,15 +215,25 @@ export async function exportDocuments() {
 }
 
 export async function databaseInfo() {
-  const [documents, state, corpus] = await Promise.all([
-    documentsDb.info(),
-    stateDb.info(),
-    listDocuments()
-  ]);
-  return {
-    documents: { ...documents, corpus_doc_count: corpus.length },
-    state
-  };
+  const [documents, state] = await Promise.all([documentsDb.info(), stateDb.info()]);
+  let cursor,
+    count = 0;
+  for (;;) {
+    const page = await documentsDb.allDocs({
+      include_docs: true,
+      limit: 51,
+      ...(cursor ? { startkey: cursor } : {})
+    });
+    const rows = page.rows.filter((row) => row.id !== cursor);
+    if (!rows.length) break;
+    for (const row of rows) {
+      if (row.id.startsWith("_design/")) continue;
+      const document = uiDocument(row.doc);
+      if (document && isStarIntelDocument(document)) count += 1;
+    }
+    cursor = rows.at(-1).id;
+  }
+  return { documents: { ...documents, corpus_doc_count: count }, state };
 }
 
 export function ensureStarIntelViews() {
@@ -236,4 +246,8 @@ export function queryView(design, view, options = {}) {
 
 export function queryViewCounts(design, view, options = {}) {
   return queryCountView(documentsDb, design, view, options);
+}
+
+export function createProjectionStage() {
+  return new PouchDB(`quasar-projection-stage-${crypto.randomUUID()}`, { auto_compaction: true });
 }
