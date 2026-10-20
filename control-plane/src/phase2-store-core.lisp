@@ -28,7 +28,7 @@
    "Atomically validate and durably accept one sequenced import chunk."))
 
 (defgeneric promote-import-stage
-    (store workspace-id stage-id operation-id client now)
+    (store workspace-id stage-id operation-id client now &key authorize-bytes)
   (:documentation
    "Atomically promote one durable stage into canonical workspace state."))
 

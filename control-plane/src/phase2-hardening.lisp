@@ -23,7 +23,8 @@
     meta))
 
 (defmethod promote-import-stage :around
-    ((store tek9-store) workspace-id stage-id operation-id client now)
+    ((store tek9-store) workspace-id stage-id operation-id client now &key authorize-bytes)
+  (declare (ignore authorize-bytes))
   (let* ((database (tek9-store-database store))
          (before (tek9:fetch* database (%stage-meta-key workspace-id stage-id)))
          (replayed
@@ -61,7 +62,10 @@
                 stage-id
                 operation-id
                 (or (quasar.protocol:command-envelope-client envelope) "unknown")
-                (get-universal-time)))
+                (get-universal-time)
+                :authorize-bytes (lambda (used)
+                                   (quasar.plugin:authorize-storage-bytes
+                                    (current-command-principal) used))))
              (revision (quasar.protocol:json-value result "revision"))
              (committed-operation-id
                (or (quasar.protocol:json-value result "operationId") operation-id))

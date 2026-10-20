@@ -210,7 +210,7 @@ the store has no record."
                :message (format nil "Document ~A does not exist." id)))
       (quasar.protocol:clone-json document))))
 
-(defun run-operation (plane envelope operation)
+(defun run-materialized-operation (plane envelope operation)
   "Apply a single operation to the authoritative workspace.
 Saves to the store, journals the operation, broadcasts the event, and
 returns a result envelope with revision, operation ID, and canonical data."
@@ -249,6 +249,16 @@ returns a result envelope with revision, operation ID, and canonical data."
                      (applied-op-result applied))
     (applied-op-result applied)))
 
+(defun run-operation (plane envelope operation)
+  (if (quasar.store:streaming-store-p (control-plane-store plane))
+      (run-record-operation plane envelope operation)
+      (run-materialized-operation plane envelope operation)))
+
+(defun handle-transaction (plane payload envelope)
+  (if (quasar.store:streaming-store-p (control-plane-store plane))
+      (handle-record-transaction plane payload envelope)
+      (handle-materialized-transaction plane payload envelope)))
+
 (defun handle-operation (plane payload envelope type-name)
   (run-operation plane envelope
                  (quasar.protocol:json-object
@@ -262,7 +272,7 @@ returns a result envelope with revision, operation ID, and canonical data."
       (rest value)
       value))
 
-(defun handle-transaction (plane payload envelope)
+(defun handle-materialized-transaction (plane payload envelope)
   (let* ((workspace (workspace-for plane envelope))
          (operations (quasar.protocol:ensure-array
                        (quasar.protocol:json-value payload "operations")

@@ -70,6 +70,20 @@
     #:workspace-bootstrap
     #:search-documents
     #:fetch-document-batch
+    #:direct-workspace-metadata
+    #:direct-graph-metadata
+    #:direct-mutation-graph
+    #:direct-graph-node
+    #:direct-graph-edge
+    #:direct-graph-incident-edges
+    #:direct-graph-nodes-referencing-document
+    #:direct-document-node-references
+    #:direct-document-edge-references
+    #:direct-document-memberships
+    #:direct-graph-count
+    #:direct-other-graph-metadata
+    #:direct-alternate-graph-metadata
+    #:commit-change-set
     #:begin-import-stage
     #:accept-import-chunk
     #:promote-import-stage
@@ -251,6 +265,7 @@
    #:set-actor-spawn-authorizer
    #:authorize-actor-spawn
    #:set-storage-quota-resolver
+   #:authorize-storage-bytes
    #:authorize-storage-commit
    #:reset-plugin-policy))
 
