@@ -5,6 +5,10 @@ test("opens the datasets navigation as a dataset index", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: "Datasets" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Search datasets" })).toBeVisible();
+  await expect(page.getByText("No datasets yet. Add a document to get started.")).toBeVisible();
+  await page.getByRole("textbox", { name: "Search datasets" }).fill("missing");
+  await page.getByRole("button", { name: "Clear search" }).click();
+  await expect(page.getByRole("textbox", { name: "Search datasets" })).toHaveValue("");
   await expect(page.getByRole("heading", { name: "Documents" })).toHaveCount(0);
 });
 

@@ -116,6 +116,11 @@ function DatasetsPage({ documents, query, setQuery }) {
           aria-label="Search datasets"
           placeholder="Search datasets"
         />
+        {query && (
+          <button className="button small" type="button" onClick={() => setQuery("")}>
+            <X size={14} aria-hidden="true" /> Clear search
+          </button>
+        )}
         <span className="result-count">
           {visible.length} / {rows.length}
         </span>
@@ -161,7 +166,13 @@ function DatasetsPage({ documents, query, setQuery }) {
             ))}
           </tbody>
         </table>
-        {!visible.length && <div className="empty-state compact">No matching datasets.</div>}
+        {!visible.length && (
+          <div className="empty-state compact">
+            {rows.length
+              ? "No datasets match this search."
+              : "No datasets yet. Add a document to get started."}
+          </div>
+        )}
       </div>
     </section>
   );
