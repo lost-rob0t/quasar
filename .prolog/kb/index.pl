@@ -5,3 +5,4 @@
 :- ensure_loaded('datasets_usability.pl').
 :- ensure_loaded('control-plane-cow.pl').
 :- ensure_loaded('tooling.pl').
+:- ensure_loaded('canonical-wire-gotchas.pl').
