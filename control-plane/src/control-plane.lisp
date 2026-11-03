@@ -13,6 +13,8 @@
                 :reader control-plane-subscribers)
    (import-sessions :initform (make-hash-table :test #'equal)
                     :reader control-plane-import-sessions)
+   (python-actors-executor :initform 'python-actors-execute-process
+                           :accessor control-plane-python-actors-executor)
    (started-p :initform nil :accessor control-plane-started-p)
    (lock :initform (bt:make-lock) :reader control-plane-lock))
   (:documentation
