@@ -1,0 +1,208 @@
+{
+  "environment": {
+    "date": "2026-11-03",
+    "validation": "Supplemental host SBCL; required Nix unavailable",
+    "sbcl": "2.2.9.debian",
+    "tek9Commit": "ca24ef35ea6877420cbca057dd7fb702fe29a740",
+    "nativeLMDB": "Debian liblmdb0 0.9.24-1",
+    "machine": "x86_64",
+    "os": "Linux",
+    "timer": "sb-ext:get-time-of-day (microseconds), wall time",
+    "workload": "Synthetic: 75% dense near 20E/10N, 25% sparse worldwide, one geo-point plus one wireless-network per observation",
+    "mode": "Warm, sequential, local store queries; 1 warmup and 30 measured iterations",
+    "memory": "Post-full-GC SBCL dynamic heap for the whole process, including loaded code/schema/result; excludes native allocations, file mappings and OS page cache. Allocation totals are cumulative per request, not retained heap.",
+    "limitations": [
+      "Not full WiGLE scale",
+      "No concurrency, HTTP, WebSocket, browser or cold-cache latency in these timings",
+      "Base application startup still hydrates canonical corpus; bounded startup remains separate PR120",
+      "Index write amplification/disk and long rebuild writer lock require production capacity planning"
+    ]
+  },
+  "geoSourceSha256": {
+    "control-plane/src/geo-commands.lisp": "a977e76111a543c5a4843411fa42011a9080b9d59fc885fb0646bd08abb91833",
+    "control-plane/src/geo-queries.lisp": "f42794b8105544983efe27187ff1c303e721df2265ab6fa33d3a1014868747ab",
+    "control-plane/src/geo-index.lisp": "dac9b101f52b9f95cfa39de5e430338c9f5a1e1844929f4d878bae7b66efefd7"
+  },
+  "runs": [
+    {
+      "pointAnchors": 1000,
+      "canonicalDocuments": 2000,
+      "seedMs": 292.512,
+      "dataFileBytes": 4050944,
+      "queries": [
+        {
+          "scenario": "world-clusters",
+          "iterations": 30,
+          "p50Ms": 0.068,
+          "p95Ms": 0.08600000000000001,
+          "meanAllocatedBytes": 54454,
+          "processLiveDynamicHeapBytes": 66084960,
+          "responseBytes": 448,
+          "rangeCallsPerQuery": 0,
+          "decodedRangeRowsPerQuery": 0,
+          "scanned": 16,
+          "returned": 4
+        },
+        {
+          "scenario": "dense-point-page",
+          "iterations": 30,
+          "p50Ms": 3.332,
+          "p95Ms": 3.9360000000000004,
+          "meanAllocatedBytes": 2329583,
+          "processLiveDynamicHeapBytes": 66248048,
+          "responseBytes": 21893,
+          "rangeCallsPerQuery": 100,
+          "decodedRangeRowsPerQuery": 199,
+          "scanned": 100,
+          "returned": 100
+        },
+        {
+          "scenario": "sparse-point-page",
+          "iterations": 30,
+          "p50Ms": 0.064,
+          "p95Ms": 0.085,
+          "meanAllocatedBytes": 47947,
+          "processLiveDynamicHeapBytes": 66170320,
+          "responseBytes": 364,
+          "rangeCallsPerQuery": 2,
+          "decodedRangeRowsPerQuery": 2,
+          "scanned": 1,
+          "returned": 1
+        },
+        {
+          "scenario": "related-network",
+          "iterations": 30,
+          "p50Ms": 0.06499999999999999,
+          "p95Ms": 0.121,
+          "meanAllocatedBytes": 47939,
+          "processLiveDynamicHeapBytes": 66201120,
+          "responseBytes": 324,
+          "rangeCallsPerQuery": 2,
+          "decodedRangeRowsPerQuery": 2,
+          "scanned": 1,
+          "returned": 1
+        }
+      ]
+    },
+    {
+      "pointAnchors": 10000,
+      "canonicalDocuments": 20000,
+      "seedMs": 2609.383,
+      "dataFileBytes": 40747008,
+      "queries": [
+        {
+          "scenario": "world-clusters",
+          "iterations": 30,
+          "p50Ms": 0.147,
+          "p95Ms": 0.243,
+          "meanAllocatedBytes": 137797,
+          "processLiveDynamicHeapBytes": 66226352,
+          "responseBytes": 1129,
+          "rangeCallsPerQuery": 0,
+          "decodedRangeRowsPerQuery": 0,
+          "scanned": 16,
+          "returned": 16
+        },
+        {
+          "scenario": "dense-point-page",
+          "iterations": 30,
+          "p50Ms": 3.139,
+          "p95Ms": 3.769,
+          "meanAllocatedBytes": 2328591,
+          "processLiveDynamicHeapBytes": 66330096,
+          "responseBytes": 21895,
+          "rangeCallsPerQuery": 100,
+          "decodedRangeRowsPerQuery": 199,
+          "scanned": 100,
+          "returned": 100
+        },
+        {
+          "scenario": "sparse-point-page",
+          "iterations": 30,
+          "p50Ms": 0.06499999999999999,
+          "p95Ms": 0.13799999999999998,
+          "meanAllocatedBytes": 47943,
+          "processLiveDynamicHeapBytes": 66268208,
+          "responseBytes": 364,
+          "rangeCallsPerQuery": 2,
+          "decodedRangeRowsPerQuery": 2,
+          "scanned": 1,
+          "returned": 1
+        },
+        {
+          "scenario": "related-network",
+          "iterations": 30,
+          "p50Ms": 0.063,
+          "p95Ms": 0.08,
+          "meanAllocatedBytes": 47950,
+          "processLiveDynamicHeapBytes": 66197872,
+          "responseBytes": 324,
+          "rangeCallsPerQuery": 2,
+          "decodedRangeRowsPerQuery": 2,
+          "scanned": 1,
+          "returned": 1
+        }
+      ]
+    },
+    {
+      "pointAnchors": 100000,
+      "canonicalDocuments": 200000,
+      "seedMs": 26224.969,
+      "dataFileBytes": 407740416,
+      "queries": [
+        {
+          "scenario": "world-clusters",
+          "iterations": 30,
+          "p50Ms": 0.14400000000000002,
+          "p95Ms": 0.188,
+          "meanAllocatedBytes": 140241,
+          "processLiveDynamicHeapBytes": 66192736,
+          "responseBytes": 1149,
+          "rangeCallsPerQuery": 0,
+          "decodedRangeRowsPerQuery": 0,
+          "scanned": 16,
+          "returned": 16
+        },
+        {
+          "scenario": "dense-point-page",
+          "iterations": 30,
+          "p50Ms": 3.457,
+          "p95Ms": 4.486000000000001,
+          "meanAllocatedBytes": 2329476,
+          "processLiveDynamicHeapBytes": 66295232,
+          "responseBytes": 21895,
+          "rangeCallsPerQuery": 100,
+          "decodedRangeRowsPerQuery": 199,
+          "scanned": 100,
+          "returned": 100
+        },
+        {
+          "scenario": "sparse-point-page",
+          "iterations": 30,
+          "p50Ms": 0.064,
+          "p95Ms": 0.125,
+          "meanAllocatedBytes": 47943,
+          "processLiveDynamicHeapBytes": 66232512,
+          "responseBytes": 364,
+          "rangeCallsPerQuery": 2,
+          "decodedRangeRowsPerQuery": 2,
+          "scanned": 1,
+          "returned": 1
+        },
+        {
+          "scenario": "related-network",
+          "iterations": 30,
+          "p50Ms": 0.064,
+          "p95Ms": 0.16799999999999998,
+          "meanAllocatedBytes": 47940,
+          "processLiveDynamicHeapBytes": 66196496,
+          "responseBytes": 324,
+          "rangeCallsPerQuery": 2,
+          "decodedRangeRowsPerQuery": 2,
+          "scanned": 1,
+          "returned": 1
+        }
+      ]
+    }
+  ]
+}

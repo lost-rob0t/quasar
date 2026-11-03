@@ -1,0 +1,233 @@
+.geo-workspace {
+  padding: 1.2rem;
+  color: var(--quasar-text);
+}
+.geo-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.geo-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+.geo-header p,
+.geo-count-note {
+  color: var(--quasar-muted);
+}
+.geo-header label {
+  display: block;
+  font-size: 0.8rem;
+  margin-bottom: 0.3rem;
+}
+.geo-header form > div,
+.geo-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.geo-header input {
+  min-width: 15rem;
+}
+.geo-toolbar {
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+.geo-toolbar button[aria-pressed="true"] {
+  color: var(--quasar-brand);
+  border-color: var(--quasar-brand);
+}
+.geo-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 1rem;
+}
+.geo-map {
+  position: relative;
+  min-width: 0;
+  height: min(70vh, 740px);
+  min-height: 420px;
+  overflow: hidden;
+  touch-action: none;
+  border: 1px solid var(--quasar-line);
+  border-radius: 7px;
+  background-color: #102132;
+  background-image:
+    linear-gradient(#29415755 1px, transparent 1px),
+    linear-gradient(90deg, #29415755 1px, transparent 1px);
+  background-size: 64px 64px;
+  cursor: grab;
+}
+.geo-map:focus-visible {
+  outline: 2px solid var(--quasar-brand);
+}
+.geo-map:active {
+  cursor: grabbing;
+}
+.geo-tiles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.geo-tiles img {
+  position: absolute;
+  max-width: none;
+}
+.geo-basemap-status {
+  position: absolute;
+  top: 0.3rem;
+  left: 4rem;
+  right: 0.8rem;
+  padding: 0.5rem;
+  background: #08111de6;
+  color: var(--quasar-muted);
+  font-size: 0.8rem;
+  pointer-events: none;
+}
+.geo-zoom {
+  position: absolute;
+  z-index: 3;
+  left: 0.6rem;
+  top: 0.6rem;
+  display: grid;
+  text-align: center;
+  gap: 0.2rem;
+}
+.geo-zoom button {
+  min-width: 2rem;
+  font-size: 1.2rem;
+}
+.geo-cluster,
+.geo-point,
+.geo-selected {
+  position: absolute;
+  transform: translate(-50%, -50%);
+}
+.geo-cluster {
+  border: 2px solid var(--quasar-brand);
+  border-radius: 50%;
+  min-width: 42px;
+  min-height: 42px;
+  padding: 0.45rem;
+  background: #171d16;
+  color: #ffe082;
+  font-weight: 700;
+}
+.geo-point {
+  border: 2px solid #fff;
+  background: #2daec4;
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 50%;
+}
+.geo-selected {
+  pointer-events: none;
+  width: 30px;
+  height: 30px;
+  border: 3px solid var(--quasar-brand);
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px #0008;
+}
+.geo-attribution {
+  position: absolute;
+  z-index: 3;
+  bottom: 0;
+  right: 0;
+  background: #08111ded;
+  color: #dae8ef;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.75rem;
+}
+.geo-details {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  max-height: 740px;
+  overflow-y: auto;
+  padding: 1rem;
+  border: 1px solid var(--quasar-line);
+  background: var(--quasar-panel);
+  border-radius: 7px;
+}
+.geo-details h2 {
+  margin-top: 0;
+  font-size: 1rem;
+}
+.geo-details p,
+.geo-details li {
+  font-size: 0.85rem;
+}
+.geo-details pre {
+  max-height: 240px;
+  overflow: auto;
+  font-size: 0.7rem;
+}
+.geo-details ul,
+.geo-details ol {
+  padding-left: 1rem;
+}
+.geo-details li {
+  margin: 0.5rem 0;
+}
+.geo-count-note {
+  margin-top: 1.5rem;
+}
+.geo-error {
+  color: var(--quasar-danger);
+}
+@media (max-width: 900px) {
+  .geo-layout {
+    grid-template-columns: 1fr;
+  }
+  .geo-details {
+    max-height: none;
+  }
+  .geo-map {
+    height: 55vh;
+  }
+  .geo-header input {
+    min-width: 0;
+    max-width: 60vw;
+  }
+  .geo-workspace {
+    padding: 0.7rem;
+  }
+}
+.geo-workspace button,
+.geo-workspace input {
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--quasar-text);
+  border: 1px solid var(--quasar-line);
+  border-radius: 5px;
+  background: var(--quasar-panel-2);
+  padding: 0.4rem 0.6rem;
+}
+.geo-workspace button {
+  cursor: pointer;
+}
+.geo-workspace button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.geo-workspace button:focus-visible,
+.geo-workspace input:focus-visible {
+  outline: 2px solid var(--quasar-brand);
+  outline-offset: 2px;
+}
+.geo-workspace .geo-cluster {
+  border: 2px solid var(--quasar-brand);
+  border-radius: 50%;
+  background: #171d16;
+  color: #ffe082;
+}
+.geo-workspace .geo-point {
+  border: 2px solid #fff;
+  background: #2daec4;
+  border-radius: 50%;
+  padding: 0;
+}
