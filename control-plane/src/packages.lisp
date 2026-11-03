@@ -93,7 +93,6 @@
     #:workspace-documents
     #:workspace-graphs
     #:workspace-settings
-    #:workspace-journal
     #:copy-workspace
     #:workspace-persistence-changes
     #:clear-workspace-persistence-changes
@@ -289,15 +288,16 @@
                 #:clone-json
                 #:quasar-error
                 #:make-command-envelope)
-  (:import-from #:quasar.workspace
-                #:make-workspace
-                #:workspace-revision
-                #:workspace-documents
-                #:workspace-graphs
-                #:workspace-settings
-                #:workspace-snapshot
-                #:workspace-graph
-                #:graph-node
+   (:import-from #:quasar.workspace
+                 #:make-workspace
+                 #:workspace-revision
+                 #:workspace-documents
+                 #:workspace-graphs
+                 #:workspace-settings
+                 #:workspace-snapshot
+                 #:workspace-graph
+                 #:copy-workspace
+                 #:graph-node
                 #:graph-edge
                 #:dispatch-operation
                 #:commit-operations

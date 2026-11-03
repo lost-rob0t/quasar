@@ -9,9 +9,16 @@
            :reader workspace-graphs)
    (settings :initform (make-hash-table :test #'equal)
              :reader workspace-settings)
-   (journal :initform (make-array 0 :adjustable t :fill-pointer 0)
-            :reader workspace-journal))
-  (:documentation "Canonical, single-writer-owned workspace state."))
+   (owned-graphs :initform (make-hash-table :test #'equal)
+                 :reader workspace-owned-graphs))
+  (:documentation
+    "Canonical, single-writer-owned workspace state.
+
+OWNED-GRAPHS records which graph IDs this instance may mutate in place. A
+mutation candidate owns nothing at first and clones a graph before its
+first structural mutation (copy-on-write), so candidates share unchanged
+corpus values with their source instead of deep-copying the corpus. The
+durable journal lives in the workspace store, not in this object."))
 
 (defun make-workspace (&key (id "default"))
   (let ((workspace (make-instance 'workspace :id id)))
@@ -57,19 +64,20 @@
   (let ((graph (workspace-graph workspace graph-id)))
     (unless graph
       (setf graph (quasar.protocol:json-object
-                   (cons "id" graph-id)
-                   (cons "name" graph-id)
-                   (cons "nodes" (quasar.protocol:json-array))
-                   (cons "edges" (quasar.protocol:json-array))
-                   (cons "documentIds" (if (string= graph-id "all-documents")
-                                            :null
-                                            (quasar.protocol:json-array)))
-                   (cons "positions" (quasar.protocol:empty-object))
-                   (cons "viewport" :null)
-                   (cons "layout" "cose")
-                   (cons "selectedIds" (quasar.protocol:json-array))
-                   (cons "groups" (quasar.protocol:empty-object)))
-            (workspace-graph workspace graph-id) graph))
+                    (cons "id" graph-id)
+                    (cons "name" graph-id)
+                    (cons "nodes" (quasar.protocol:json-array))
+                    (cons "edges" (quasar.protocol:json-array))
+                    (cons "documentIds" (if (string= graph-id "all-documents")
+                                             :null
+                                             (quasar.protocol:json-array)))
+                    (cons "positions" (quasar.protocol:empty-object))
+                    (cons "viewport" :null)
+                    (cons "layout" "cose")
+                    (cons "selectedIds" (quasar.protocol:json-array))
+                    (cons "groups" (quasar.protocol:empty-object)))
+            (workspace-graph workspace graph-id) graph
+            (gethash graph-id (workspace-owned-graphs workspace)) t))
     graph))
 
 (defun require-graph (workspace graph-id)
@@ -77,6 +85,23 @@
       (error 'quasar.protocol:quasar-error
              :code "graph.not-found"
              :message (format nil "Graph ~A does not exist." graph-id))))
+
+(defun private-graph (workspace graph-id)
+  "Return the graph stored under GRAPH-ID, cloning it first when WORKSPACE
+does not yet own it. Copy-on-write keeps mutation candidates isolated while
+sharing unchanged graphs with their source, so candidate setup stays
+proportional to changed records rather than the corpus."
+  (let ((graph (workspace-graph workspace graph-id)))
+    (if (gethash graph-id (workspace-owned-graphs workspace))
+        graph
+        (let ((clone (quasar.protocol:clone-json graph)))
+          (setf (workspace-graph workspace graph-id) clone
+                (gethash graph-id (workspace-owned-graphs workspace)) t)
+          clone))))
+
+(defun ensure-private-graph (workspace graph-id)
+  (ensure-graph workspace graph-id)
+  (private-graph workspace graph-id))
 
 (defun generated-id (prefix)
   (format nil "~A:~36R:~36R" prefix (get-universal-time)
@@ -90,27 +115,6 @@
          (loop for key being the hash-keys of table
                using (hash-value value)
                collect (cons key (quasar.protocol:clone-json value)))))
-
-(defun copy-workspace (source)
-  "Return a deeply isolated copy of SOURCE suitable for candidate mutation."
-  (let ((copy (make-instance 'workspace :id (workspace-id source))))
-    (setf (workspace-revision copy) (workspace-revision source))
-    (loop for key being the hash-keys of (workspace-documents source)
-          using (hash-value value)
-          do (setf (gethash key (workspace-documents copy))
-                   (quasar.protocol:clone-json value)))
-    (loop for key being the hash-keys of (workspace-graphs source)
-          using (hash-value value)
-          do (setf (gethash key (workspace-graphs copy))
-                   (quasar.protocol:clone-json value)))
-    (loop for key being the hash-keys of (workspace-settings source)
-          using (hash-value value)
-          do (setf (gethash key (workspace-settings copy))
-                   (quasar.protocol:clone-json value)))
-    (loop for entry across (workspace-journal source)
-          do (vector-push-extend (quasar.protocol:clone-json entry)
-                                 (workspace-journal copy)))
-    copy))
 
 (defun clone-graph (graph)
   "Deep-clone a graph JSOWN object including nodes, edges, and all UI metadata."
@@ -448,7 +452,7 @@
                  :message (format nil "Document ~A is referenced by graph nodes; remove those nodes first."
                                   id)))
         (dolist (graph-id membership-graphs)
-          (let* ((graph (workspace-graph workspace graph-id))
+          (let* ((graph (private-graph workspace graph-id))
                  (ids (quasar.protocol:json-value graph "documentIds")))
             (quasar.protocol:object-set
              graph "documentIds"
@@ -485,7 +489,8 @@
     (dolist (graph-id (if (eq (car graph-ids) :array)
                           (rest graph-ids)
                           graph-ids))
-      (let* ((graph (require-graph workspace graph-id))
+      (let* ((graph (progn (require-graph workspace graph-id)
+                           (private-graph workspace graph-id)))
              (ids (quasar.protocol:json-value graph "documentIds")))
         (when (eq ids :null)
           (error 'quasar.protocol:quasar-error
@@ -509,7 +514,7 @@
            (generated-id "node"))))
     (require-valid-node workspace canonical)
     (let* ((graph-id (or (quasar.protocol:json-value canonical "graphId") "default"))
-           (graph (ensure-graph workspace graph-id))
+           (graph (ensure-private-graph workspace graph-id))
            (nodes (graph-nodes graph)))
       (add-array-item nodes canonical "id" "graph.duplicate-id")
       (reconcile-graph-document-membership
@@ -529,7 +534,8 @@
 
 (defun apply-node-update (workspace payload)
   (let* ((graph-id (or (quasar.protocol:json-value payload "graphId") "default"))
-         (graph (require-graph workspace graph-id))
+         (graph (progn (require-graph workspace graph-id)
+                       (private-graph workspace graph-id)))
          (node-id (quasar.protocol:ensure-string
                     (quasar.protocol:json-value payload "id") "id" "document.invalid")))
     (require-valid-node workspace payload)
@@ -553,7 +559,8 @@
 
 (defun apply-node-delete (workspace payload)
   (let* ((graph-id (or (quasar.protocol:json-value payload "graphId") "default"))
-         (graph (require-graph workspace graph-id))
+         (graph (progn (require-graph workspace graph-id)
+                       (private-graph workspace graph-id)))
          (node-id (quasar.protocol:ensure-string
                     (quasar.protocol:json-value payload "id") "id" "document.invalid")))
     (let ((previous (require-graph-node graph node-id)))
@@ -688,7 +695,8 @@
                      :message (format nil "Edge belongs to graph ~A, not ~A."
                                       edge-graph-id id)))
             (setf (gethash edge-id seen) t)))))
-    (setf (workspace-graph workspace id) canonical)
+    (setf (workspace-graph workspace id) canonical
+          (gethash id (workspace-owned-graphs workspace)) t)
     (make-applied-op
      :event (if previous "graph.updated" "graph.created")
      :result (quasar.protocol:json-object
@@ -763,7 +771,7 @@
        (or (quasar.protocol:json-value canonical "documentId")
            (generated-id "edge"))))
     (let* ((graph-id (or (quasar.protocol:json-value canonical "graphId") "default"))
-           (graph (ensure-graph workspace graph-id)))
+           (graph (ensure-private-graph workspace graph-id)))
       (require-valid-edge workspace canonical graph)
       (add-array-item (graph-edges graph) canonical "id" "graph.duplicate-id")
       (make-applied-op
@@ -781,7 +789,8 @@
 
 (defun apply-edge-update (workspace payload)
   (let* ((graph-id (or (quasar.protocol:json-value payload "graphId") "default"))
-         (graph (require-graph workspace graph-id))
+         (graph (progn (require-graph workspace graph-id)
+                       (private-graph workspace graph-id)))
          (edge-id (quasar.protocol:ensure-string
                     (quasar.protocol:json-value payload "id") "id" "graph.invalid-reference")))
     (require-valid-edge workspace payload graph)
@@ -802,7 +811,8 @@
 
 (defun apply-edge-delete (workspace payload)
   (let* ((graph-id (or (quasar.protocol:json-value payload "graphId") "default"))
-         (graph (require-graph workspace graph-id))
+         (graph (progn (require-graph workspace graph-id)
+                       (private-graph workspace graph-id)))
          (edge-id (quasar.protocol:ensure-string
                     (quasar.protocol:json-value payload "id") "id" "graph.invalid-reference")))
     (let ((previous (require-graph-edge graph edge-id)))
