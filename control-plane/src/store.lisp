@@ -397,9 +397,11 @@ the store lifetime; canonical data uses Tek9's full durability profile."))
          (value (quasar.workspace:persistence-change-value change)))
     (ecase kind
       (:document-upsert
+       (%geo-document-change database workspace-id id value)
        (%put-record database (%document-key workspace-id id) value)
        (%inc-stat stats :document-upserts))
       (:document-delete
+       (%geo-document-change database workspace-id id nil)
        (tek9:delete-document database (%document-key workspace-id id))
        (%inc-stat stats :document-deletes))
       (:graph-metadata-upsert

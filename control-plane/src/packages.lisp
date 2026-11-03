@@ -70,6 +70,11 @@
     #:workspace-bootstrap
     #:search-documents
     #:fetch-document-batch
+    #:geo-viewport
+    #:geo-points
+    #:geo-related
+    #:geo-resolve
+    #:rebuild-geo-index
     #:begin-import-stage
     #:accept-import-chunk
     #:promote-import-stage

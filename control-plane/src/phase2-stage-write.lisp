@@ -294,6 +294,7 @@
                    (%document-key workspace-id id)))
             (unless (tek9:fetch* database canonical-key)
               (incf created))
+            (%geo-document-change database workspace-id id document)
             (%put-record database canonical-key document)))
         (setf start (caar (last rows)))
       while (= (length rows) +phase2-range-batch-size+))

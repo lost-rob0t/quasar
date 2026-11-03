@@ -372,6 +372,7 @@ returns a result envelope with revision, operation ID, and canonical data."
 
 (defun install-core-commands (plane)
   (install-bounded-read-commands plane)
+  (install-geo-commands plane)
   (register-command
    plane "system.capabilities"
    (lambda (payload envelope)

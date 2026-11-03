@@ -9,6 +9,7 @@ import DocumentEditor from "./components/CanonicalDocumentEditor";
 import { DocumentPage, DocumentsPage } from "./components/Documents";
 import GraphLayoutControl from "./components/GraphLayoutControl";
 import GraphPage from "./components/GraphPage";
+import MapPage from "./components/MapPage";
 import GraphWorkspaceChrome from "./components/GraphWorkspaceChrome";
 import { ImportPage } from "./components/ImportSettings";
 import SettingsWorkspace from "./components/SettingsWorkspace";
@@ -51,6 +52,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<StatsPage />} />
           <Route path="/graph" element={<GraphWorkspace />} />
+          <Route path="/map" element={<MapPage />} />
           <Route path="/datasets" element={<DatasetsPage />} />
           <Route path="/documents" element={<DocumentsRoute />} />
           <Route path="/documents/new" element={<DocumentEditor mode="create" />} />
