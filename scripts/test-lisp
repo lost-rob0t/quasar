@@ -7,10 +7,13 @@ export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
 
 # Isolate ASDF source registry from user-local CL projects (e.g. Lem's qlot)
 # that may provide incompatible versions of named-readtables or other deps.
-export CL_SOURCE_REGISTRY="(:source-registry (:directory \"$repo_root/systems/\") (:tree \"$repo_root/vendor/star-cl/\") (:tree \"$tek9_path/\") (:tree \"$HOME/quicklisp/local-projects/\") (:tree \"$HOME/quicklisp/dists/quicklisp/software/\") :ignore-inherited-configuration)"
+# local-projects is deliberately excluded: a symlinked quasar checkout there
+# would register a foreign quasar-*/quasar-tests system that overrides this
+# repository's own load-asd registrations.
+export CL_SOURCE_REGISTRY="(:source-registry (:directory \"$repo_root/systems/\") (:tree \"$repo_root/vendor/star-cl/\") (:tree \"$tek9_path/\") (:tree \"$HOME/quicklisp/dists/quicklisp/software/\") :ignore-inherited-configuration)"
 
 # Find native libraries for CFFI-based systems (NixOS compatibility).
-for native_name in openssl lmdb; do
+for native_name in openssl lmdb sqlite; do
   native_lib="$(nix-store -q --requisites /nix/var/nix/profiles/default 2>/dev/null | grep -m1 "$native_name" || true)"
   if [[ -n "${native_lib}" && -d "${native_lib}/lib" ]]; then
     export LD_LIBRARY_PATH="${native_lib}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"

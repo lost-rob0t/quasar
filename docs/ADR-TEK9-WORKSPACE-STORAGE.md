@@ -244,10 +244,25 @@ Phase 1 normal mutations still apply to an isolated in-memory candidate and
 persist only typed record-level changes in one Tek9 transaction. Phase 2 does
 not weaken that atomicity or event ordering.
 
-Issue #24 is broader than #35. Before #24 can close, normal mutation paths must
-be measured on a large workspace. If `copy-workspace` still duplicates the
-complete document corpus for ordinary mutations, #24 remains open and a final
-bounded-mutation phase is required.
+Candidate isolation is copy-on-write, not corpus duplication. `copy-workspace`
+copies the workspace's hash tables and shares unchanged document and graph
+values with its source. Document operations replace values wholesale, and
+every structural graph mutation clones that graph first through a
+per-workspace ownership set (`private-graph`), so a failed transaction still
+leaves the authoritative workspace untouched while candidate setup allocates
+table entries instead of a corpus-sized deep copy. The in-workspace journal
+copy is gone: the durable journal belongs to the store. Two related sinks
+were removed with it: `%graph-metadata-change` now clones graph metadata only
+(nodes and edges excluded) instead of the whole graph, and the memory-store
+deep-isolates values at its boundary to keep modeling durable storage.
+
+Measured on a 4000-document corpus of nested objects, one `copy-workspace`
+consed ~0.64 MB versus ~12.8 MB for a single corpus clone (~20x), and full
+suite evidence bounds staged-import growth as before. Remaining known costs
+on the mutation path: `load-workspace` still restores the complete corpus
+into the live workspace cache once per process, and each graph-mutating
+operation still upserts one graph metadata record (including the positions
+map), which is bounded by that graph's metadata rather than the corpus.
 
 ## Performance and memory constraints
 
@@ -261,7 +276,9 @@ The required asymptotic properties are:
 - retrying an accepted chunk does not rewrite earlier chunks;
 - promotion is O(staged documents) with bounded retained batches, not O(N²);
 - stage cleanup scans only that stage prefix;
-- ordinary Phase 1 record persistence remains proportional to changed records.
+- ordinary Phase 1 record persistence remains proportional to changed records;
+- an ordinary mutation allocates changed records plus table entries, not a
+  corpus-sized candidate copy.
 
 Canonical state keeps Tek9 `:full` durability. Performance gates must not be won
 by selecting `:nosync`.

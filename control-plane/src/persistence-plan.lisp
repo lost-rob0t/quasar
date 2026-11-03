@@ -25,24 +25,24 @@ whose next candidate starts with an empty commit plan."))
   workspace)
 
 (defun copy-workspace (source)
-  "Return a deeply isolated mutation candidate with an empty persistence plan."
+  "Return an isolated mutation candidate with an empty persistence plan.
+
+Tables are copied but document and graph values are shared with SOURCE:
+document operations replace values wholesale, and structural graph
+mutations clone-on-write first (see PRIVATE-GRAPH), so candidate setup
+allocates table entries rather than a corpus-sized deep copy. The durable
+journal belongs to the store and is not copied."
   (let ((copy (make-instance 'persistent-workspace :id (workspace-id source))))
     (setf (workspace-revision copy) (workspace-revision source))
     (loop for key being the hash-keys of (workspace-documents source)
           using (hash-value value)
-          do (setf (gethash key (workspace-documents copy))
-                   (quasar.protocol:clone-json value)))
+          do (setf (gethash key (workspace-documents copy)) value))
     (loop for key being the hash-keys of (workspace-graphs source)
           using (hash-value value)
-          do (setf (gethash key (workspace-graphs copy))
-                   (quasar.protocol:clone-json value)))
+          do (setf (gethash key (workspace-graphs copy)) value))
     (loop for key being the hash-keys of (workspace-settings source)
           using (hash-value value)
-          do (setf (gethash key (workspace-settings copy))
-                   (quasar.protocol:clone-json value)))
-    (loop for entry across (workspace-journal source)
-          do (vector-push-extend (quasar.protocol:clone-json entry)
-                                 (workspace-journal copy)))
+          do (setf (gethash key (workspace-settings copy)) value))
     copy))
 
 (defun %record-persistence-change (workspace change)
@@ -56,7 +56,13 @@ whose next candidate starts with an empty commit plan."))
          (make-persistence-change
           :kind :graph-metadata-upsert
           :graph-id graph-id
-          :value (quasar.protocol:clone-json graph)))))
+          ;; Metadata only: cloning the full graph here would make every
+          ;; node/edge operation allocate a graph-sized copy.
+          :value (apply #'quasar.protocol:json-object
+                        (loop for (key . value) in (rest graph)
+                              unless (member key '("nodes" "edges") :test #'string=)
+                                collect (cons key
+                                              (quasar.protocol:clone-json value))))))))
 
 (defun %result-value (applied key)
   (quasar.protocol:json-value (applied-op-result applied) key))

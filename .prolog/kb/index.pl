@@ -3,3 +3,5 @@
 :- ensure_loaded('bounded_reads.pl').
 :- ensure_loaded('documents_usability.pl').
 :- ensure_loaded('datasets_usability.pl').
+:- ensure_loaded('control-plane-cow.pl').
+:- ensure_loaded('tooling.pl').

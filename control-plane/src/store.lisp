@@ -49,16 +49,33 @@ and OPERATION. A failure exposes none of the candidate changes."))
          :reader memory-store-lock))
   (:documentation "Focused in-memory implementation used by unit tests."))
 
+(defun %memory-store-deep-copy (workspace)
+  "Deep-isolate a workspace for the in-memory durability mock.
+
+The memory-store models durable storage: values it keeps must be immune to
+in-place mutation of values it previously returned. Production Tek9 gets
+this from serialization; the mock clones document and graph values at its
+boundary instead."
+  (let ((copy (quasar.workspace:copy-workspace workspace)))
+    (flet ((deepen (table)
+             (loop for key being the hash-keys of table
+                   using (hash-value value)
+                   do (setf (gethash key table)
+                            (quasar.protocol:clone-json value)))))
+      (deepen (quasar.workspace:workspace-documents copy))
+      (deepen (quasar.workspace:workspace-graphs copy))
+      copy)))
+
 (defmethod load-workspace ((store memory-store) workspace-id)
   (bt:with-lock-held ((memory-store-lock store))
     (let ((workspace (gethash workspace-id (memory-store-workspaces store))))
-      (and workspace (quasar.workspace:copy-workspace workspace)))))
+      (and workspace (%memory-store-deep-copy workspace)))))
 
 (defmethod save-workspace ((store memory-store) workspace)
   (bt:with-lock-held ((memory-store-lock store))
     (setf (gethash (quasar.workspace:workspace-id workspace)
                    (memory-store-workspaces store))
-          (quasar.workspace:copy-workspace workspace)))
+          (%memory-store-deep-copy workspace)))
   workspace)
 
 (defmethod append-operation ((store memory-store) workspace-id operation)
@@ -80,7 +97,7 @@ and OPERATION. A failure exposes none of the candidate changes."))
       (replace next-journal journal)
       (vector-push-extend (quasar.protocol:clone-json operation) next-journal)
       (setf (gethash workspace-id (memory-store-workspaces store))
-            (quasar.workspace:copy-workspace workspace)
+            (%memory-store-deep-copy workspace)
             (gethash workspace-id (memory-store-journals store)) next-journal)))
   (quasar.workspace:clear-workspace-persistence-changes workspace)
   workspace)
@@ -319,9 +336,6 @@ the store lifetime; canonical data uses Tek9's full durability profile."))
               (quasar.protocol:clone-json document)))
       (dolist (graph-meta (%range-values database (%graph-meta-prefix workspace-id)))
         (%restore-graph store workspace graph-meta))
-      (let ((journal (quasar.workspace:workspace-journal workspace)))
-        (dolist (entry (store-journal-entries store workspace-id))
-          (vector-push-extend (quasar.protocol:clone-json entry) journal)))
       workspace)))
 
 (defun %put-node (database workspace-id graph-id canonical)

@@ -520,6 +520,106 @@ downstream membership reconciliation sees a uniform representation."
                         (workspace-graph workspace "g") "edges"))))
       (check (= orig-revision (workspace-revision workspace))))))
 
+;;; --- Copy-on-write candidate isolation ---
+
+(defun test-copy-workspace-cow-isolation ()
+  (let ((workspace (make-workspace :id "cow-test")))
+    (quasar.workspace:apply-document-create workspace (make-doc "cow:doc"))
+    (quasar.workspace:apply-node-create workspace (make-node "cow-g" "n1"))
+    (let ((candidate (copy-workspace workspace)))
+      ;; Unchanged values are shared, not deep-copied.
+      (check (eq (gethash "cow:doc" (workspace-documents workspace))
+                 (gethash "cow:doc" (workspace-documents candidate))))
+      (check (eq (workspace-graph workspace "cow-g")
+                 (workspace-graph candidate "cow-g")))
+      ;; A structural graph mutation on the candidate leaves the source
+      ;; graph untouched (clone-on-write).
+      (quasar.workspace:apply-node-create candidate (make-node "cow-g" "n2"))
+      (check (not (eq (workspace-graph workspace "cow-g")
+                      (workspace-graph candidate "cow-g"))))
+      (check (= 1 (length (array-elements-for-test
+                           (quasar.protocol:json-value
+                            (workspace-graph workspace "cow-g") "nodes")))))
+      (check (= 2 (length (array-elements-for-test
+                           (quasar.protocol:json-value
+                            (workspace-graph candidate "cow-g") "nodes")))))
+      ;; Further mutations reuse the candidate's private graph.
+      (quasar.workspace:apply-node-create candidate (make-node "cow-g" "n3"))
+      (check (= 3 (length (array-elements-for-test
+                           (quasar.protocol:json-value
+                            (workspace-graph candidate "cow-g") "nodes")))))
+      (check (= 1 (length (array-elements-for-test
+                           (quasar.protocol:json-value
+                            (workspace-graph workspace "cow-g") "nodes")))))
+      ;; Document updates replace values instead of mutating shared ones.
+      (let ((updated (make-doc "cow:doc")))
+        (quasar.protocol:object-set updated "changed" t)
+        (quasar.workspace:apply-document-update candidate updated))
+      (check (null (quasar.protocol:json-value
+                    (gethash "cow:doc" (workspace-documents workspace)) "changed")))
+      (check (quasar.protocol:json-value
+              (gethash "cow:doc" (workspace-documents candidate)) "changed"))
+      ;; Failed transactions on a shared candidate still roll back cleanly.
+      (let ((source-nodes-json
+              (quasar.protocol:encode
+               (quasar.protocol:json-value
+                (workspace-graph workspace "cow-g") "nodes"))))
+        (handler-case
+            (quasar.workspace:commit-operations
+             (copy-workspace workspace)
+             (list (quasar.protocol:json-object
+                    (cons "type" "graph.node.create")
+                    (cons "payload" (make-node "cow-g" "boom")))
+                   (quasar.protocol:json-object
+                    (cons "type" "graph.node.delete")
+                    (cons "payload" (make-node "cow-g" "nonexistent")))))
+          (quasar.protocol:quasar-error ()
+            nil)
+          (:no-error (&rest args)
+            (declare (ignore args))
+            (incf *failures*)
+            (format *error-output* "~&FAIL: bad tx should signal~%")))
+        (check (string= source-nodes-json
+                        (quasar.protocol:encode
+                         (quasar.protocol:json-value
+                          (workspace-graph workspace "cow-g") "nodes"))))))))
+
+#+sbcl
+(defun test-copy-workspace-bounded-consing ()
+  ;; Candidate setup must allocate table entries, not a corpus deep copy:
+  ;; on a corpus of 4000 nested documents, COPY-WORKSPACE conses less than
+  ;; a tenth of cloning that corpus once.
+  (let ((workspace (make-workspace :id "cow-bytes")))
+    (dotimes (index 4000)
+      (let ((id (format nil "cow:~8,'0D" index)))
+        (setf (gethash id (workspace-documents workspace))
+              (quasar.protocol:json-object
+               (cons "_id" id)
+               (cons "dtype" "person")
+               (cons "items"
+                     (cons :array
+                           (loop for item below 32
+                                 collect (quasar.protocol:json-object
+                                          (cons "index" item)
+                                          (cons "owner" id)))))))))
+    (let* ((before-copy (sb-ext:get-bytes-consed))
+           (copy (copy-workspace workspace))
+           (copy-bytes (- (sb-ext:get-bytes-consed) before-copy))
+           (before-clone (sb-ext:get-bytes-consed)))
+      (declare (ignore copy))
+      (loop for value being the hash-values of (workspace-documents workspace)
+            do (quasar.protocol:clone-json value))
+      (let ((clone-bytes (- (sb-ext:get-bytes-consed) before-clone)))
+        (format
+         t
+         "~&COW consing evidence: copy-workspace=~D bytes vs one corpus clone=~D bytes~%"
+         copy-bytes clone-bytes)
+        (check (< copy-bytes (/ clone-bytes 10)))))))
+
+#-sbcl
+(defun test-copy-workspace-bounded-consing ()
+  nil)
+
 ;;; --- Inverse round-trip tests ---
 
 (defun test-inverse-round-trip-document ()
@@ -1000,6 +1100,8 @@ downstream membership reconciliation sees a uniform representation."
   (test-transaction-rollback)
   (test-transaction-graph-isolation)
   (test-transaction-graph-rollback)
+  (test-copy-workspace-cow-isolation)
+  (test-copy-workspace-bounded-consing)
   (test-inverse-round-trip-document)
   (test-inverse-round-trip-node)
   (test-node-delete-inverse-restores-edges)
