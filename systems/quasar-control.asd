@@ -36,6 +36,7 @@
                (:file "bounded-reads")
                (:file "control-plane")
                (:file "pro-actors")
+               (:file "python-actors")
                (:file "command-authority-context")
                (:file "autodig-store")
                (:file "autodig-control")

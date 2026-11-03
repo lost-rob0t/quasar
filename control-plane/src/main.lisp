@@ -51,6 +51,7 @@ starintel-pro-actors."
       (progn
         (start-control-plane *control-plane*)
         (quasar.control-plane::install-pro-actor-commands *control-plane*)
+        (quasar.control-plane::install-python-actor-commands *control-plane*)
         (install-starlang-commands *control-plane*)
         (when legacy-melissa-p
           (quasar.actors.melissa.bridge:start-melissa-integration

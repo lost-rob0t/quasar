@@ -553,12 +553,14 @@ downstream membership reconciliation sees a uniform representation."
                             (workspace-graph workspace "cow-g") "nodes")))))
       ;; Document updates replace values instead of mutating shared ones.
       (let ((updated (make-doc "cow:doc")))
-        (quasar.protocol:object-set updated "changed" t)
+        (quasar.protocol:object-set updated "notes" "changed")
         (quasar.workspace:apply-document-update candidate updated))
       (check (null (quasar.protocol:json-value
-                    (gethash "cow:doc" (workspace-documents workspace)) "changed")))
-      (check (quasar.protocol:json-value
-              (gethash "cow:doc" (workspace-documents candidate)) "changed"))
+                    (gethash "cow:doc" (workspace-documents workspace)) "notes")))
+      (check (string= "changed"
+                      (quasar.protocol:json-value
+                       (gethash "cow:doc" (workspace-documents candidate))
+                       "notes")))
       ;; Failed transactions on a shared candidate still roll back cleanly.
       (let ((source-nodes-json
               (quasar.protocol:encode

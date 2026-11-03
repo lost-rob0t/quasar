@@ -100,3 +100,46 @@ If `*autodig-filesystem-path*` is `NIL`, the filesystem backend uses:
 The filesystem adapter stores only Auto-Dig lifecycle events. It does not replace Tek9 as Quasar's canonical workspace/document/graph store. Workspace identifiers are converted to fixed derived filenames and are never used as literal path components. Updates are published by replacing a complete temporary file, so a partial temporary write is never treated as authoritative state. Malformed authoritative files fail closed at read time.
 
 Both backends preserve the same Auto-Dig semantics: durable run IDs, request-id replay/conflict behavior, status/get/list, lifecycle transitions, and worker lease/fencing state across process restart.
+
+## Python pro-actor self-run
+
+Quasar can run the Python pro-actor fleet (starintel-pro-actors) directly
+against a local checkout — typically a git worktree — without a broker. The
+control-plane commands `python-actors.status` and `python-actors.run` drive
+the fleet's standalone CLI (`starintel-actor-run`), ingest the emitted
+canonical StarIntel documents into the current workspace transactionally,
+and re-run outputs as updates instead of duplicates.
+
+Environment:
+
+- `QUASAR_PRO_ACTORS_PATH`: the starintel-pro-actors checkout to run.
+  Defaults to `~/starintel/starintel-pro-actors` when unset. An explicit
+  path that is broken is reported by `python-actors.status` instead of
+  silently falling back.
+- `QUASAR_PYTHON`: interpreter override. By default the checkout's own
+  `python/.venv/bin/python` is preferred, then `python3`.
+
+Credentials never pass through Quasar. The runner overlays the checkout's
+gitignored `.env` (for example `STARINTEL_MELISSA_LICENSE_KEY`) onto the
+subprocess environment and discards it; values are never logged, returned,
+or stored. Actor selection and product routing travel in the target options,
+so every actor family — and every Melissa DataSource service
+(`service: global-ip`, `global-email`, `personator-search`, ...) — is
+reachable through the same command.
+
+Example:
+
+```json
+{
+  "command": "python-actors.run",
+  "payload": {
+    "actor": "melissa",
+    "target": "8.8.8.8",
+    "options": { "fields": { "ip": "8.8.8.8" }, "service": "global-ip" }
+  }
+}
+```
+
+Access is capability-gated like every other command: local sessions carry
+the commands by default, hosted deployments derive them from entitlements
+exactly like `pro-actors.*`.

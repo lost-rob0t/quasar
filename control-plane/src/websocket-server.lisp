@@ -52,8 +52,11 @@ configured sink."
     "graph.edge.create"
     "graph.edge.update"
     "graph.edge.delete"
-    "starlang.status")
-  "Commands allowed for standard clients. starlang.load is excluded.")
+    "starlang.status"
+    "python-actors.status"
+    "python-actors.run")
+  "Commands allowed for standard clients. starlang.load and the hosted
+pro-actors.* entitlement commands are excluded.")
 
 (defclass ws-connection ()
   ((id :initarg :id :reader ws-connection-id)
