@@ -704,6 +704,24 @@ export function SettingsPage() {
       </section>
 
       <section className="panel">
+        <h2>Pro integration</h2>
+        <label className="field">
+          <span>Pro integration mode</span>
+          <select value={form.proIntegrationMode || "auto"} onChange={update("proIntegrationMode")}>
+            <option value="off">Off</option>
+            <option value="auto">Auto</option>
+            <option value="on">On</option>
+          </select>
+        </label>
+        <p className="muted">
+          Off hides Pro actors and stops discovery. Auto shows them when this session has Pro
+          capabilities and the host supports discovery. On always shows the integration panel;
+          running actors still requires server authorization. Save settings to apply. This changes
+          only this browser’s display preference, not your subscription or host plugins.
+        </p>
+      </section>
+
+      <section className="panel">
         <div className="section-heading">
           <h2>Browser actors</h2>
           <label className="checkbox">
