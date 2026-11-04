@@ -160,7 +160,7 @@
       (unwind-protect
            (with-bounded-read-instrumentation
             (lambda ()
-              (dolist (command '("workspace.bootstrap" "document.search"))
+              (dolist (command '("workspace.bootstrap" "document.page" "document.search"))
                 (let ((response (call-command plane (make-envelope command (quasar.protocol:empty-object) :workspace "bounded"))))
                   (check (string= "ok" (status response)))))
               (check (= 0 (hash-table-count (quasar.control-plane:control-plane-workspaces plane))))))
@@ -178,7 +178,7 @@
            (progn
              (setf (symbol-function 'quasar.ws::send-connection-text)
                    (lambda (connection encoded) (declare (ignore connection)) (setf response encoded)))
-             (dolist (command '("workspace.bootstrap" "document.search" "document.batch"))
+             (dolist (command '("workspace.bootstrap" "document.page" "document.search" "document.batch"))
                (let ((connection (make-instance 'quasar.ws::ws-connection
                                                 :id "bounded-auth" :ws nil :session-id "bounded-auth"
                                                 :session-token "bounded-auth" :principal "reader"
@@ -269,13 +269,13 @@
                (setf (symbol-function 'quasar.ws::send-connection-text)
                      (lambda (connection encoded) (declare (ignore connection)) (setf response encoded)))
                ;; Count calls but execute the actual Tek9-backed generic methods.
-               (dolist (symbol '(quasar.store:workspace-bootstrap quasar.store:search-documents
+               (dolist (symbol '(quasar.store:workspace-bootstrap quasar.store:page-documents quasar.store:search-documents
                                  quasar.store:fetch-document-batch))
                  (let ((original (symbol-function symbol)))
                    (push (cons symbol original) originals)
                    (setf (symbol-function symbol)
                          (lambda (&rest arguments) (incf reads) (apply original arguments)))))
-               (dolist (command '("workspace.bootstrap" "document.search" "document.batch"))
+               (dolist (command '("workspace.bootstrap" "document.page" "document.search" "document.batch"))
                  (dolist (literal '("null" "false" "true" "0" "1" "[]" "{}" "\"\""))
                    (format t "~&Workspace admission regression: ~A workspace=~A~%" command literal)
                    (check (bounded-error-p "protocol.invalid-envelope"
