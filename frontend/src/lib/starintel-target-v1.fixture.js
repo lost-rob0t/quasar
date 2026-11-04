@@ -1,5 +1,5 @@
 // Executable request fixture, not a live StarIntel server.
-// Source: starintel-server ce14c77ccd2f51f543410fdeef3d78fb9978b769
+// Source: starintel-server 0137ead90ab9560b5a5090f0b62c1b59aac08c68
 // source/frontends/http-target-v1.lisp, target-v1-document-from-request and helpers.
 // Mirrors only the fields exercised here; server scheduling limits and auth stay server-owned.
 export function targetV1FixtureResponse(body) {
@@ -51,12 +51,12 @@ export function targetV1FixtureResponse(body) {
       }
     };
   }
-  if (!Array.isArray(body.options)) {
+  if (!body.options || typeof body.options !== "object" || Array.isArray(body.options)) {
     return {
       status: 422,
       body: {
         code: "invalid_target_options",
-        message: "options must be a JSON array"
+        message: "options must be a JSON object"
       }
     };
   }
