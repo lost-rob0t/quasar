@@ -31,4 +31,10 @@
                        (quasar.store:fetch-document-batch
                         (control-plane-store plane) (phase2-workspace-id envelope) payload)
                        envelope (quasar.protocol:json-value payload "byteLimit" quasar.store::*query-max-bytes*))))
+  (register-command plane "graph.membership"
+                    (lambda (payload envelope)
+                      (bounded-wire-result
+                       (quasar.store:graph-membership
+                        (control-plane-store plane) (phase2-workspace-id envelope) payload)
+                       envelope (quasar.protocol:json-value payload "byteLimit" quasar.store::*query-max-bytes*))))
   plane)

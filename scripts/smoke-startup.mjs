@@ -128,7 +128,14 @@ function websocketExchange(url) {
         }
         received.add("capabilities");
       } else if (response.id === "smoke-bootstrap") {
-        if (response.status !== "ok" || "documents" in response.result || "graphs" in response.result) {
+        const graphs = Array.isArray(response.result?.graphs) ? response.result.graphs : [];
+        const hydrated =
+          response.status !== "ok" ||
+          "documents" in response.result ||
+          graphs.some(
+            (graph) => "nodes" in graph || "edges" in graph || "documentIds" in graph
+          );
+        if (hydrated) {
           reject(new Error("Bootstrap returned document or graph hydration"));
           socket.terminate();
           return;

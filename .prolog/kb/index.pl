@@ -6,3 +6,4 @@
 :- ensure_loaded('control-plane-cow.pl').
 :- ensure_loaded('tooling.pl').
 :- ensure_loaded('canonical-wire-gotchas.pl').
+:- ensure_loaded('compact_catalogs.pl').

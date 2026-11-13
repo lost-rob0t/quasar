@@ -16,6 +16,8 @@
 (defgeneric workspace-bootstrap (store workspace-id))
 (defgeneric search-documents (store workspace-id request))
 (defgeneric fetch-document-batch (store workspace-id request))
+(defgeneric graph-membership (store workspace-id request)
+  (:documentation "Page a graph's member document IDs from node sidecar rows."))
 
 (defun %query-error (code message)
   (error 'quasar.protocol:quasar-error :code code :message message))
@@ -42,18 +44,29 @@
 (defmethod workspace-bootstrap ((store tek9-store) workspace-id)
   "Read exactly one durable metadata record; do not restore graphs or documents."
   (let ((database (tek9-store-database store)))
+    ;; Legacy workspaces gain compact catalog rows here, once, in their own
+    ;; transaction; the read below never scans documents or graph metadata.
+    (%ensure-workspace-catalog store workspace-id)
     (tek9:with-read-transaction (database)
       (let ((meta (%read-meta database workspace-id)))
-        (quasar.protocol:json-object
-         (cons "id" workspace-id)
-         (cons "revision" (quasar.protocol:json-value meta "revision" 0))
-         (cons "documentCount" (quasar.protocol:json-value meta "documentCount" :null))
-         (cons "savedGraphId" (quasar.protocol:json-value meta "activeGraphId" :null))
-         (cons "limits" (quasar.protocol:json-object
-                         (cons "pageRecords" *query-max-records*)
-                         (cons "responseBytes" *query-max-bytes*)
-                         (cons "scanRecords" *query-max-scanned*)
-                         (cons "scanMilliseconds" *query-max-milliseconds*))))))))
+        (multiple-value-bind (datasets datasets-complete)
+            (dataset-catalog-page database workspace-id *query-max-records*)
+          (multiple-value-bind (graphs graphs-complete)
+              (graph-catalog-page database workspace-id *query-max-records*)
+            (quasar.protocol:json-object
+             (cons "id" workspace-id)
+             (cons "revision" (quasar.protocol:json-value meta "revision" 0))
+             (cons "documentCount" (quasar.protocol:json-value meta "documentCount" :null))
+             (cons "savedGraphId" (quasar.protocol:json-value meta "activeGraphId" :null))
+             (cons "datasets" datasets)
+             (cons "datasetsComplete" (if datasets-complete t :false))
+             (cons "graphs" graphs)
+             (cons "graphsComplete" (if graphs-complete t :false))
+             (cons "limits" (quasar.protocol:json-object
+                             (cons "pageRecords" *query-max-records*)
+                             (cons "responseBytes" *query-max-bytes*)
+                             (cons "scanRecords" *query-max-scanned*)
+                             (cons "scanMilliseconds" *query-max-milliseconds*))))))))))
 
 (defun %query-integer (request field default minimum maximum)
   (let ((value (quasar.protocol:json-value request field default)))
@@ -254,3 +267,118 @@
           (when (> (%utf8-length (quasar.protocol:encode result)) byte-limit)
             (%query-error "query.record-too-large" "ID batch exceeds the response budget."))
           result)))))
+
+;;; Compact catalog pages and bounded graph membership.
+
+(defun dataset-catalog-page (database workspace-id limit)
+  "Return compact dataset summary rows: (VALUES array complete-p)."
+  (let* ((prefix (%dataset-catalog-prefix workspace-id))
+         (rows (%bounded-range database prefix :limit limit)))
+    (values (cons :array
+                  (mapcar (lambda (row)
+                            (let ((record (cdr row)))
+                              (quasar.protocol:json-object
+                               (cons "name" (%dataset-name-from-key (car row) prefix))
+                               (cons "documentCount"
+                                     (quasar.protocol:json-value record "documentCount" 0))
+                               (cons "dtypes" (quasar.protocol:json-value
+                                               record "dtypes" (quasar.protocol:empty-object)))
+                               (cons "lastWriteAt" (quasar.protocol:json-value
+                                                    record "lastWriteAt" 0)))))
+                          rows))
+            (< (length rows) limit))))
+
+(defun graph-catalog-page (database workspace-id limit)
+  "Return compact graph summary rows: (VALUES array complete-p)."
+  (let* ((rows (%bounded-range database (%graph-catalog-prefix workspace-id) :limit limit)))
+    (values (cons :array
+                  (mapcar (lambda (row)
+                            (let ((record (cdr row)))
+                              (quasar.protocol:json-object
+                               (cons "id" (quasar.protocol:json-value record "id"))
+                               (cons "name" (quasar.protocol:json-value record "name"))
+                               (cons "nodeCount" (quasar.protocol:json-value record "nodeCount" 0))
+                               (cons "edgeCount" (quasar.protocol:json-value record "edgeCount" 0))
+                               (cons "updatedAt" (quasar.protocol:json-value record "updatedAt" :null)))))
+                          rows))
+            (< (length rows) limit))))
+
+(defun %membership-cursor (workspace-id revision graph-id key)
+  (let ((cursor (quasar.protocol:encode
+                 (quasar.protocol:json-object
+                  (cons "v" 1) (cons "workspace" workspace-id)
+                  (cons "revision" revision) (cons "graphId" graph-id)
+                  (cons "after" key)))))
+    (when (> (length cursor) *query-max-cursor-characters*)
+      (%query-error "query.invalid" "Query cannot produce a bounded continuation token."))
+    cursor))
+
+(defun %membership-cursor-start (request workspace-id revision graph-id prefix)
+  (let ((cursor (quasar.protocol:json-value request "cursor" nil)))
+    (when cursor
+      (unless (and (stringp cursor) (<= (length cursor) *query-max-cursor-characters*))
+        (%query-error "query.invalid-cursor" "Invalid continuation token."))
+      (let ((token (handler-case (jsown:with-injective-reader (jsown:parse cursor))
+                     (error () (%query-error "query.invalid-cursor" "Malformed continuation token.")))))
+        (unless (and (eql 1 (quasar.protocol:json-value token "v"))
+                     (equal workspace-id (quasar.protocol:json-value token "workspace"))
+                     (string= graph-id (quasar.protocol:json-value token "graphId"))
+                     (stringp (quasar.protocol:json-value token "after"))
+                     (%prefix-p prefix (quasar.protocol:json-value token "after")))
+          (%query-error "query.invalid-cursor" "Continuation scope does not match this query."))
+        (unless (eql revision (quasar.protocol:json-value token "revision"))
+          (%query-error "query.stale-cursor" "Workspace changed; restart the query."))
+        (quasar.protocol:json-value token "after")))))
+
+(defmethod graph-membership ((store workspace-store) workspace-id request)
+  (declare (ignore workspace-id request))
+  (%query-error "query.unsupported-store" "Bounded reads require the Tek9 store."))
+
+(defmethod graph-membership ((store tek9-store) workspace-id request)
+  "Page one graph's member document IDs from node sidecar rows."
+  (%query-keys request '("graphId" "cursor" "limit" "byteLimit"))
+  (let* ((graph-id (%query-string (quasar.protocol:json-value request "graphId" "")
+                                  "graphId" 256))
+         (limit (%query-integer request "limit" 50 1 *query-max-records*))
+         (byte-limit (%query-integer request "byteLimit" *query-max-bytes* 32768 *query-max-bytes*))
+         (database (tek9-store-database store))
+         (prefix (%node-prefix workspace-id graph-id)))
+    (tek9:with-read-transaction (database)
+      (let ((revision (quasar.protocol:json-value (%read-meta database workspace-id) "revision" 0)))
+        (unless (tek9:fetch* database (%graph-meta-key workspace-id graph-id))
+          (%query-error "graph.not-found" (format nil "Graph ~A does not exist." graph-id)))
+        (let ((start (or (%membership-cursor-start request workspace-id revision graph-id prefix)
+                         prefix))
+              (document-ids nil) (bytes 0) (scanned 0) (complete nil) (reason "records"))
+          (loop
+            (when (>= (length document-ids) limit) (return))
+            (let ((rows (%bounded-range database prefix :start start :limit 1)))
+              (unless rows (setf complete t reason "complete") (return))
+              (let* ((row (first rows))
+                     (document-id (quasar.protocol:json-value (cdr row) "documentId")))
+                (incf scanned)
+                (when (and (stringp document-id) (plusp (length document-id)))
+                  (let ((size (+ (%utf8-length document-id) 16)))
+                    (when (> (+ bytes size) (- byte-limit 16384))
+                      (unless document-ids
+                        (%query-error "query.record-too-large"
+                                      "A membership page exceeds the response budget."))
+                      (setf reason "bytes") (return))
+                    (push document-id document-ids) (incf bytes size)))
+                (setf start (car row)))))
+          (let ((result (quasar.protocol:json-object
+                         (cons "revision" revision)
+                         (cons "graphId" graph-id)
+                         (cons "documentIds" (cons :array (nreverse document-ids)))
+                         (cons "complete" (if complete t :false))
+                         (cons "cursor" (if complete :null
+                                            (%membership-cursor workspace-id revision graph-id start)))
+                         (cons "performance" (quasar.protocol:json-object
+                                              (cons "mode" "bounded-node-scan")
+                                              (cons "scanned" scanned)
+                                              (cons "stopReason" reason)
+                                              (cons "documentBytes" bytes))))))
+            (when (> (%utf8-length (quasar.protocol:encode result)) byte-limit)
+              (%query-error "query.record-too-large"
+                            "Query continuation exceeds the response budget."))
+            result))))))
