@@ -45,6 +45,9 @@
            (seed-bounded-fixture store count "bounded" 256)
            (quasar.store:close-store store)
            (setf store (quasar.store:make-tek9-store :path path))
+           (push (measure-bounded-operation
+                  "bootstrap-with-catalog-migration"
+                  (lambda () (quasar.store:workspace-bootstrap store "bounded"))) metrics)
            (push (measure-bounded-operation "bootstrap"
                                             (lambda () (quasar.store:workspace-bootstrap store "bounded"))) metrics)
            (push (measure-bounded-operation "search-50"

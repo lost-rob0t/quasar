@@ -68,6 +68,7 @@
     #:direct-workspace-revision
     #:direct-graph-snapshot
     #:workspace-bootstrap
+    #:graph-membership
     #:search-documents
     #:fetch-document-batch
     #:begin-import-stage

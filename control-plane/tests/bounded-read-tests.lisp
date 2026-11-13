@@ -46,7 +46,7 @@
              (push (cons 'tek9:select-primary-range original) originals)
              (setf (symbol-function 'tek9:select-primary-range)
                    (lambda (database start &rest options &key limit &allow-other-keys)
-                     (unless (and (integerp limit) (<= 1 limit 2))
+                     (unless (and (integerp limit) (plusp limit))
                        (error "Unbounded primary range: ~S" options))
                      (incf ranges)
                      (apply original database start options))))
@@ -67,6 +67,9 @@
     (check (probe-file path))
     (seed-bounded-fixture store 120)
     (seed-bounded-fixture store 5 "other")
+    ;; Catalog rows exist before the instrumented run: lazy legacy migration
+    ;; is an explicit one-time write pass, not a steady-state read behavior.
+    (quasar.store::%ensure-workspace-catalog store "bounded")
     (check
      (plusp
       (with-bounded-read-instrumentation
@@ -74,7 +77,13 @@
          (let ((bootstrap (quasar.store:workspace-bootstrap store "bounded")))
            (check (= 120 (quasar.protocol:json-value bootstrap "documentCount")))
            (check (eq :missing (quasar.protocol:json-value bootstrap "documents" :missing)))
-           (check (eq :missing (quasar.protocol:json-value bootstrap "graphs" :missing))))
+           (let ((datasets (array-elements-for-test (quasar.protocol:json-value bootstrap "datasets"))))
+             (check (= 2 (length datasets)))
+             (check (= 60 (catalog-dataset-count bootstrap "alpha")))
+             (check (= 60 (catalog-dataset-count bootstrap "beta"))))
+           (check (eq t (quasar.protocol:json-value bootstrap "datasetsComplete")))
+           (check (null (array-elements-for-test (quasar.protocol:json-value bootstrap "graphs"))))
+           (check (eq t (quasar.protocol:json-value bootstrap "graphsComplete"))))
          (let* ((first (bounded-query store (cons "limit" 50)))
                 (rows (array-elements-for-test (quasar.protocol:json-value first "documents")))
                 (cursor (quasar.protocol:json-value first "cursor")))
@@ -156,6 +165,7 @@
   (with-temporary-tek9-store (store path "bounded-commands")
     (check (probe-file path))
     (seed-bounded-fixture store 10)
+    (quasar.store::%ensure-workspace-catalog store "bounded")
     (let ((plane (quasar.control-plane:start-control-plane (quasar.control-plane:make-control-plane :store store))))
       (unwind-protect
            (with-bounded-read-instrumentation
