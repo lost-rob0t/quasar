@@ -1,4 +1,5 @@
 import PouchDB from "pouchdb-browser";
+import { normalizeProIntegrationMode } from "./pro-integration";
 import { initializeActorSettings } from "./actor-settings";
 import { isStarIntelDocument } from "starintel_doc/legacy";
 import {
@@ -138,6 +139,7 @@ export async function getSettings() {
     actors: [],
     theme: "midnight",
     ...stored,
+    proIntegrationMode: normalizeProIntegrationMode(stored.proIntegrationMode),
     _id: undefined,
     _rev: undefined
   };
@@ -149,7 +151,10 @@ export async function initializeSettings() {
 }
 
 export function saveSettings(settings) {
-  return putState("settings", settings);
+  return putState("settings", {
+    ...settings,
+    proIntegrationMode: normalizeProIntegrationMode(settings.proIntegrationMode)
+  });
 }
 
 export async function getWorkspace() {
@@ -160,6 +165,7 @@ export async function getWorkspace() {
     layout: "cose",
     selectedIds: [],
     ...stored,
+    proIntegrationMode: normalizeProIntegrationMode(stored.proIntegrationMode),
     _id: undefined,
     _rev: undefined
   });
