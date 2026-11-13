@@ -10,9 +10,32 @@
     (declare (ignore python arguments checkout environment timeout))
     (values stdout stderr exit)))
 
+(defvar *fake-pro-actors-checkout* nil
+  "Minimal starintel-pro-actors skeleton satisfying checkout resolution.
+
+The executor seam replaces the subprocess, but the command handlers still
+resolve a real checkout directory before they reach it. Tests bind
+QUASAR_PRO_ACTORS_PATH to this skeleton so the suite stays hermetic on
+machines (and CI runners) without a starintel-pro-actors checkout.")
+
+(defun fake-pro-actors-checkout ()
+  (or *fake-pro-actors-checkout*
+      (let ((dir (merge-pathnames
+                  (format nil "quasar-fake-pro-actors-~36R/"
+                          (random most-positive-fixnum))
+                  (uiop:temporary-directory))))
+        (ensure-directories-exist
+         (merge-pathnames "python/src/starintel_pro_actors/" dir))
+        (setf *fake-pro-actors-checkout* dir))))
+
 (defun use-fake-python-actor-executor (plane stdout &optional (exit 0) (stderr ""))
+  (setf (uiop:getenv "QUASAR_PRO_ACTORS_PATH")
+        (namestring (fake-pro-actors-checkout)))
   (setf (quasar.control-plane::control-plane-python-actors-executor plane)
         (fake-python-actor-executor stdout exit stderr)))
+
+(defun restore-python-actors-environment ()
+  (setf (uiop:getenv "QUASAR_PRO_ACTORS_PATH") ""))
 
 (defun python-actor-observation-document (observer)
   (jsown:parse
@@ -186,6 +209,9 @@ EMPTY=")))
   "Opt-in live lane: drive a real checkout with the real Melissa key."
   (unless (uiop:getenv "QUASAR_PYTHON_ACTORS_LIVE")
     (return-from test-python-actor-live-run t))
+  ;; Earlier fake-executor tests point QUASAR_PRO_ACTORS_PATH at the
+  ;; skeleton; the live lane must resolve the real checkout.
+  (restore-python-actors-environment)
   (let ((plane (quasar.control-plane:make-control-plane)))
     (unwind-protect
          (progn
@@ -234,4 +260,5 @@ EMPTY=")))
   (test-python-actor-run-maps-subprocess-failure)
   (test-python-actor-run-rejects-invalid-payloads)
   (test-python-actor-live-run)
+  (restore-python-actors-environment)
   t)
