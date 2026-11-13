@@ -890,6 +890,7 @@ export function QuasarProvider({ children }) {
 
   const value = useMemo(
     () => ({
+      cpClient: getControlPlane(),
       documents,
       settings,
       workspace,

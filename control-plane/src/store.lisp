@@ -243,25 +243,56 @@ the store lifetime; canonical data uses Tek9's full durability profile."))
         (quasar.protocol:object-set record "edgeCount" (max 0 (+ edges edge-delta)))
         (%put-record database key record)))))
 
-(defun %catalog-move-document (database workspace-id old-dataset new-dataset)
-  "Maintain dataset document counts across a document upsert or delete."
-  (flet ((bump (dataset delta)
-           (when (and (stringp dataset) (plusp (length dataset)))
-             (let* ((key (%dataset-catalog-key workspace-id dataset))
-                    (record (tek9:fetch* database key))
-                    (count (max 0 (+ (if record
-                                         (quasar.protocol:json-value record "documentCount" 0)
-                                         0)
-                                     delta))))
-               (if (plusp count)
-                   (%put-record database key
-                                (quasar.protocol:json-object
-                                 (cons "name" dataset)
-                                 (cons "documentCount" count)))
-                   (tek9:delete-document database key))))))
+(defun %catalog-dataset-record (record dataset)
+  "Return the dataset catalog record for DATASET, or a fresh empty one."
+  (or record
+      (quasar.protocol:json-object
+       (cons "name" dataset)
+       (cons "documentCount" 0)
+       (cons "dtypes" (quasar.protocol:empty-object)))))
+
+(defun %catalog-apply-document-facets (record document delta)
+  "Adjust one dataset record by DELTA for DOCUMENT's dataset facets."
+  (let ((dtype (quasar.protocol:json-value document "dtype"))
+        (updated (quasar.protocol:json-value document "updatedAt"))
+        (count (max 0 (+ (quasar.protocol:json-value record "documentCount" 0) delta))))
+    (when (and (stringp dtype) (plusp (length dtype)))
+      (let* ((dtypes (or (quasar.protocol:json-value record "dtypes")
+                         (quasar.protocol:empty-object)))
+             (next (max 0 (+ (quasar.protocol:json-value dtypes dtype 0) delta))))
+        (if (plusp next)
+            (quasar.protocol:object-set dtypes dtype next)
+            ;; JSOWN objects are alists of (key . value) pairs.
+            (setf (cdr dtypes)
+                  (remove dtype (cdr dtypes) :key #'car :test #'string=)))
+        (quasar.protocol:object-set record "dtypes" dtypes)))
+    (when (and (integerp updated)
+               (> updated (quasar.protocol:json-value record "lastWriteAt" 0)))
+      (quasar.protocol:object-set record "lastWriteAt" updated))
+    (quasar.protocol:object-set record "documentCount" count)
+    (values record (plusp count))))
+
+(defun %catalog-move-document (database workspace-id previous next)
+  "Maintain dataset catalog rows across a document upsert or delete.
+
+PREVIOUS/NEXT are durable document records (or NIL). Count and dtype deltas
+are exact; lastWriteAt keeps the newest write timestamp it has seen, so a
+delete leaves the last activity time in place."
+  (let ((old-dataset (and previous (quasar.protocol:json-value previous "dataset")))
+        (new-dataset (and next (quasar.protocol:json-value next "dataset"))))
     (unless (equal old-dataset new-dataset)
-      (when old-dataset (bump old-dataset -1))
-      (when new-dataset (bump new-dataset 1)))))
+      (flet ((apply-delta (dataset document delta)
+               (when (and (stringp dataset) (plusp (length dataset)))
+                 (let* ((key (%dataset-catalog-key workspace-id dataset))
+                        (record (%catalog-dataset-record (tek9:fetch* database key) dataset)))
+                   (multiple-value-bind (updated keep)
+                       (%catalog-apply-document-facets record document delta)
+                     (declare (ignore updated))
+                     (if keep
+                         (%put-record database key record)
+                         (tek9:delete-document database key)))))))
+        (when old-dataset (apply-delta old-dataset previous -1))
+        (when new-dataset (apply-delta new-dataset next 1))))))
 
 (defun %workspace-catalog-present-p (database workspace-id)
   (and (tek9:fetch* database (%catalog-marker-key workspace-id)) t))
@@ -285,18 +316,23 @@ the store lifetime; canonical data uses Tek9's full durability profile."))
 (defun %build-workspace-catalog (database workspace-id)
   "Populate compact catalog rows for a legacy workspace; caller owns the transaction."
   (let ((datasets (make-hash-table :test #'equal)))
-    ;; One explicit legacy pass over documents, decoding only the dataset
-    ;; field per record. This is migration work, never a per-request path.
-    (dolist (row (%catalog-scan-rows database (%document-prefix workspace-id)))
-      (let ((dataset (quasar.protocol:json-value (cdr row) "dataset")))
-        (when (and (stringp dataset) (plusp (length dataset)))
-          (incf (gethash dataset datasets 0)))))
-    (loop for name being the hash-keys of datasets
-          using (hash-value count)
-          do (%put-record database (%dataset-catalog-key workspace-id name)
-                          (quasar.protocol:json-object
-                           (cons "name" name)
-                           (cons "documentCount" count))))
+    ;; One explicit legacy pass over documents, decoding only dataset facets
+    ;; per record. This is migration work, never a per-request path.
+    (flet ((migrate (dataset document)
+             (let* ((key (%dataset-catalog-key workspace-id dataset))
+                    (record (%catalog-dataset-record
+                             (or (gethash dataset datasets)
+                                 (tek9:fetch* database key))
+                             dataset)))
+               (%catalog-apply-document-facets record document 1)
+               (setf (gethash dataset datasets) record))))
+      (dolist (row (%catalog-scan-rows database (%document-prefix workspace-id)))
+        (let ((dataset (quasar.protocol:json-value (cdr row) "dataset")))
+          (when (and (stringp dataset) (plusp (length dataset)))
+            (migrate dataset (cdr row)))))
+      (loop for name being the hash-keys of datasets
+            using (hash-value record)
+            do (%put-record database (%dataset-catalog-key workspace-id name) record)))
     ;; Graph rows: decode each metadata row once, count sidecar keys only.
     (dolist (row (%catalog-scan-rows database (%graph-meta-prefix workspace-id)))
       (%catalog-refresh-graph database workspace-id
@@ -556,17 +592,12 @@ the store lifetime; canonical data uses Tek9's full durability profile."))
       (:document-upsert
        (let ((previous (tek9:fetch* database (%document-key workspace-id id))))
          (%put-record database (%document-key workspace-id id) value)
-         (%catalog-move-document database workspace-id
-                                 (and previous
-                                      (quasar.protocol:json-value previous "dataset"))
-                                 (quasar.protocol:json-value value "dataset")))
+         (%catalog-move-document database workspace-id previous value))
        (%inc-stat stats :document-upserts))
       (:document-delete
        (let ((previous (tek9:fetch* database (%document-key workspace-id id))))
          (tek9:delete-document database (%document-key workspace-id id))
-         (when previous
-           (%catalog-move-document database workspace-id
-                                   (quasar.protocol:json-value previous "dataset") nil)))
+         (%catalog-move-document database workspace-id previous nil))
        (%inc-stat stats :document-deletes))
       (:graph-metadata-upsert
        (%put-record database (%graph-meta-key workspace-id graph-id)

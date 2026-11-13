@@ -50,6 +50,10 @@ export interface ControlPlaneClient {
   documentUpdate(doc: Record<string, unknown>): Promise<unknown>;
   documentDelete(id: string): Promise<unknown>;
   graphSnapshot(graphId?: string): Promise<unknown>;
+  workspaceBootstrap(): Promise<unknown>;
+  graphMembership(graphId: string, options?: Record<string, unknown>): Promise<unknown>;
+  documentSearch(query?: Record<string, unknown>): Promise<unknown>;
+  documentBatch(ids: string[], options?: Record<string, unknown>): Promise<unknown>;
   graphPut(graph: Record<string, unknown>): Promise<unknown>;
   graphDelete(id: string): Promise<unknown>;
   graphActivate(id: string): Promise<unknown>;
@@ -583,6 +587,10 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
     documentUpdate: (document) => send("document.update", document),
     documentDelete: (id) => send("document.delete", { id }),
     graphSnapshot: (graphId = "all-documents") => send("graph.snapshot", { graphId }),
+    workspaceBootstrap: () => send("workspace.bootstrap", {}),
+    graphMembership: (graphId, options = {}) => send("graph.membership", { graphId, ...options }),
+    documentSearch: (query = {}) => send("document.search", query),
+    documentBatch: (ids, options = {}) => send("document.batch", { ids, ...options }),
     graphPut: (graph) => send("graph.workspace.put", graph),
     graphDelete: (id) => send("graph.workspace.delete", { id }),
     graphActivate: (id) => send("graph.workspace.activate", { id }),

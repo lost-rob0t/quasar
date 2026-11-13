@@ -22,6 +22,13 @@
         when (string= name (quasar.protocol:json-value row "name"))
           return (quasar.protocol:json-value row "documentCount")))
 
+(defun catalog-dataset-dtype-count (bootstrap name dtype)
+  (loop for row in (catalog-datasets bootstrap)
+        when (string= name (quasar.protocol:json-value row "name"))
+          return (quasar.protocol:json-value
+                  (quasar.protocol:json-value row "dtypes" (quasar.protocol:empty-object))
+                  dtype 0)))
+
 (defun catalog-graph-row (bootstrap graph-id)
   (loop for row in (catalog-graphs bootstrap)
         when (string= graph-id (quasar.protocol:json-value row "id"))
@@ -49,6 +56,8 @@
                (let ((bootstrap (bootstrap)))
                  (check (= 2 (catalog-dataset-count bootstrap "alpha")))
                  (check (= 1 (catalog-dataset-count bootstrap "beta")))
+                 (check (= 2 (catalog-dataset-dtype-count bootstrap "alpha" "person")))
+                 (check (= 1 (catalog-dataset-dtype-count bootstrap "beta" "person")))
                  (check (eq t (quasar.protocol:json-value bootstrap "datasetsComplete")))
                  ;; New workspaces carry the default all-documents graph row.
                  (let ((rows (catalog-graphs bootstrap)))
@@ -65,6 +74,16 @@
                (let ((bootstrap (bootstrap)))
                  (check (= 1 (catalog-dataset-count bootstrap "beta")))
                  (check (null (catalog-dataset-count bootstrap "gamma"))))
+               ;; Deleting a dataset's last document removes its catalog row
+               ;; entirely (the dtype zero-removal path).
+               (catalog-plane-command plane "document.create" (catalog-document "person:3" "gamma"))
+               (let ((bootstrap (bootstrap)))
+                 (check (= 1 (catalog-dataset-count bootstrap "gamma"))))
+               (catalog-plane-command plane "document.delete"
+                                      (quasar.protocol:json-object (cons "id" "person:3")))
+               (let ((bootstrap (bootstrap)))
+                 (check (null (catalog-dataset-count bootstrap "gamma")))
+                 (check (= 2 (length (catalog-datasets bootstrap)))))
                ;; Graph lifecycle: put, membership edits, rename, delete.
                (let ((graph (quasar.protocol:json-object
                              (cons "id" "case")

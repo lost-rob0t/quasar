@@ -19,6 +19,7 @@ import { connectedDocumentIds } from "../lib/document-delete";
 import { graphRenderDecision } from "../lib/graph-scale";
 import { documentsToJsonl, documentsToHistoricalJsonl, downloadText } from "../lib/importer";
 import { operation } from "../lib/operations";
+import DatasetsPage from "./DatasetsPage";
 import { useQuasar } from "../store";
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -38,27 +39,6 @@ function safeExternalUrl(value) {
   } catch {
     return "";
   }
-}
-
-function datasetRows(documents) {
-  const rows = new Map();
-  documents.forEach((document) => {
-    const name = String(document.dataset || "").trim();
-    if (!name) return;
-    const current = rows.get(name) || {
-      name,
-      documents: 0,
-      types: new Set(),
-      updatedAt: 0
-    };
-    current.documents += 1;
-    if (document.dtype) current.types.add(document.dtype);
-    current.updatedAt = Math.max(current.updatedAt, Date.parse(document.date_updated) || 0);
-    rows.set(name, current);
-  });
-  return [...rows.values()]
-    .map((row) => ({ ...row, types: [...row.types].sort() }))
-    .sort((left, right) => left.name.localeCompare(right.name));
 }
 
 function parsePageSize(value) {
@@ -84,98 +64,6 @@ function paginationRange(current, total) {
   if (current < total - 3) pages.push("right-ellipsis");
   pages.push(total);
   return pages;
-}
-
-function DatasetsPage({ documents, query, setQuery }) {
-  const rows = useMemo(() => datasetRows(documents), [documents]);
-  const visible = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) return rows;
-    return rows.filter((row) =>
-      `${row.name} ${row.types.join(" ")}`.toLowerCase().includes(normalized)
-    );
-  }, [query, rows]);
-
-  return (
-    <section>
-      <div className="page-heading">
-        <div>
-          <span className="eyebrow">Corpus</span>
-          <h1>Datasets</h1>
-          <p>Browse the datasets represented in the local StarIntel corpus.</p>
-        </div>
-        <Link className="button primary" to="/documents/new">
-          <Plus size={16} /> Add document
-        </Link>
-      </div>
-
-      <div className="filter-bar">
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          aria-label="Search datasets"
-          placeholder="Search datasets"
-        />
-        {query && (
-          <button className="button small" type="button" onClick={() => setQuery("")}>
-            <X size={14} aria-hidden="true" /> Clear search
-          </button>
-        )}
-        <span className="result-count">
-          {visible.length} / {rows.length}
-        </span>
-      </div>
-
-      <div className="table-panel">
-        <table>
-          <thead>
-            <tr>
-              <th>Dataset</th>
-              <th>Documents</th>
-              <th>Object types</th>
-              <th>Updated</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {visible.map((row) => (
-              <tr key={row.name}>
-                <td>
-                  <strong>{row.name}</strong>
-                </td>
-                <td>{row.documents}</td>
-                <td>{row.types.join(", ") || "—"}</td>
-                <td>{row.updatedAt ? new Date(row.updatedAt).toLocaleString() : "—"}</td>
-                <td>
-                  <div className="button-row">
-                    <Link
-                      className="button small"
-                      to={`/documents?dataset=${encodeURIComponent(row.name)}`}
-                    >
-                      Open documents
-                    </Link>
-                    <Link
-                      className="button small"
-                      to={`/graph?graph=all-documents&dataset=${encodeURIComponent(row.name)}&review=all`}
-                    >
-                      <Network size={15} /> Open graph
-                    </Link>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {!visible.length && (
-          <div className="empty-state compact">
-            {rows.length
-              ? "No datasets match this search."
-              : "No datasets yet. Add a document to get started."}
-          </div>
-        )}
-      </div>
-    </section>
-  );
 }
 
 export function DocumentsPage() {
@@ -289,13 +177,7 @@ export function DocumentsPage() {
   }
 
   if (group === "dataset") {
-    return (
-      <DatasetsPage
-        documents={documents}
-        query={query}
-        setQuery={(value) => set("q", value, { replace: true })}
-      />
-    );
+    return <DatasetsPage />;
   }
 
   return (

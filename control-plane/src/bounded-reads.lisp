@@ -276,10 +276,15 @@
          (rows (%bounded-range database prefix :limit limit)))
     (values (cons :array
                   (mapcar (lambda (row)
-                            (quasar.protocol:json-object
-                             (cons "name" (%dataset-name-from-key (car row) prefix))
-                             (cons "documentCount"
-                                   (quasar.protocol:json-value (cdr row) "documentCount" 0))))
+                            (let ((record (cdr row)))
+                              (quasar.protocol:json-object
+                               (cons "name" (%dataset-name-from-key (car row) prefix))
+                               (cons "documentCount"
+                                     (quasar.protocol:json-value record "documentCount" 0))
+                               (cons "dtypes" (quasar.protocol:json-value
+                                               record "dtypes" (quasar.protocol:empty-object)))
+                               (cons "lastWriteAt" (quasar.protocol:json-value
+                                                    record "lastWriteAt" 0)))))
                           rows))
             (< (length rows) limit))))
 
