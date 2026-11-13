@@ -8,7 +8,9 @@
       flake = false;
     };
     starintel-biz = {
-      url = "git+https://git.starintel.actor/starintel-labs/starintel-biz?rev=c25f9e8972c2392c9c43f30c2254654012d26d38";
+      # Public mirror at the same immutable commit as the Forgejo source
+      # (same remedy as the pinned Tek9 input, PR #108).
+      url = "github:lost-rob0t/starintel-biz/c25f9e8972c2392c9c43f30c2254654012d26d38";
       flake = false;
     };
   };
