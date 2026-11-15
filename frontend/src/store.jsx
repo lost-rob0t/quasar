@@ -1,4 +1,5 @@
-import { fromPouchDocument } from "./lib/canonical-document";
+import { fromPouchDocument, toLegacyUiDocument } from "./lib/canonical-document";
+import { lookupDocument } from "./lib/document-lookup";
 import {
   createContext,
   useCallback,
@@ -167,12 +168,28 @@ export function QuasarProvider({ children }) {
     setHistory((current) => ({ undo: [...current.undo.slice(-99), entry], redo: [] }));
   }, []);
 
+  // Undo preimages must not depend on the startup corpus: resolve the
+  // previous record for a touched id from the corpus, then from a bounded
+  // direct lookup. Null means the store reports the record missing.
+  const resolvePreviousDocument = useCallback(async (id) => {
+    const key = id?.id || id?._id || id;
+    const local = documentsRef.current.find(
+      (item) => item._id === key || (item.id || item._id) === key
+    );
+    if (local) return local;
+    try {
+      const canonical = await lookupDocument(getControlPlane(), key);
+      return canonical ? toLegacyUiDocument(canonical) : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const execute = useCallback(
     async (command, label = command.type, { recordHistory = true } = {}) => {
       if (command?.type === "save-document") {
         const doc = command.document;
-        const existing =
-          documentsRef.current.find((item) => item._id === (doc.id || doc._id)) || null;
+        const existing = await resolvePreviousDocument(doc.id || doc._id);
         let result;
         if (existing) {
           result = await cpDocumentUpdate(doc);
@@ -185,7 +202,7 @@ export function QuasarProvider({ children }) {
         return result;
       }
       if (command?.type === "remove-document") {
-        const existing = documentsRef.current.find((item) => item._id === command.id) || null;
+        const existing = await resolvePreviousDocument(command.id);
         const result = await cpDocumentDelete(command.id);
         await refresh();
         const inverse = existing ? operation.save(existing) : null;
@@ -193,8 +210,28 @@ export function QuasarProvider({ children }) {
         return result;
       }
       if (command?.type === "batch") {
+        // Fetch missing preimages directly; only the touched ids are visited.
         const known = new Map(
           documentsRef.current.map((document) => [document.id || document._id, document])
+        );
+        const missingIds = [
+          ...new Set(
+            (command.operations || [])
+              .flatMap((op) =>
+                op.type === "save-document"
+                  ? [op.document.id || op.document._id]
+                  : op.type === "remove-document"
+                    ? [op.id]
+                    : []
+              )
+              .filter((id) => id && !known.has(id))
+          )
+        ];
+        await Promise.all(
+          missingIds.map(async (id) => {
+            const previous = await resolvePreviousDocument(id);
+            if (previous) known.set(previous.id || previous._id, previous);
+          })
         );
         const inverses = [];
         const ops = (command.operations || []).map((op) => {
@@ -265,7 +302,7 @@ export function QuasarProvider({ children }) {
       }
       throw new TypeError(`Unknown operation type: ${command?.type || "<missing>"}`);
     },
-    [record, refresh]
+    [record, refresh, resolvePreviousDocument]
   );
   executeRef.current = execute;
 
@@ -780,7 +817,11 @@ export function QuasarProvider({ children }) {
     if (!researchRunnerRef.current) {
       researchRunnerRef.current = createResearchNodeRunner({
         resolveActor: (id) => actorsRef.current.find((actor) => actor.id === id),
-        resolveDocument: (id) => documentsRef.current.find((document) => document._id === id),
+        resolveDocument: async (id) =>
+          documentsRef.current.find((document) => document._id === id) ||
+          (await lookupDocument(getControlPlane(), id)
+            .then((canonical) => (canonical ? toLegacyUiDocument(canonical) : null))
+            .catch(() => null)),
         runActor: (...args) => runActorRef.current(...args),
         saveNode: (document, label) => executeRef.current(operation.save(document), label),
         onStatus: (status) =>
