@@ -25,6 +25,7 @@ import {
   searchQueryKey
 } from "../lib/route-query-cache";
 import DatasetsPage from "./DatasetsPage";
+import { presentDocument, useDocumentLookup } from "../lib/document-lookup";
 import { useQuasar } from "../store";
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -603,15 +604,29 @@ export function DocumentPage() {
     typeof documentList === "string" && /^\/documents(?:\?|$)/.test(documentList)
       ? documentList
       : "/documents";
-  const { documents, execute, setNotice } = useQuasar();
-  const document = documents.find((item) => item._id === id);
+  const { documents, cpClient, execute, setNotice } = useQuasar();
+  // Prefer the corpus copy when present (instant, already legacy UI shaped);
+  // otherwise fetch exactly this record via document.batch instead of
+  // requiring the startup corpus drain.
+  const corpusDocument = documents.find((item) => item._id === id);
+  const lookup = useDocumentLookup(cpClient, id, { skip: Boolean(corpusDocument) });
+  const document = presentDocument(corpusDocument || lookup.document);
   const website = safeExternalUrl(document?.data?.website);
 
   if (!document)
     return (
       <section className="empty-state">
-        <h1>Document not found</h1>
-        <code>{id}</code>
+        {lookup.loading ? (
+          <>
+            <h1>Loading document…</h1>
+            <code>{id}</code>
+          </>
+        ) : (
+          <>
+            <h1>Document not found</h1>
+            <code>{id}</code>
+          </>
+        )}
         <Link className="button" to={listPath}>
           Back to documents
         </Link>
