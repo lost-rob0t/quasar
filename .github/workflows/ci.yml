@@ -229,10 +229,10 @@ jobs:
           fi
           if [ "$(id -u)" -eq 0 ]; then
             curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix |
-              sh -s -- install linux "${init_args[@]}"
+              sh -s -- install linux --no-confirm "${init_args[@]}"
           else
             curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix |
-              sudo sh -s -- install linux "${init_args[@]}"
+              sudo sh -s -- install linux --no-confirm "${init_args[@]}"
           fi
           {
             echo "$HOME/.nix-profile/bin"
