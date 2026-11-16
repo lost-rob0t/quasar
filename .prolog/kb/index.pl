@@ -7,3 +7,4 @@
 :- ensure_loaded('tooling.pl').
 :- ensure_loaded('canonical-wire-gotchas.pl').
 :- ensure_loaded('compact_catalogs.pl').
+:- ensure_loaded('forgejo_ci.pl').

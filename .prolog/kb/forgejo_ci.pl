@@ -1,0 +1,32 @@
+%% Forgejo Actions vs GitHub Actions portability for quasar CI.
+
+%% The repo runs CI on both GitHub (lost-rob0t/quasar, authoritative merges)
+%% and Forgejo (git.starintel.actor/nsaspy/quasar, canonical remote). Workflow
+%% files live in .github/workflows and must stay valid on both.
+
+ci_host(github, 'lost-rob0t/quasar', 'authoritative: PRs are merged here; main push runs ci.yml').
+ci_host(forgejo, 'nsaspy/quasar', 'canonical remote; Actions runs as a mirror of the same workflows').
+
+%% Forgejo rewrites shorthand `uses:` to the data.forgejo.org action mirror.
+%% The mirror only carries select actions; anything else fails the job during
+%% workflow preparation, before checkout, with "fatal: repository ... not found".
+action_mirror_missed('actions/github-script@v7',
+    'not on data.forgejo.org; replaced 2026-11-16 with plain curl+jq REST (ci.yml Publish PR visual evidence)').
+action_mirror_missed('DeterminateSystems/nix-installer-action@v22',
+    'not on data.forgejo.org; replaced 2026-11-16 with the official install.determinate.systems script and --init systemd/none autodetection').
+
+%% upload-artifact@v4 clones from the mirror but hard-fails at runtime on
+%% Forgejo: the server does not implement the artifact v2 API, so the action
+%% errors with GHESNotSupportedError. Job dies even though every real step passed.
+artifact_api_unsupported(forgejo, 'actions/upload-artifact@v4',
+    'GHESNotSupportedError at upload; every upload step carries continue-on-error: true since 2026-11-16').
+
+%% Portable-workflow invariants for future edits.
+ci_invariant(shorthand_uses_must_be_mirrored,
+    'every shorthand uses: must exist on data.forgejo.org (actions/checkout, actions/setup-node, actions/upload-artifact are verified present)').
+ci_invariant(no_github_script,
+    'do not reintroduce actions/github-script; post/patch PR comments with curl against github.api_url using GET/DELETE/POST routes, which are identical on GitHub and Forgejo (PATCH route differs: GitHub /issues/:n/comments/:id, Forgejo /issues/comments/:id)').
+ci_invariant(nix_install_must_autodetect_init,
+    'nix install must pick --init systemd when systemd runs (GitHub runners, install under sudo) and --init none otherwise (Forgejo act containers run as root without systemd)').
+ci_invariant(evidence_comment_degrades_without_artifacts,
+    'on Forgejo the artifact-url step output is empty (upload tolerated-failed); the PR visual evidence comment then reports incomplete coverage instead of failing').
