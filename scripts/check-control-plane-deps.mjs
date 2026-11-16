@@ -247,7 +247,7 @@ ok = checkContainsAll("CI Ubuntu native packages", ciYml, nativeAptPackages) && 
 ok =
   checkContainsAll("CI runtime execution gates", ciYml, [
     "node scripts/check-native-runtime.mjs",
-    "DeterminateSystems/nix-installer-action@v22",
+    "install.determinate.systems/nix",
     "nix develop --command",
     "env -u QUASAR_DEV_NIX_READY -u LD_LIBRARY_PATH IN_NIX_SHELL=impure npm run smoke",
     "npm run smoke",

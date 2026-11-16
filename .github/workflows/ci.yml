@@ -218,22 +218,23 @@ jobs:
       - name: Install Nix
         # DeterminateSystems/nix-installer-action is not mirrored on
         # data.forgejo.org, so install the same tool via its official script.
-        # Multi-user with systemd where systemd runs (GitHub), container mode
-        # (--init none) where it does not (Forgejo act containers).
+        # /run/systemd/system exists exactly when systemd is PID 1: GitHub
+        # hosted runners (multi-user install under sudo, service-managed
+        # daemon) vs Forgejo act containers (root install, installer-managed
+        # daemon). systemctl is-system-running is NOT a reliable
+        # discriminator: GitHub images often report "degraded" (exit 1).
         run: |
           set -euo pipefail
-          if command -v systemctl >/dev/null 2>&1 && systemctl is-system-running >/dev/null 2>&1; then
+          systemd_dir="${QUASAR_SYSTEMD_RUNTIME_DIR:-/run/systemd/system}"
+          if [ -d "$systemd_dir" ]; then
             init_args=(--init systemd)
+            install_cmd=(sudo sh -s --)
           else
             init_args=(--init none)
+            install_cmd=(sh -s --)
           fi
-          if [ "$(id -u)" -eq 0 ]; then
-            curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix |
-              sh -s -- install linux --no-confirm "${init_args[@]}"
-          else
-            curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix |
-              sudo sh -s -- install linux --no-confirm "${init_args[@]}"
-          fi
+          curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix |
+            "${install_cmd[@]}" install linux --no-confirm "${init_args[@]}"
           {
             echo "$HOME/.nix-profile/bin"
             echo "/nix/var/nix/profiles/default/bin"
