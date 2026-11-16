@@ -47,9 +47,13 @@ jobs:
         run: npm run check
 
       - name: Frontend unit and integration tests
+        # The Forgejo act runner is CPU-constrained: its first full run showed
+        # millisecond-scale tests taking multi-second spans and tripping
+        # vitest's 5s default testTimeout. Raise the CI ceiling; real hangs
+        # still fail, just later.
         run: |
-          npm --prefix frontend run test:unit
-          npm --prefix frontend run test:integration
+          npm --prefix frontend run test:unit -- --testTimeout 60000
+          npm --prefix frontend run test:integration -- --testTimeout 60000
 
       - name: Production frontend build
         run: npm run build
