@@ -32,3 +32,10 @@ ci_invariant(ci_guard_tracks_workflow_content,
     'scripts/check-control-plane-deps.mjs (npm run check) asserts literal strings in ci.yml, including the Nix install source; it previously pinned DeterminateSystems/nix-installer-action@v22 and failed the validate job when the install method changed. Update the guard in the same commit as any workflow restructuring').
 ci_invariant(evidence_comment_degrades_without_artifacts,
     'on Forgejo the artifact-url step output is empty (upload tolerated-failed); the PR visual evidence comment then reports incomplete coverage instead of failing').
+
+%% Slow-box ceilings (2026-11-16, run 68 evidence): the Forgejo act runner is
+%% ~10x slower than GitHub runners; 462+84 vitest passed with the 60s ceiling
+%% and Playwright only failed on per-test timeouts (page.goto could not finish
+%% "load" in 30s under chromium/vite/CLOG contention).
+ci_invariant(slow_runner_timeouts_are_ceilings,
+    'frontend/playwright.config.ts carries timeout 120s + expect timeout 20s and ci.yml validate timeout-minutes 90 purely as ceilings for the throttled Forgejo box; fast runners finish far sooner and genuine hangs still fail - do not lower them for local convenience').
