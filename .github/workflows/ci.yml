@@ -47,13 +47,13 @@ jobs:
         run: npm run check
 
       - name: Frontend unit and integration tests
-        # The Forgejo act runner is CPU-constrained: its first full run showed
-        # millisecond-scale tests taking multi-second spans and tripping
-        # vitest's 5s default testTimeout. Raise the CI ceiling; real hangs
-        # still fail, just later.
+        # Invoke vitest directly: `npm run -- --flag` drops forwarded args
+        # under --prefix, so the Forgejo CPU-starved runner kept hitting the
+        # 5s default testTimeout. 60s ceiling; real hangs still fail.
         run: |
-          npm --prefix frontend run test:unit -- --testTimeout 60000
-          npm --prefix frontend run test:integration -- --testTimeout 60000
+          cd frontend
+          npx vitest run src tests/unit --testTimeout 60000
+          npx vitest run tests/integration --testTimeout 60000
 
       - name: Production frontend build
         run: npm run build
@@ -67,8 +67,8 @@ jobs:
             https://beta.quicklisp.org/quicklisp.lisp
           sbcl --non-interactive \
             --load /tmp/quicklisp.lisp \
-            --eval '(quicklisp-quickstart:install :path #p"/home/runner/quicklisp/")'
-          printf '%s\n' '(load #p"/home/runner/quicklisp/setup.lisp")' > /home/runner/.sbclrc
+            --eval "(quicklisp-quickstart:install :path #p\"$HOME/quicklisp/\")"
+          printf '%s\n' "(load #p\"$HOME/quicklisp/setup.lisp\")" > "$HOME/.sbclrc"
           bash scripts/bootstrap-lisp-deps
 
       - name: Verify native runtime libraries are load-path visible
@@ -214,6 +214,10 @@ jobs:
 
   nix-runtime:
     name: Fresh Nix runtime + real startup
+    # Authoritative on GitHub only: building the SBCL closure needs more RAM
+    # than the Forgejo runner host can afford (the build was SIGKILLed there,
+    # exit 137). Skipped jobs do not fail Forgejo CI.
+    if: github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
