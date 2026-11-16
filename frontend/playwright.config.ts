@@ -12,6 +12,12 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? "github" : "list",
+  // The Forgejo runner box is heavily CPU-throttled (~10x slower than GitHub
+  // runners): page loads under parallel chromium can exceed the 30s default
+  // even for teardown. These ceilings only matter under contention; fast
+  // runners finish far sooner and genuine hangs still fail.
+  timeout: 120_000,
+  expect: { timeout: 20_000 },
   use: {
     baseURL: `http://${host}:${port}`,
     trace: "retain-on-failure",

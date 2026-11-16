@@ -21,7 +21,9 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # 90m: the Forgejo runner box is CPU-throttled and its first full runs
+    # take 3-5x longer than GitHub's ~6m; the ceiling only matters there.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
