@@ -27,6 +27,8 @@ ci_invariant(shorthand_uses_must_be_mirrored,
 ci_invariant(no_github_script,
     'do not reintroduce actions/github-script; post/patch PR comments with curl against github.api_url using GET/DELETE/POST routes, which are identical on GitHub and Forgejo (PATCH route differs: GitHub /issues/:n/comments/:id, Forgejo /issues/comments/:id)').
 ci_invariant(nix_install_must_autodetect_init,
-    'nix install must pick --init systemd when systemd runs (GitHub runners, install under sudo) and --init none otherwise (Forgejo act containers run as root without systemd)').
+    'nix install must discriminate GitHub runners from Forgejo act containers by /run/systemd/system existence (systemd as PID 1), never by systemctl is-system-running: GitHub images often report degraded (exit 1), which wrongly selects --init none under sudo and leaves the daemon unstarted (nix build: big-lock Permission denied). The installer also needs --no-confirm in CI.QUASAR_SYSTEMD_RUNTIME_DIR overrides the path for local tests').
+ci_invariant(ci_guard_tracks_workflow_content,
+    'scripts/check-control-plane-deps.mjs (npm run check) asserts literal strings in ci.yml, including the Nix install source; it previously pinned DeterminateSystems/nix-installer-action@v22 and failed the validate job when the install method changed. Update the guard in the same commit as any workflow restructuring').
 ci_invariant(evidence_comment_degrades_without_artifacts,
     'on Forgejo the artifact-url step output is empty (upload tolerated-failed); the PR visual evidence comment then reports incomplete coverage instead of failing').
