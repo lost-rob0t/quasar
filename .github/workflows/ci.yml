@@ -92,10 +92,16 @@ jobs:
         run: npm run smoke
 
       - name: Install tracked Playwright browser runtime
+        if: github.server_url == 'https://github.com'
         run: ./node_modules/.bin/playwright install --with-deps chromium
 
+      # E2E and the visual-evidence chain run on GitHub only: the Forgejo
+      # runner box cannot finish the full chromium suite within a 90-minute
+      # budget even with raised ceilings (runs 72/73/74, 2026-11-16), while
+      # GitHub completes it in ~6 minutes and is authoritative.
       - name: Real-stack desktop, mobile, mutation, reload, and route-density paths
         id: e2e
+        if: github.server_url == 'https://github.com'
         run: npm run test:e2e -- --reporter=github,html
         env:
           PLAYWRIGHT_HTML_OPEN: never
@@ -104,7 +110,7 @@ jobs:
 
       - name: Verify PR screenshot completeness
         id: visual-evidence
-        if: ${{ always() && github.event_name == 'pull_request' }}
+        if: ${{ always() && github.server_url == 'https://github.com' && github.event_name == 'pull_request' }}
         shell: bash
         run: |
           expected=20
@@ -119,7 +125,7 @@ jobs:
         id: pr-screenshots
         # Artifact v2 API is unavailable on Forgejo; tolerate upload failure there.
         continue-on-error: true
-        if: ${{ always() && github.event_name == 'pull_request' }}
+        if: ${{ always() && github.server_url == 'https://github.com' && github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@v4
         with:
           name: quasar-pr-${{ github.event.pull_request.number }}-screenshots-attempt-${{ github.run_attempt }}
@@ -131,7 +137,7 @@ jobs:
         # Plain REST instead of actions/github-script (not mirrored on
         # data.forgejo.org). Uses GET/DELETE/POST routes that are identical on
         # GitHub and Forgejo; the update-comment route differs between hosts.
-        if: ${{ always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+        if: ${{ always() && github.server_url == 'https://github.com' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
         env:
           EVIDENCE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EVIDENCE_API_URL: ${{ github.api_url }}
@@ -199,8 +205,9 @@ jobs:
 
       - name: Upload Playwright failure diagnostics
         # Artifact v2 API is unavailable on Forgejo; tolerate upload failure there.
+        # E2E runs on GitHub only, so skip diagnostics elsewhere.
         continue-on-error: true
-        if: ${{ failure() }}
+        if: ${{ failure() && github.server_url == 'https://github.com' }}
         uses: actions/upload-artifact@v4
         with:
           name: playwright-failure-${{ github.run_id }}
