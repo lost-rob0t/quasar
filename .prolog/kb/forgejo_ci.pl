@@ -39,3 +39,13 @@ ci_invariant(evidence_comment_degrades_without_artifacts,
 %% "load" in 30s under chromium/vite/CLOG contention).
 ci_invariant(slow_runner_timeouts_are_ceilings,
     'frontend/playwright.config.ts carries timeout 120s + expect timeout 20s and ci.yml validate timeout-minutes 90 purely as ceilings for the throttled Forgejo box; fast runners finish far sooner and genuine hangs still fail - do not lower them for local convenience').
+
+%% E2E capacity boundary (2026-11-16, runs 72/73/74): three attempts with the
+%% raised ceilings still exceeded a 90-minute budget on the Forgejo box while
+%% GitHub finishes the identical suite in ~6 minutes. The e2e step, playwright
+%% browser install, screenshot gate, artifact uploads, and PR evidence comment
+%% are therefore gated to github.server_url; Forgejo validate covers checks,
+%% vitest unit+integration, the Lisp suite, and the real-stack smoke, all of
+%% which it passes (runs 68/73).
+ci_invariant(e2e_chain_is_github_only,
+    'the Playwright e2e step and every step consuming its outputs carry the github.server_url gate; do not ungate them without first proving the Forgejo runner can finish the suite solo within its budget').
