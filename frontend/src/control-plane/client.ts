@@ -253,11 +253,33 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
     });
     traceTransport("synchronize-start", { attempt, workspace: synchronizedWorkspace });
     try {
-      const current = await snapshot((progress) => {
-        if (attempt === synchronization && socket === synchronizingSocket && !disposed) {
-          publishState({ progress });
-        }
-      });
+      // Startup synchronization fetches exactly one bounded page: enough to
+      // paint graphs/settings and the first documents immediately without
+      // draining the whole workspace off disk. Views that need more corpus
+      // (stats, export, full refresh) call snapshot() explicitly.
+      let current: Record<string, unknown>;
+      try {
+        current = await send<Record<string, unknown>>(
+          "workspace.snapshot",
+          { documentOffset: 0, documentByteLimit: SNAPSHOT_PAGE_BYTES },
+          TRANSACTION_TIMEOUT
+        );
+        const documents = Array.isArray(current.documents) ? current.documents : [];
+        current = {
+          ...current,
+          documents: documents.map((document) =>
+            document?.schemaVersion === "0.10.1" ? toLegacyUiDocument(document) : document
+          )
+        };
+      } catch {
+        // A bounded first page must never block startup: fall back to the
+        // full paged snapshot only when the single-page read fails outright.
+        current = await snapshot((progress) => {
+          if (attempt === synchronization && socket === synchronizingSocket && !disposed) {
+            publishState({ progress });
+          }
+        });
+      }
       if (
         disposed ||
         socket?.readyState !== WebSocket.OPEN ||
