@@ -254,6 +254,7 @@
   (:export
    #:*default-user-storage-bytes*
    #:*shared-local-session-enabled*
+   #:+development-origins+
    #:*websocket-allowed-origins*
    #:add-session-registered-hook
    #:remove-session-registered-hook

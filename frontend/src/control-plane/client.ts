@@ -55,6 +55,7 @@ export interface ControlPlaneClient {
     capabilities: Record<string, unknown>;
   }>;
   purgeDocuments(): Promise<{ deleted: number; revision: number }>;
+  starintelRegistry(payload?: { url?: string; token?: string }): Promise<Record<string, unknown>[]>;
   workspaceBootstrap(): Promise<unknown>;
   graphMembership(graphId: string, options?: Record<string, unknown>): Promise<unknown>;
   documentSearch(query?: Record<string, unknown>): Promise<unknown>;
@@ -620,6 +621,8 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
         payload
       ),
     purgeDocuments: () => send<{ deleted: number; revision: number }>("workspace.purge-documents", {}),
+    starintelRegistry: (payload = {}) =>
+      send<Record<string, unknown>[]>("starintel.registry", payload),
     workspaceBootstrap: () => send("workspace.bootstrap", {}),
     graphMembership: (graphId, options = {}) => send("graph.membership", { graphId, ...options }),
     documentSearch: (query = {}) => send("document.search", query),

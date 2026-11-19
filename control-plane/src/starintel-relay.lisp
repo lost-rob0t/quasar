@@ -68,6 +68,10 @@
       (declare (ignore condition))
       (%probe-legacy base token))))
 
+(defun %relay-json-array (items)
+  ;; quasar.protocol:json-array is &rest; build a tagged :array from a list.
+  (cons :array items))
+
 (defun install-starintel-relay-commands (plane)
   (register-command
    plane
@@ -84,4 +88,25 @@
             "starintel.unreachable"
             (format nil "Could not reach StarIntel server at ~A: ~A"
                     base condition)))))))
+  (register-command
+   plane
+   "starintel.registry"
+   (lambda (payload envelope)
+     (declare (ignore envelope))
+     (let* ((token (json-value payload "token"))
+            (url (or (json-value payload "url")
+                     "https://git.starintel.actor/api/v1/repos/starintel-labs/starintel-pro-actors/raw/registry/actors.jsonl?ref=registry/actors"))
+            (text (nth-value 0 (dex:get url :headers (%relay-headers token)
+                                        :connect-timeout 5 :read-timeout 15)))
+            (actors
+              (loop for line in (uiop:split-string text :separator '(#\Newline))
+                    for trimmed = (string-trim " " line)
+                    for index from 0
+                    when (plusp (length trimmed))
+                      collect (progn
+                                (when (>= index 200)
+                                  (%relay-error "registry.too-large"
+                                                "Actor registry exceeds 200 entries."))
+                                (jsown:parse trimmed)))))
+       (%relay-json-array actors))))
   plane)

@@ -52,6 +52,13 @@ broke production asset serving."
         (concatenate 'string (subseq html 0 marker) tag (subseq html marker))
         html)))
 
+(defun control-plane-static-path ()
+  "Repository static/ directory, served when the frontend build is absent
+so browsers get a favicon (and other static assets) instead of a 500."
+  (merge-pathnames "static/"
+                   (parent-directory
+                    (asdf:system-source-directory :quasar-web))))
+
 (defun start-ui (plane &key (host "127.0.0.1") (port 8080) (open-browser-p t)
                              session-token session-token-resolver)
   (let ((asset-root (frontend-asset-path)))
@@ -69,8 +76,10 @@ broke production asset serving."
                           (if token (inject-session-token html token) html))))
      :extended-routing t
      :static-boot-html "<!doctype html><title>Quasar</title><p>Frontend build not present; use the Vite development server.</p>"
-     :static-root (when (probe-file asset-root)
-                    (namestring asset-root)))
+     :static-root (namestring
+                   (if (probe-file asset-root)
+                       asset-root
+                       (control-plane-static-path))))
     (dolist (route '("/graph" "/documents" "/datasets" "/import" "/stats"
                      "/settings" "/agents"))
       (clog:set-on-new-window

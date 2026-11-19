@@ -44,6 +44,7 @@ import { actorWithTransformEnvelope, buildActorTransform } from "./lib/actor-tra
 import { createResearchNodeRunner } from "./lib/research-node-runner";
 import { startRabbitMqIngest } from "./lib/rabbitmq-ingest";
 import { submitTargetToServer } from "./lib/starintel-server";
+import { normalizeRegistryActor } from "./lib/actor-registry";
 import { applyTheme } from "./lib/themes";
 import {
   addDocumentsToActiveGraph as addDocumentsToGraphWorkspace,
@@ -767,9 +768,47 @@ export function QuasarProvider({ children }) {
     [addDocumentsToActiveGraph, execute, settings]
   );
 
+  const [registryActors, setRegistryActors] = useState([]);
+  const registryRetryRef = useRef(null);
+
+  useEffect(() => {
+    if (!controlPlaneStatus?.connected) return () => {};
+    let active = true;
+    const attempt = () => {
+      const controlPlane = getControlPlane();
+      if (!controlPlane?.starintelRegistry) return;
+      controlPlane
+        .starintelRegistry()
+        .then((entries) => {
+          if (!active) return;
+          const normalized = [];
+          for (const entry of Array.isArray(entries) ? entries : []) {
+            try {
+              normalized.push(normalizeRegistryActor(entry));
+            } catch {
+              // Skip malformed registry entries; the registry is additive.
+            }
+          }
+          setRegistryActors(normalized);
+          clearTimeout(registryRetryRef.current);
+        })
+        .catch(() => {
+          // Registry is optional daily-use sugar; retry while connected.
+          if (!active) return;
+          clearTimeout(registryRetryRef.current);
+          registryRetryRef.current = setTimeout(attempt, 15000);
+        });
+    };
+    attempt();
+    return () => {
+      active = false;
+      clearTimeout(registryRetryRef.current);
+    };
+  }, [controlPlaneStatus?.connected]);
+
   const actors = useMemo(
-    () => [...BUILTIN_ACTORS, ...(settings?.actors || [])],
-    [settings?.actors]
+    () => [...BUILTIN_ACTORS, ...(settings?.actors || []), ...registryActors],
+    [settings?.actors, registryActors]
   );
   actorsRef.current = actors;
 

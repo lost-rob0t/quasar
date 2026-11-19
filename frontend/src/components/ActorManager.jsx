@@ -88,12 +88,16 @@ export default function ActorManager() {
   const { actors, persistSettings, runActor, selectedIds, settings, setNotice } = useQuasar();
   const currentSettings = settings || {};
   const customActors = Array.isArray(currentSettings.actors) ? currentSettings.actors : [];
+  const registryActors = useMemo(
+    () => actors.filter((actor) => actor?.runtime === "pro-actor-fleet"),
+    [actors]
+  );
   const [serverActors, setServerActors] = useState([]);
   const [serverActorState, setServerActorState] = useState({ state: "idle", message: "" });
   const [registryRefresh, setRegistryRefresh] = useState(0);
   const allActors = useMemo(
-    () => [...BUILTIN_ACTORS, ...customActors, ...serverActors],
-    [customActors, serverActors]
+    () => [...BUILTIN_ACTORS, ...customActors, ...registryActors, ...serverActors],
+    [customActors, registryActors, serverActors]
   );
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(allActors[0]?.id || NEW_ACTOR);
