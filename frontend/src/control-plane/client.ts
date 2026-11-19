@@ -54,6 +54,7 @@ export interface ControlPlaneClient {
     mode: "v1" | "legacy";
     capabilities: Record<string, unknown>;
   }>;
+  purgeDocuments(): Promise<{ deleted: number; revision: number }>;
   workspaceBootstrap(): Promise<unknown>;
   graphMembership(graphId: string, options?: Record<string, unknown>): Promise<unknown>;
   documentSearch(query?: Record<string, unknown>): Promise<unknown>;
@@ -618,6 +619,7 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
         "starintel.probe",
         payload
       ),
+    purgeDocuments: () => send<{ deleted: number; revision: number }>("workspace.purge-documents", {}),
     workspaceBootstrap: () => send("workspace.bootstrap", {}),
     graphMembership: (graphId, options = {}) => send("graph.membership", { graphId, ...options }),
     documentSearch: (query = {}) => send("document.search", query),

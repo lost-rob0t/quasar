@@ -298,6 +298,7 @@ export function SettingsPage() {
     serverStatus,
     queueStatus,
     testServer,
+    deleteAllDocuments,
     startQueue,
     stopQueue,
     databaseInfo,
@@ -308,7 +309,21 @@ export function SettingsPage() {
   const [actorText, setActorText] = useState(ACTOR_TEMPLATE);
   const [info, setInfo] = useState(null);
   const [viewStatus, setViewStatus] = useState("");
+  const [purgeArmed, setPurgeArmed] = useState(false);
   const actors = useMemo(() => form.actors || [], [form.actors]);
+
+  async function purgeLocalDocuments() {
+    if (!purgeArmed) {
+      setPurgeArmed(true);
+      return;
+    }
+    setPurgeArmed(false);
+    try {
+      await deleteAllDocuments();
+    } catch (error) {
+      setNotice({ kind: "error", message: error.message });
+    }
+  }
 
   useEffect(() => setForm(settings || {}), [settings]);
   useEffect(() => {
@@ -506,6 +521,27 @@ export function SettingsPage() {
             <Upload size={15} /> Import settings
             <input type="file" accept=".json,application/json" onChange={importSettingsFile} />
           </label>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="section-heading">
+          <h2>Danger zone</h2>
+        </div>
+        <p className="muted">
+          Deletes every local document in this workspace from the Tek9 store.
+          Graphs and settings are kept. This cannot be undone.
+        </p>
+        <div className="button-row">
+          <button
+            className={purgeArmed ? "button danger" : "button"}
+            type="button"
+            onClick={purgeLocalDocuments}
+            onBlur={() => setPurgeArmed(false)}
+          >
+            <Trash2 size={15} />
+            {purgeArmed ? "Confirm: delete all documents" : "Delete all documents…"}
+          </button>
         </div>
       </section>
 

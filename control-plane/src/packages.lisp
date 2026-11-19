@@ -65,6 +65,7 @@
     #:direct-document
     #:direct-document-list
     #:direct-workspace-snapshot-page
+    #:purge-workspace-documents
     #:direct-workspace-revision
     #:direct-graph-snapshot
     #:workspace-bootstrap

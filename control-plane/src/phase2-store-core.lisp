@@ -7,7 +7,13 @@
 
 (defgeneric direct-document (store workspace-id document-id)
   (:documentation
-   "Fetch one canonical document without materializing its workspace."))
+    "Fetch one canonical document without materializing its workspace."))
+
+(defgeneric purge-workspace-documents (store workspace-id)
+  (:documentation
+   "Durably remove every canonical document row of the workspace while
+preserving graphs, settings, and workspace metadata. Returns the number
+of documents that were present before the purge."))
 
 (defgeneric direct-document-list (store workspace-id)
   (:documentation
@@ -63,6 +69,22 @@
        :key
        (lambda (document)
          (quasar.protocol:starintel-document-id document))))))
+
+(defmethod purge-workspace-documents ((store memory-store) workspace-id)
+  (let ((workspace (load-workspace store workspace-id)))
+    (if workspace
+        (let ((count (hash-table-count
+                      (quasar.workspace:workspace-documents workspace))))
+          (clrhash (quasar.workspace:workspace-documents workspace))
+          count)
+        0)))
+
+(defmethod purge-workspace-documents ((store tek9-store) workspace-id)
+  (let ((database (tek9-store-database store)))
+    (tek9:with-write-transaction (database)
+      (let ((count (%count-prefix-bounded database (%document-prefix workspace-id))))
+        (%delete-prefix-bounded database (%document-prefix workspace-id))
+        count))))
 
 (defmethod direct-workspace-snapshot-page
     ((store memory-store) workspace-id offset byte-limit)

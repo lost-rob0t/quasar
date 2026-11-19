@@ -714,6 +714,17 @@ export function QuasarProvider({ children }) {
     [executeBatch, refresh, settings]
   );
 
+  const deleteAllDocuments = useCallback(async () => {
+    const controlPlane = getControlPlaneOrThrow();
+    const result = await controlPlane.purgeDocuments();
+    await refresh();
+    setNotice({
+      kind: "success",
+      message: `Deleted ${result.deleted} document${result.deleted === 1 ? "" : "s"}.`
+    });
+    return result;
+  }, [refresh]);
+
   const testServer = useCallback(
     async (configuration = settings) => {
       setServerStatus({ state: "connecting", message: "Probing StarIntel server" });
@@ -975,6 +986,7 @@ export function QuasarProvider({ children }) {
       stopSync,
       synchronize,
       testServer,
+      deleteAllDocuments,
       submitTarget,
       startQueue,
       stopQueue,
@@ -1023,6 +1035,7 @@ export function QuasarProvider({ children }) {
       stopSync,
       synchronize,
       testServer,
+      deleteAllDocuments,
       submitTarget,
       startQueue,
       stopQueue,

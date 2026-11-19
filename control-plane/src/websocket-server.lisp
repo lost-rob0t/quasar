@@ -55,7 +55,9 @@ configured sink."
     "graph.edge.delete"
     "starlang.status"
     "python-actors.status"
-    "python-actors.run")
+    "python-actors.run"
+    "starintel.probe"
+    "workspace.purge-documents")
   "Commands allowed for standard clients. starlang.load is excluded.")
 
 (defclass ws-connection ()
