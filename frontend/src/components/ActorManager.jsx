@@ -12,7 +12,12 @@ import {
   ShieldAlert,
   Trash2
 } from "lucide-react";
-import { BUILTIN_ACTORS, isBuiltinActor, normalizeActorManifest } from "../lib/actors";
+import {
+  BUILTIN_ACTORS,
+  actorExecutionBlocked,
+  isBuiltinActor,
+  normalizeActorManifest
+} from "../lib/actors";
 import { validateSource } from "../lib/code-validation";
 import { listStarIntelActors } from "../lib/starintel-server";
 import { useQuasar } from "../store";
@@ -101,9 +106,11 @@ export default function ActorManager() {
   const builtin = Boolean(selectedActor && isBuiltinActor(selectedActor));
   const serverManaged = Boolean(selectedActor?.serverManaged);
   const editable = !builtin && !serverManaged;
+  const blocked = Boolean(selectedActor && actorExecutionBlocked(selectedActor, currentSettings));
   const canRunSelected = Boolean(
     selectedActor &&
     !serverManaged &&
+    !blocked &&
     selectedIds.length &&
     (builtin || currentSettings.actorsEnabled)
   );
@@ -276,6 +283,10 @@ export default function ActorManager() {
     await persistSettings({ actorsEnabled: !currentSettings.actorsEnabled });
   }
 
+  async function enableExperimentalActors() {
+    await persistSettings({ enableExperimentalActors: true });
+  }
+
   return (
     <section className="actor-studio page-stack">
       <header className="page-heading actor-studio-heading">
@@ -413,6 +424,18 @@ export default function ActorManager() {
           {builtin && (
             <div className="actor-studio-banner">
               Built-in actors are read-only. Clone this actor to create an editable copy.
+            </div>
+          )}
+          {builtin && actorExecutionBlocked(selectedActor, currentSettings) && (
+            <div className="actor-studio-banner actor-gate-banner">
+              <span className="actor-gate-badge">Not e2e-verified — disabled</span>
+              <p>
+                This built-in actor has not been verified end-to-end. It refuses execution until
+                experimental actors are enabled.
+              </p>
+              <button className="button small" type="button" onClick={enableExperimentalActors}>
+                Enable experimental actors
+              </button>
             </div>
           )}
           {serverManaged && (

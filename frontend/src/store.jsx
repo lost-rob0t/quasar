@@ -27,7 +27,7 @@ import {
   cpSnapshot,
   cpTransaction
 } from "./control-plane/mutations";
-import { getControlPlane } from "./control-plane/client";
+import { getControlPlane, getControlPlaneOrThrow } from "./control-plane/client";
 import { chunkTransactionOperations } from "./control-plane/transaction-chunks";
 import { documentsToJsonl, downloadText, importFiles } from "./lib/importer";
 import { operation } from "./lib/operations";
@@ -35,6 +35,7 @@ import { validateDocumentBatch } from "./lib/document-batch";
 import {
   BUILTIN_ACTORS,
   actorApplicability,
+  actorExecutionBlocked,
   actorsForTarget,
   isBuiltinActor,
   runBrowserActor
@@ -42,7 +43,7 @@ import {
 import { actorWithTransformEnvelope, buildActorTransform } from "./lib/actor-transforms";
 import { createResearchNodeRunner } from "./lib/research-node-runner";
 import { startRabbitMqIngest } from "./lib/rabbitmq-ingest";
-import { probeStarIntelServer, submitTargetToServer } from "./lib/starintel-server";
+import { submitTargetToServer } from "./lib/starintel-server";
 import { applyTheme } from "./lib/themes";
 import {
   addDocumentsToActiveGraph as addDocumentsToGraphWorkspace,
@@ -717,7 +718,10 @@ export function QuasarProvider({ children }) {
     async (configuration = settings) => {
       setServerStatus({ state: "connecting", message: "Probing StarIntel server" });
       try {
-        const result = await probeStarIntelServer(configuration);
+        const result = await getControlPlaneOrThrow().starintelProbe({
+          url: configuration.serverUrl,
+          token: configuration.serverToken
+        });
         setServerStatus({
           state: "active",
           message:
@@ -762,6 +766,11 @@ export function QuasarProvider({ children }) {
     async (actor, requestedSelection = selectedIds, runOptions = {}) => {
       if (!isBuiltinActor(actor) && !settings?.actorsEnabled)
         throw new Error("Custom browser actors are disabled in settings");
+      if (actorExecutionBlocked(actor, settings))
+        throw new Error(
+          "This built-in actor is not verified end-to-end and is disabled. " +
+            "Enable experimental actors in the Actor Manager to run it."
+        );
       const requested = Array.isArray(requestedSelection)
         ? requestedSelection
         : [requestedSelection];

@@ -131,6 +131,14 @@ export default function RunAllTransformationsBridge() {
           });
           continue;
         }
+        if (actorExecutionBlocked(actor, settings)) {
+          reports.push({
+            actorId: actor.id,
+            status: "skipped",
+            reason: "Built-in actor is not verified end-to-end; disabled."
+          });
+          continue;
+        }
 
         const actorScope = corpus.filter((document) => scopeIds.has(document._id));
         const candidates = transformationCandidates(actor, actorScope, corpus);

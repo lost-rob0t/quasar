@@ -1046,6 +1046,24 @@ export function isBuiltinActor(actor) {
   );
 }
 
+// Built-in browser actors exercised end-to-end by frontend/e2e. Everything
+// else in BUILTIN_ACTORS is disabled by default: it exists, is inspectable
+// in the Actor Manager, but refuses execution until the operator opts in
+// (settings.enableExperimentalActors).
+export const E2E_VERIFIED_ACTOR_IDS = Object.freeze([
+  "quasar.actor.mark-reviewed",
+  "quasar.actor.target-input-expansion"
+]);
+
+export function actorE2eVerified(actor) {
+  return E2E_VERIFIED_ACTOR_IDS.includes(actor?.id);
+}
+
+export function actorExecutionBlocked(actor, settings) {
+  if (!isBuiltinActor(actor)) return !settings?.actorsEnabled;
+  return !actorE2eVerified(actor) && !settings?.enableExperimentalActors;
+}
+
 const ACTOR_RESPONSE_LIMIT = 1_048_576;
 const FORBIDDEN_ACTOR_HEADER =
   /^(?:authorization|cookie|proxy-|sec-|host$|origin$|referer$|x-api-key$)/i;
