@@ -51,6 +51,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<StatsPage />} />
           <Route path="/graph" element={<GraphWorkspace />} />
+          <Route path="/graphs" element={<Navigate to="/graph" replace />} />
           <Route path="/datasets" element={<DatasetsPage />} />
           <Route path="/documents" element={<DocumentsRoute />} />
           <Route path="/documents/new" element={<DocumentEditor mode="create" />} />

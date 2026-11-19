@@ -843,7 +843,7 @@
   }
 
   body.graph-viewport-full:has(.graph-page) .app-shell {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) !important;
   }
 
   body.graph-viewport-full:has(.graph-page) .app-shell > .sidebar,
@@ -856,16 +856,29 @@
   }
 
   body.graph-viewport-full:has(.graph-page) .app-shell > .workbench {
-    grid-column: 1;
-    grid-template-rows: minmax(0, 1fr);
+    /* Plain block in column 1: the base layout places this item at
+       grid-column 2 (next to the sidebar); left alone it would keep an
+       implicit ghost column beside the hidden sidebar. */
+    display: block !important;
+    grid-column: 1 !important;
+    grid-template-rows: none !important;
+    height: 100dvh;
+    width: 100%;
   }
 
   body.graph-viewport-full:has(.graph-page) .content {
     padding: 0;
+    min-height: 0;
+    height: 100dvh;
+  }
+
+  body.graph-viewport-full:has(.graph-page) .graph-page {
+    padding-top: 0;
   }
 
   body.graph-viewport-full:has(.graph-page) .graph-workbench {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-areas: "canvas" !important;
   }
 
   body.graph-viewport-full:has(.graph-page) .graph-workspace-top {

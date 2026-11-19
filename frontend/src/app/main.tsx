@@ -10,7 +10,6 @@ import GraphContextRadialBridge from "../components/GraphContextRadialBridge.jsx
 import GraphObjectTypePickerBridge from "../components/GraphObjectTypePickerBridge.jsx";
 import MelissaActorMigrationBridge from "../components/MelissaActorMigrationBridge.jsx";
 import MobileGraphToolTray from "../components/MobileGraphToolTray.jsx";
-import PwaInstallBridge from "../components/PwaInstallBridge.jsx";
 import RunAllTransformationsBridge from "../components/RunAllTransformationsBridge.jsx";
 import { QuasarProvider } from "../store.jsx";
 import { registerServiceWorker } from "../lib/service-worker-registration.js";
@@ -34,6 +33,8 @@ import "../mobile-graph-tools.css";
 import "../mobile-graph-empty-state.css";
 import "../graph-editors.css";
 import "../graph-editors-extra.css";
+import "../graph-fullscreen.css";
+import "../graph-workspace-shell.css";
 import "../settings-runtime-log.css";
 import "../agent-tab-icons.css";
 import "../kinpaku-shell.css";
@@ -162,7 +163,6 @@ async function bootstrap(): Promise<void> {
               <App />
               <AgentDisclosureBridge />
               <AutoDigHostBridge />
-              <PwaInstallBridge />
               <MelissaActorMigrationBridge />
               <RunAllTransformationsBridge />
               <MobileGraphToolTray />

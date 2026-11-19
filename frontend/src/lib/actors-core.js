@@ -1005,7 +1005,8 @@ export function normalizeActorManifest(manifest) {
       `Actor maxSelection must be an integer from minSelection to ${MAX_ACTOR_SELECTION}`
     );
   }
-  if (!actor.source) throw new TypeError("Actor source is required");
+  if (!actor.source && actor.runtime !== "pro-actor-fleet")
+    throw new TypeError("Actor source is required");
   return actor;
 }
 

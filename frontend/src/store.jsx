@@ -816,6 +816,10 @@ export function QuasarProvider({ children }) {
     async (actor, requestedSelection = selectedIds, runOptions = {}) => {
       if (!isBuiltinActor(actor) && !settings?.actorsEnabled)
         throw new Error("Custom browser actors are disabled in settings");
+      if (actor.runtime === "pro-actor-fleet")
+        throw new Error(
+          "This actor runs on the starintel-pro-actors fleet, not in the browser."
+        );
       if (actorExecutionBlocked(actor, settings))
         throw new Error(
           "This built-in actor is not verified end-to-end and is disabled. " +
