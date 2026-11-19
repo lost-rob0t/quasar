@@ -209,6 +209,17 @@
    #:install-starlang-commands
    #:starlang-available-p))
 
+(defpackage #:quasar.starintel-relay
+  (:use #:cl)
+  (:import-from #:quasar.protocol
+                #:json-object
+                #:json-value
+                #:quasar-error)
+  (:import-from #:quasar.control-plane
+                #:register-command)
+  (:export
+   #:install-starintel-relay-commands))
+
 (defpackage #:quasar.ws
   (:use #:cl)
   (:import-from #:quasar.protocol

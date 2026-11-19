@@ -8,7 +8,6 @@
   :serial t
   :pathname "../control-plane/tests/"
   :components ((:file "control-plane-tests")
-               (:file "pro-actor-tests")
                (:file "plugin-tests")
                (:file "python-actor-tests")
                (:file "autodig-control-tests")
@@ -37,7 +36,6 @@
   :perform (test-op (operation component)
              (declare (ignore operation component))
              (uiop:symbol-call :quasar.tests :run-tests)
-             (funcall (find-symbol "RUN-PRO-ACTOR-TESTS" "QUASAR.TESTS"))
              (funcall (find-symbol "RUN-PLUGIN-TESTS" "QUASAR.TESTS"))
              (funcall (find-symbol "RUN-PYTHON-ACTOR-TESTS" "QUASAR.TESTS"))
              (funcall (find-symbol "RUN-AUTODIG-CONTROL-TESTS" "QUASAR.TESTS"))

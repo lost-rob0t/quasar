@@ -35,7 +35,6 @@
                (:file "phase2-store-reads")
                (:file "bounded-reads")
                (:file "control-plane")
-               (:file "pro-actors")
                (:file "python-actors")
                (:file "command-authority-context")
                (:file "autodig-store")
@@ -60,5 +59,6 @@
                (:file "actors/melissa/bridge")
                ;; Loaded last so diagnostics wrap the final async-aware
                ;; control-plane dispatch implementation.
-               (:file "debug-logging"))
+               (:file "debug-logging")
+               (:file "starintel-relay"))
   :in-order-to ((test-op (test-op "quasar-tests"))))

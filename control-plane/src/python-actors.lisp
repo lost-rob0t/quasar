@@ -358,8 +358,7 @@ reply envelope (parsed)."
   "Register local self-run commands for the Python pro-actor fleet.
 
 Registration does not grant access by itself: quasar.ws still requires the
-session capability list to carry these command names, so hosted deployments
-derive them from entitlements exactly like pro-actors.*."
+session capability list to carry these command names."
   (register-command
    plane "python-actors.status"
    (lambda (payload envelope)

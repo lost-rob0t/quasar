@@ -50,6 +50,10 @@ export interface ControlPlaneClient {
   documentUpdate(doc: Record<string, unknown>): Promise<unknown>;
   documentDelete(id: string): Promise<unknown>;
   graphSnapshot(graphId?: string): Promise<unknown>;
+  starintelProbe(payload: { url: string; token?: string }): Promise<{
+    mode: "v1" | "legacy";
+    capabilities: Record<string, unknown>;
+  }>;
   workspaceBootstrap(): Promise<unknown>;
   graphMembership(graphId: string, options?: Record<string, unknown>): Promise<unknown>;
   documentSearch(query?: Record<string, unknown>): Promise<unknown>;
@@ -609,6 +613,11 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
     documentUpdate: (document) => send("document.update", document),
     documentDelete: (id) => send("document.delete", { id }),
     graphSnapshot: (graphId = "all-documents") => send("graph.snapshot", { graphId }),
+    starintelProbe: (payload) =>
+      send<{ mode: "v1" | "legacy"; capabilities: Record<string, unknown> }>(
+        "starintel.probe",
+        payload
+      ),
     workspaceBootstrap: () => send("workspace.bootstrap", {}),
     graphMembership: (graphId, options = {}) => send("graph.membership", { graphId, ...options }),
     documentSearch: (query = {}) => send("document.search", query),

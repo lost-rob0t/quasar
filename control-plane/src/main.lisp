@@ -31,9 +31,7 @@ WORKSPACE-STORE may inject an already-created store for deployments or tests.
 Otherwise Quasar owns one full-durability Tek9 store for the process lifetime.
 STORAGE-PATH overrides the normal XDG data path when Quasar creates that store.
 
-Pro actors are the production enrichment path. Their manifests and target
-authorization commands are always installed, while access is granted per
-WebSocket session capability. The historical in-process Melissa subsystem is
+The historical in-process Melissa subsystem is
 available only when LEGACY-MELISSA-P is explicitly true; it is off by default
 so Quasar does not run a second Melissa execution path beside
 starintel-pro-actors."
@@ -50,9 +48,9 @@ starintel-pro-actors."
   (handler-case
       (progn
         (start-control-plane *control-plane*)
-        (quasar.control-plane::install-pro-actor-commands *control-plane*)
         (quasar.control-plane::install-python-actor-commands *control-plane*)
         (install-starlang-commands *control-plane*)
+        (quasar.starintel-relay:install-starintel-relay-commands *control-plane*)
         (when legacy-melissa-p
           (quasar.actors.melissa.bridge:start-melissa-integration
            *control-plane*
