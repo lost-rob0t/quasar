@@ -20,15 +20,22 @@
                    (let* ((document (cdr row))
                           (document-bytes
                             (%utf8-length (quasar.protocol:encode document))))
-                     (if (and page (> (+ page-bytes document-bytes) byte-limit))
-                         (progn
-                           (setf more t
-                                 done t)
-                           (return))
-                         (progn
-                           (push (quasar.protocol:clone-json document) page)
-                           (incf page-bytes document-bytes)
-                           (incf next-offset))))))
+                     (cond
+                       ((> document-bytes byte-limit)
+                        ;; One document larger than the whole page budget can
+                        ;; never fit; fail bounded instead of materializing it
+                        ;; and exhausting the heap.
+                        (%stage-error
+                         "query.record-too-large"
+                         "A single document exceeds the snapshot page byte budget."))
+                       ((and page (> (+ page-bytes document-bytes) byte-limit))
+                        (setf more t
+                              done t)
+                        (return))
+                       (t
+                        (push (quasar.protocol:clone-json document) page)
+                        (incf page-bytes document-bytes)
+                        (incf next-offset))))))
              (unless done
                (setf start (caar (last rows)))
                (when (< (length rows) +phase2-range-batch-size+)
