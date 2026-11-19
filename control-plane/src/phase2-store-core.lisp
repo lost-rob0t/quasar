@@ -84,6 +84,16 @@ of documents that were present before the purge."))
     (tek9:with-write-transaction (database)
       (let ((count (%count-prefix-bounded database (%document-prefix workspace-id))))
         (%delete-prefix-bounded database (%document-prefix workspace-id))
+        ;; Keep the durable count consistent with the prefix in the same
+        ;; transaction; a stale documentCount silently breaks bounded
+        ;; pagination and the workspace bootstrap contract.
+        (let ((meta (or (tek9:fetch* database (%workspace-meta-key workspace-id))
+                        (%default-workspace-meta workspace-id 0 count))))
+          (quasar.protocol:object-set meta "documentCount" 0)
+          (quasar.protocol:object-set
+           meta "revision"
+           (1+ (quasar.protocol:json-value meta "revision" 0)))
+          (%put-record database (%workspace-meta-key workspace-id) meta))
         count))))
 
 (defmethod direct-workspace-snapshot-page
