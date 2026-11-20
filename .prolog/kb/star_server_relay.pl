@@ -83,3 +83,15 @@ mcp_server_contract("quasar-mcp",
            starintel_dataset_size, workspace_search]),
     endpoint("http://127.0.0.1:8083/mcp"),
     transport(cp_websocket_ws_8081)).
+
+%% CI gate gotchas learned 2026-11-19 (PR #147):
+%% - prettier must be COMMITTED (npm run check runs format:check); drift
+%%   accumulates across sessions - run `npx prettier --check .` before push.
+%% - .github/workflows/pro-actors-pr.yml gates the fleet-actor surface
+%%   (ActorHub/ActorManager/mutations.ts/starintel-relay.lisp); it must
+%%   reference only files that exist - deleted-file references fail the
+%%   gate before any test runs.
+wiring_gotcha(pr_gate_prettier_committed,
+    'quasar CI validate job fails on any uncommitted prettier drift; run frontend prettier --check before pushing.').
+wiring_gotcha(pro_actors_gate_file_set,
+    'pro-actors-pr.yml paths/steps must match the surviving fleet surface; referencing deleted files fails the gate immediately.').
