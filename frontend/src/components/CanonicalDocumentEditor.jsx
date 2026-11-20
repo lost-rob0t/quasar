@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { dtypes } from "starintel_doc";
+import { dtypesOrdered } from "../lib/dtype-meta";
 import {
   parseBrowserDocumentJson,
   assertDocument,
@@ -129,7 +130,7 @@ function Editor({ initial, mode, params, draftToken }) {
               setRaw(null);
             }}
           >
-            {dtypes.map((dtype) => (
+            {dtypesOrdered(dtypes).map((dtype) => (
               <option key={dtype}>{dtype}</option>
             ))}
           </select>

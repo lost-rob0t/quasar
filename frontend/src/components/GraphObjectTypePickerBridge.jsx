@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { dtypes } from "starintel_doc/legacy";
+import { dtypeIcon, dtypesOrdered } from "../lib/dtype-meta";
 import { dtypeLabel } from "../lib/schema-form";
 import { CompactNodeEditor, CompactResearchNodeEditor, GraphModalShell } from "./GraphEditors";
 
 export function knownGraphObjectTypes() {
-  return [...new Set(dtypes)]
+  return dtypesOrdered(dtypes)
     .filter((objectType) => objectType && objectType !== "relation")
-    .map((objectType) => ({ objectType, label: dtypeLabel(objectType) }))
-    .sort(
-      (left, right) =>
-        left.label.localeCompare(right.label) || left.objectType.localeCompare(right.objectType)
-    );
+    .map((objectType) => ({
+      objectType,
+      label: dtypeLabel(objectType),
+      Icon: dtypeIcon(objectType)
+    }));
 }
 
 function graphContextPosition(menu) {
@@ -105,7 +106,7 @@ export default function GraphObjectTypePickerBridge() {
               role="listbox"
               aria-label="Object types"
             >
-              {matches.map(({ objectType, label }) => (
+              {matches.map(({ objectType, label, Icon }) => (
                 <button
                   key={objectType}
                   type="button"
@@ -113,6 +114,7 @@ export default function GraphObjectTypePickerBridge() {
                   aria-selected="false"
                   onClick={() => selectObjectType(objectType)}
                 >
+                  <Icon size={15} aria-hidden="true" />
                   <strong>{label}</strong>
                   <code>{objectType}</code>
                 </button>

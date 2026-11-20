@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { dtypes } from "starintel_doc";
+import { dtypesOrdered } from "../lib/dtype-meta";
+import { dtypeLabel } from "../lib/schema-form";
 import { documentLabel } from "starintel_doc/legacy";
 import { toLegacyUiDocument, toCanonicalDocument } from "../lib/canonical-document";
 import { connectedDocumentIds } from "../lib/document-delete";
@@ -740,9 +742,9 @@ export function DocumentsPage() {
             <span>Type</span>
             <select value={dtype} onChange={(event) => set("dtype", event.target.value)}>
               <option value="">All dtypes</option>
-              {dtypes.map((name) => (
+              {dtypesOrdered(dtypes).map((name) => (
                 <option key={name} value={name}>
-                  {name}
+                  {dtypeLabel(name)}
                 </option>
               ))}
             </select>

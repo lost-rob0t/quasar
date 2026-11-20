@@ -11,6 +11,7 @@ import {
 } from "starintel_doc/legacy";
 import { operation } from "../lib/operations";
 import { presentDocument, useDocumentLookup } from "../lib/document-lookup";
+import { dtypesOrdered } from "../lib/dtype-meta";
 import {
   dataFieldDescriptorsForDtype,
   dataFieldsForDtype,
@@ -777,7 +778,7 @@ export default function DocumentEditor({ mode }) {
                         setForm((current) => ({ ...current, dtype: next }));
                       }}
                     >
-                      {dtypes.map((name) => (
+                      {dtypesOrdered(dtypes).map((name) => (
                         <option key={name} value={name}>
                           {dtypeLabel(name)}
                         </option>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { schema } from "starintel_doc/legacy";
 import {
+  dataFieldDescriptorsForDtype,
   dataFieldsForDtype,
   dataSchemaForDtype,
   dtypeLabel,
@@ -73,7 +74,12 @@ describe("schema-driven document fields", () => {
     for (const dtype of ["person", "org", "event", "location", "target", "relation"]) {
       const schemaFields = new Set(dataFieldsForDtype(dtype));
       const essentialFields = essentialDataFieldsForDtype(dtype);
-      expect(essentialFields.length).toBeLessThanOrEqual(6);
+      // Required fields are always visible; optional padding stays capped.
+      const required = dataFieldDescriptorsForDtype(dtype)
+        .filter((descriptor) => descriptor.required)
+        .map((descriptor) => descriptor.name);
+      expect(essentialFields).toEqual(expect.arrayContaining(required));
+      expect(essentialFields.length - required.length).toBeLessThanOrEqual(6);
       expect(essentialFields.every((field) => schemaFields.has(field))).toBe(true);
     }
     expect(essentialDataFieldsForDtype("person")).toEqual(
