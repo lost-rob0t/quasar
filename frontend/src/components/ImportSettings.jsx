@@ -157,7 +157,6 @@ export function ImportPage() {
   const { importFileSet, select, setNotice } = useQuasar();
   const [files, setFiles] = useState([]);
   const [format, setFormat] = useState("starintel");
-  const [serverListName, setServerListName] = useState("");
   const [dataset, setDataset] = useState("wireless-import");
   const [replace, setReplace] = useState(false);
   const [resolveManifestReferences, setResolveManifestReferences] = useState(false);
@@ -338,6 +337,7 @@ export function SettingsPage() {
   } = useQuasar();
   const [form, setForm] = useState(settings || {});
   const [info, setInfo] = useState(null);
+  const [serverListName, setServerListName] = useState("");
   const [viewStatus, setViewStatus] = useState("");
   const [purgeArmed, setPurgeArmed] = useState(false);
 
