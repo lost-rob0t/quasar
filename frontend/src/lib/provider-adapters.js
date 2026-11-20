@@ -3,6 +3,10 @@ const PROTECTED_PROVIDER_ENDPOINTS = Object.freeze({
   openrouter: "https://openrouter.ai/api/v1",
   openai: "https://api.openai.com/v1",
   anthropic: "https://api.anthropic.com/v1",
+  nanogpt: "https://nano-gpt.com/api/v1",
+  glm: "https://api.z.ai/api/paas/v4",
+  "glm-coding": "https://api.z.ai/api/coding/paas/v4",
+  codex: "https://api.openai.com/v1",
   local: "http://localhost:11434/v1"
 });
 const FORBIDDEN_CONFIG_HEADER =
@@ -314,11 +318,40 @@ export const DEFAULT_PROVIDER_CONFIGS = Object.freeze([
     requiresKey: true
   },
   {
+    id: "codex",
+    name: "Codex (OpenAI)",
+    type: "openai",
+    baseUrl: "https://api.openai.com/v1",
+    requiresKey: true
+  },
+  {
     id: "anthropic",
     name: "Anthropic",
     type: "anthropic",
     baseUrl: "https://api.anthropic.com/v1",
     requiresKey: true
+  },
+  {
+    id: "nanogpt",
+    name: "nanoGPT",
+    type: "openai-compatible",
+    baseUrl: "https://nano-gpt.com/api/v1",
+    requiresKey: true
+  },
+  {
+    id: "glm",
+    name: "GLM (z.ai)",
+    type: "openai-compatible",
+    baseUrl: "https://api.z.ai/api/paas/v4",
+    requiresKey: true
+  },
+  {
+    id: "glm-coding",
+    name: "GLM Coding (sub-agent)",
+    type: "openai-compatible",
+    baseUrl: "https://api.z.ai/api/coding/paas/v4",
+    requiresKey: true,
+    codingSub: true
   },
   {
     id: "custom",
@@ -352,6 +385,8 @@ export function normalizeProviderConfig(input) {
     type,
     baseUrl,
     requiresKey: input.requiresKey !== false && type !== "local",
+    // Coding sub-agent flag: providers suitable for delegated code-edit steps.
+    codingSub: Boolean(input.codingSub),
     enabled: input.enabled !== false,
     headers: sanitizeHeaders(input.headers)
   };

@@ -1073,6 +1073,22 @@ function AgentEditor({ agent, roles, providers, skills, mcpServers, onSave, onDe
             ))}
           </select>
         </label>
+        <label className="field">
+          <span>Coding sub-agent</span>
+          <select
+            value={form.codingProviderId || ""}
+            onChange={(event) => setForm({ ...form, codingProviderId: event.target.value })}
+          >
+            <option value="">None</option>
+            {providers
+              .filter((provider) => provider.codingSub)
+              .map((provider) => (
+                <option key={provider.id} value={provider.id}>
+                  {provider.name}
+                </option>
+              ))}
+          </select>
+        </label>
         <label className="field full">
           <span>Model</span>
           <input
@@ -1318,6 +1334,22 @@ function McpServerEditor({ server, onSave, onDelete, onTest }) {
         setStatus("Saved");
       }}
     >
+      {!server && (
+        <button
+          className="button small"
+          type="button"
+          onClick={() =>
+            setForm((current) => ({
+              ...current,
+              id: "starintel-bundled",
+              name: "StarIntel (bundled)",
+              url: "http://127.0.0.1:8083/mcp"
+            }))
+          }
+        >
+          Use bundled StarIntel MCP (127.0.0.1:8083)
+        </button>
+      )}
       <div className="form-grid">
         <label className="field">
           <span>ID</span>
