@@ -97,4 +97,20 @@ describe("bounded documents page", () => {
     const html = renderPage("/documents?q=nomatch");
     expect(html).toContain("No documents match these filters.");
   });
+
+  it("offers the Workspace and Live ingest source tabs", () => {
+    const html = renderPage("/documents");
+    expect(html).toContain("Live ingest");
+    expect(html).toContain("Search and inspect the local StarIntel corpus.");
+  });
+
+  it("switches to the live-ingest surface without touching the workspace corpus", () => {
+    const html = renderPage("/documents?source=live");
+    expect(html).toContain("Search the live StarIntel ingest on the server.");
+    expect(html).toContain("Live search matches names, titles");
+    // The workspace-only filter selects are replaced by the live hint.
+    expect(html).not.toContain("All dtypes");
+    // The workspace corpus stays untouched.
+    expect(html).toContain("Showing 0 documents");
+  });
 });

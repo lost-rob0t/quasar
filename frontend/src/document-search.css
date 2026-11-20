@@ -300,3 +300,96 @@
     display: none;
   }
 }
+
+/* --- Live-ingest source toggle (forgejo #142) --------------------------- */
+
+.document-source-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border, #d4d4d8);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-left: auto;
+}
+
+.document-source-toggle button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.86rem;
+  cursor: pointer;
+  opacity: 0.72;
+}
+
+.document-source-toggle button.active {
+  background: var(--accent, #b8860b);
+  color: #fff;
+  opacity: 1;
+}
+
+.document-live-hint {
+  font-size: 0.86rem;
+}
+
+/* --- Live document viewer ---------------------------------------------- */
+
+.live-doc-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+  padding: 1.2rem;
+}
+
+.live-doc-panel {
+  background: var(--panel, #fff);
+  color: inherit;
+  border-radius: 12px;
+  max-width: min(720px, 94vw);
+  max-height: 88vh;
+  overflow: auto;
+  padding: 1.2rem 1.4rem;
+}
+
+.live-doc-panel .section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.live-neighbors ul {
+  list-style: none;
+  margin: 0.4rem 0;
+  padding: 0;
+}
+
+.live-neighbors li {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.22rem 0;
+}
+
+.live-neighbors .direction {
+  font-weight: 700;
+}
+
+.live-neighbors em {
+  color: var(--muted, #6b7280);
+  min-width: 6ch;
+}
+
+.link-button {
+  border: 0;
+  background: none;
+  color: var(--accent, #b8860b);
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+}

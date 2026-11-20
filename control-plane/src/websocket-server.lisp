@@ -58,6 +58,7 @@ configured sink."
     "python-actors.run"
     "starintel.probe"
     "starintel.registry"
+    "starintel.api"
     "workspace.purge-documents")
   "Commands allowed for standard clients. starlang.load is excluded.")
 

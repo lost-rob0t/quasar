@@ -194,6 +194,7 @@
     #:subscribe
     #:unsubscribe
     #:broadcast-event
+    #:bounded-wire-result
     #:control-plane-capabilities
     #:control-plane-workspaces
     #:control-plane-store))
@@ -217,7 +218,8 @@
                 #:json-value
                 #:quasar-error)
   (:import-from #:quasar.control-plane
-                #:register-command)
+                #:register-command
+                #:bounded-wire-result)
   (:export
    #:install-starintel-relay-commands))
 

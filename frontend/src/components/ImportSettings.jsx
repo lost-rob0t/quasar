@@ -23,6 +23,51 @@ import { createSettingsExport, parseSettingsImport } from "../lib/settings-trans
 import { applyTheme, THEMES } from "../lib/themes";
 import { useQuasar } from "../store";
 
+// Every star-server endpoint the probe reports, so the operator can see the
+// full fetch/view surface the control-plane relay (starintel.api) exposes.
+// The relay itself is read-only: write routes are listed for reference.
+function ServerApiSurface({ capabilities }) {
+  // gserver wraps payloads: {status, data:{endpoints, features, ...}}.
+  const payload = capabilities?.data ?? capabilities ?? {};
+  const endpoints = Array.isArray(payload.endpoints) ? payload.endpoints : [];
+  const features =
+    payload.features && typeof payload.features === "object"
+      ? Object.entries(payload.features).filter(([, value]) => typeof value === "boolean")
+      : [];
+  if (!endpoints.length) return null;
+  return (
+    <div className="server-api-surface">
+      <h3>Server API surface</h3>
+      <p className="muted">
+        Every endpoint the client can reach through the control-plane relay. The relay only
+        forwards read routes; writes stay on the workspace commands.
+      </p>
+      <ul className="server-api-endpoints">
+        {endpoints.map((endpoint) => (
+          <li key={`${endpoint.method}-${endpoint.path}`}>
+            <code className={`api-method api-${String(endpoint.method || "GET").toLowerCase()}`}>
+              {endpoint.method}
+            </code>
+            <code>{endpoint.path}</code>
+            {(endpoint.scopes || []).length > 0 && (
+              <small className="muted">{endpoint.scopes.join(", ")}</small>
+            )}
+          </li>
+        ))}
+      </ul>
+      {features.length > 0 && (
+        <div className="server-api-features">
+          {features.map(([name, value]) => (
+            <span key={name} className={`feature-chip feature-${value ? "on" : "off"}`}>
+              {value ? "✓" : "✗"} {name}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Report({ report }) {
   if (!report) return null;
   return (
@@ -594,6 +639,9 @@ export function SettingsPage() {
         <button className="button primary" onClick={probeServer} disabled={!form.serverUrl}>
           <Server size={15} /> Test server connection
         </button>
+        {serverStatus.state === "active" && serverStatus.result?.mode === "v1" && (
+          <ServerApiSurface capabilities={serverStatus.result.capabilities} />
+        )}
       </section>
 
       <section className="panel">

@@ -6,6 +6,7 @@ import {
   Download,
   Edit3,
   ExternalLink,
+  Eye,
   Network,
   Plus,
   Search,
@@ -98,8 +99,39 @@ function catalogDatasetNames(datasets) {
   ].sort();
 }
 
+// Live-ingest rows come back from star-server /search as couchdb FTS rows
+// with the full canonical document embedded (include_docs). The embedded
+// records keep their historical schema_version (0.9.x), which the strict
+// canonical validator rejects — the workspace pipeline converts tek9 rows
+// server-side, the relay does not. Convert when the document validates and
+// fall back to a searchable projection built from the raw record.
+function liveRowDocument(row) {
+  const doc = row?.doc;
+  if (doc) {
+    try {
+      return toLegacyUiDocument(doc);
+    } catch {
+      // Fall through to the projection below.
+    }
+  }
+  const fields = row?.fields || {};
+  const data = doc?.data || {};
+  return {
+    _id: doc?._id || doc?.id || row?.id,
+    dtype: doc?.dtype || fields.dtype || "",
+    dataset: doc?.dataset || fields.dataset || "",
+    title: data.title || data.name || doc?.title || fields.title || "",
+    summary: data.summary || doc?.summary || fields.summary || "",
+    date_updated: doc?.date_updated || fields.date_updated || null,
+    data,
+    sources: doc?.sources || [],
+    evidence: doc?.evidence || [],
+    projection: true
+  };
+}
+
 export function DocumentsPage() {
-  const { documents, execute, setNotice, createGraph, addDocumentsToActiveGraph, cpClient } =
+  const { documents, execute, setNotice, createGraph, addDocumentsToActiveGraph, cpClient, settings } =
     useQuasar();
   const location = useLocation();
   const navigate = useNavigate();
@@ -108,6 +140,9 @@ export function DocumentsPage() {
   const dtype = params.get("dtype") || "";
   const dataset = params.get("dataset") || "";
   const group = params.get("group") || "";
+  const source = params.get("source") === "live" ? "live" : "workspace";
+  const serverUrl = settings?.serverUrl || "";
+  const serverToken = settings?.serverToken || "";
   const requestedPage = parsePage(params.get("page"));
   const pageSize = parsePageSize(params.get("perPage"));
   const hasSearchScope = Boolean(query || dtype || dataset);
@@ -147,8 +182,23 @@ export function DocumentsPage() {
     setPageState(null);
   }, [corpusVersion]);
 
+  // Live-ingest chain (forgejo #142): bookmark-chained star-server pages,
+  // one bounded request per page, never an automatic drain. The chain lives
+  // in a ref so deep links can walk page N with N-1 chained requests; the
+  // snapshot below triggers renders.
+  const liveChain = useRef({ key: null, pages: {}, bookmarks: {}, total: null, complete: false });
+  const [liveSnapshot, setLiveSnapshot] = useState(null);
+  const [liveError, setLiveError] = useState(null);
+  const [liveView, setLiveView] = useState(null);
+  const liveRequestToken = useRef(0);
+
+  const resetLiveChain = () => {
+    liveChain.current = { key: searchKey, pages: {}, bookmarks: {}, total: null, complete: false };
+    setLiveSnapshot(null);
+  };
+
   useEffect(() => {
-    if (!cpClient?.documentSearch) return;
+    if (source === "live") return;
     let active = true;
     const token = ++requestToken.current;
     (async () => {
@@ -205,7 +255,78 @@ export function DocumentsPage() {
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cpClient, searchKey, requestedPage, corpusVersion]);
+  }, [cpClient, searchKey, requestedPage, corpusVersion, source]);
+
+  // Live-ingest search (forgejo #142): the star-server FTS answers one
+  // bounded page per request; deep links walk the bookmark chain page by
+  // page and stop at the route target. A live search needs a query string
+  // (the server FTS has no empty-scan) and a configured server URL.
+  useEffect(() => {
+    if (source !== "live") return;
+    if (!cpClient?.starintelSearch) return;
+    if (!serverUrl) {
+      setLiveError("Configure a StarIntel server in Settings first.");
+      return;
+    }
+    if (!query) {
+      setLiveError("Enter a query to search the live ingest.");
+      setLiveSnapshot(null);
+      return;
+    }
+    let active = true;
+    const token = ++liveRequestToken.current;
+    (async () => {
+      setLoading(true);
+      setLiveError(null);
+      try {
+        const chain = liveChain.current;
+        if (chain.key !== searchKey) resetLiveChain();
+        const highest = Math.max(0, ...Object.keys(chain.pages).map(Number));
+        const total = chain.total;
+        const cap = total ? Math.ceil(total / pageSize) : Infinity;
+        const target = Math.min(requestedPage, cap);
+        for (let pageNumber = highest + 1; pageNumber <= target; pageNumber += 1) {
+          if (!active || token !== liveRequestToken.current) return;
+          const bookmark = chain.bookmarks[pageNumber - 1];
+          if (pageNumber > 1 && !bookmark) break; // scope exhausted earlier
+          const response = await cpClient.starintelSearch({
+            url: serverUrl,
+            token: serverToken || undefined,
+            q: query,
+            limit: pageSize,
+            ...(bookmark ? { bookmark } : {})
+          });
+          const rows = (response?.rows || []).map((row) => ({
+            id: row?.id,
+            document: liveRowDocument(row),
+            raw: row?.doc || null
+          }));
+          chain.pages[pageNumber] = rows;
+          chain.total =
+            typeof response?.total_rows === "number" ? response.total_rows : chain.total;
+          chain.bookmarks[pageNumber] = response?.bookmark && rows.length ? response.bookmark : null;
+        }
+        const fetched = Math.max(0, ...Object.keys(chain.pages).map(Number));
+        chain.complete = fetched > 0 && !chain.bookmarks[fetched];
+        if (!active || token !== liveRequestToken.current) return;
+        setLiveSnapshot({
+          pages: { ...chain.pages },
+          total: chain.total,
+          complete: chain.complete
+        });
+      } catch (cause) {
+        if (active && token === liveRequestToken.current) {
+          setLiveError(cause?.message || "Live ingest search failed.");
+        }
+      } finally {
+        if (active && token === liveRequestToken.current) setLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cpClient, source, searchKey, requestedPage, pageSize, query, serverUrl, serverToken]);
 
   useEffect(() => {
     if (!cpClient?.workspaceBootstrap) return;
@@ -232,20 +353,32 @@ export function DocumentsPage() {
 
   // `complete` reports scope exhaustion, never page fullness; totals count
   // cached rows only, so an incomplete scope renders as "N+".
+  const livePages = liveSnapshot?.pages || {};
+  const liveRows = livePages[requestedPage] || [];
+  const liveHighest = Math.max(0, ...Object.keys(livePages).map(Number));
+  const liveTotal = typeof liveSnapshot?.total === "number" ? liveSnapshot.total : null;
   const totals = documentsRouteCache.totals(searchQuery);
-  const contiguousPages = totals.pages;
-  const reachablePages = totals.complete ? contiguousPages : contiguousPages + 1;
+  const contiguousPages = source === "live" ? liveHighest : totals.pages;
+  const liveReachable = liveSnapshot?.complete ? liveHighest : liveHighest + 1;
+  const reachablePages = source === "live" ? liveReachable : totals.complete ? contiguousPages : contiguousPages + 1;
   const page = Math.min(requestedPage, Math.max(reachablePages, 1));
-  const pageDocuments = pageState?.documents || [];
-  const pageStart = pageDocuments.length ? (pageState.pageNumber - 1) * pageSize + 1 : 0;
+  const pageDocuments =
+    source === "live" ? liveRows.map((row) => row.document) : pageState?.documents || [];
+  const pageStart = pageDocuments.length ? (page - 1) * pageSize + 1 : 0;
   const pageEnd = pageDocuments.length ? pageStart + pageDocuments.length - 1 : 0;
   const pages = useMemo(
     () => paginationRange(page, Math.max(reachablePages, 1)),
     [page, reachablePages]
   );
-  const resultCount = totals.complete
-    ? totals.known.toLocaleString()
-    : `${totals.known.toLocaleString()}+`;
+  const resultCount =
+    source === "live"
+      ? liveTotal === null
+        ? "…"
+        : liveTotal.toLocaleString()
+      : totals.complete
+        ? totals.known.toLocaleString()
+        : `${totals.known.toLocaleString()}+`;
+  const activeError = source === "live" ? liveError : error;
 
   const set = (key, value, { resetPage = true, replace = false } = {}) => {
     const next = new URLSearchParams(params);
@@ -321,6 +454,11 @@ export function DocumentsPage() {
     }
   }
 
+  function openLiveDocument(row) {
+    if (!row) return;
+    setLiveView({ id: row.id, document: row.raw });
+  }
+
   if (group === "dataset") {
     return <DatasetsPage />;
   }
@@ -331,20 +469,28 @@ export function DocumentsPage() {
         <div>
           <span className="eyebrow">Corpus</span>
           <h1>Documents</h1>
-          <p>Search and inspect the local StarIntel corpus.</p>
+          <p>
+            {source === "live"
+              ? "Search the live StarIntel ingest on the server."
+              : "Search and inspect the local StarIntel corpus."}
+          </p>
         </div>
         <div className="button-row">
           <button
             className="button"
             onClick={importPageToGraph}
-            disabled={!pageDocuments.length}
-            title="Create a graph from the documents on this page (bounded read; full search imports arrive with bounded mutations)"
+            disabled={source === "live" || !pageDocuments.length}
+            title={
+              source === "live"
+                ? "Live results live on the server; switch to Workspace to graph local documents"
+                : "Create a graph from the documents on this page (bounded read; full search imports arrive with bounded mutations)"
+            }
           >
             <Network size={16} /> Add page to graph
           </button>
           <button
             className="button"
-            disabled={!pageDocuments.length}
+            disabled={source === "live" || !pageDocuments.length}
             onClick={() => {
               try {
                 downloadText("starintel-documents.jsonl", documentsToJsonl(pageDocuments));
@@ -362,7 +508,7 @@ export function DocumentsPage() {
           <button
             type="button"
             className="button"
-            disabled={!pageDocuments.length}
+            disabled={source === "live" || !pageDocuments.length}
             onClick={() =>
               downloadText(
                 "starintel-historical-archive.jsonl",
@@ -403,15 +549,57 @@ export function DocumentsPage() {
             )}
           </div>
           <div className="document-result-summary" aria-live="polite">
-            <strong>{loading && !pageState ? "…" : resultCount}</strong>
-            <span>{totals.complete && totals.known === 1 ? "result" : "results"}</span>
-            {!totals.complete && pageState && (
-              <span className="result-hint">more pages available</span>
-            )}
+            <strong>
+              {loading && (source === "live" ? !liveSnapshot : !pageState) ? "…" : resultCount}
+            </strong>
+            <span>
+              {source === "live"
+                ? liveTotal === 1
+                  ? "result"
+                  : "results"
+                : totals.complete && totals.known === 1
+                  ? "result"
+                  : "results"}
+            </span>
+            {source === "live"
+              ? liveSnapshot && !liveSnapshot.complete && (
+                  <span className="result-hint">more pages available</span>
+                )
+              : !totals.complete && pageState && (
+                  <span className="result-hint">more pages available</span>
+                )}
+          </div>
+          <div className="document-source-toggle" role="tablist" aria-label="Search source">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={source === "workspace"}
+              className={source === "workspace" ? "active" : ""}
+              onClick={() => set("source", null, { replace: true })}
+            >
+              Workspace
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={source === "live"}
+              className={source === "live" ? "active" : ""}
+              onClick={() => set("source", "live", { replace: true })}
+              title="Search the live ingest on the StarIntel server"
+            >
+              Live ingest
+            </button>
           </div>
         </div>
 
         <div className="document-filter-row">
+          {source === "live" ? (
+            <span className="muted document-live-hint">
+              Live search matches names, titles, and other indexed fields on the server. Type and
+              dataset filters apply to the workspace only.
+            </span>
+          ) : (
+            <>
           <label className="document-filter-control">
             <span>Type</span>
             <select value={dtype} onChange={(event) => set("dtype", event.target.value)}>
@@ -434,6 +622,8 @@ export function DocumentsPage() {
               ))}
             </select>
           </label>
+            </>
+          )}
           {hasSearchScope && (
             <button
               className="button small document-clear-filters"
@@ -449,9 +639,11 @@ export function DocumentsPage() {
       <div className="document-list-meta">
         <span>
           {pageDocuments.length
-            ? totals.complete
-              ? `Showing ${pageStart.toLocaleString()}–${pageEnd.toLocaleString()} of ${totals.known.toLocaleString()}`
-              : `Showing ${pageStart.toLocaleString()}–${pageEnd.toLocaleString()} of ${totals.known.toLocaleString()}+`
+            ? source === "live"
+              ? `Showing ${pageStart.toLocaleString()}–${pageEnd.toLocaleString()} of ${liveTotal === null ? "?" : liveTotal.toLocaleString()}`
+              : totals.complete
+                ? `Showing ${pageStart.toLocaleString()}–${pageEnd.toLocaleString()} of ${totals.known.toLocaleString()}`
+                : `Showing ${pageStart.toLocaleString()}–${pageEnd.toLocaleString()} of ${totals.known.toLocaleString()}+`
             : "Showing 0 documents"}
         </span>
         <label className="document-page-size">
@@ -482,13 +674,17 @@ export function DocumentsPage() {
             {pageDocuments.map((document) => (
               <tr key={document._id}>
                 <td>
-                  <Link
-                    className="document-link"
-                    to={`/documents/${encodeURIComponent(document._id)}`}
-                    state={{ documentList: `${location.pathname}${location.search}` }}
-                  >
-                    {documentLabel(document)}
-                  </Link>
+                  {source === "live" ? (
+                    <span className="document-link">{documentLabel(document)}</span>
+                  ) : (
+                    <Link
+                      className="document-link"
+                      to={`/documents/${encodeURIComponent(document._id)}`}
+                      state={{ documentList: `${location.pathname}${location.search}` }}
+                    >
+                      {documentLabel(document)}
+                    </Link>
+                  )}
                   <code>{document._id}</code>
                   {document.summary && <small>{document.summary}</small>}
                 </td>
@@ -504,15 +700,29 @@ export function DocumentsPage() {
                   sources
                 </td>
                 <td>
-                  <button
-                    className="icon-button danger"
-                    type="button"
-                    aria-label={`Delete ${documentLabel(document)}`}
-                    title="Delete document"
-                    onClick={() => removeDocument(document)}
-                  >
-                    <Trash2 size={15} />
-                  </button>
+                  {source === "live" ? (
+                    <button
+                      className="icon-button"
+                      type="button"
+                      aria-label={`View ${documentLabel(document)} on the server`}
+                      title="View live document and its neighbors"
+                      onClick={() =>
+                        openLiveDocument(liveRows.find((row) => row.id === document._id))
+                      }
+                    >
+                      <Eye size={15} />
+                    </button>
+                  ) : (
+                    <button
+                      className="icon-button danger"
+                      type="button"
+                      aria-label={`Delete ${documentLabel(document)}`}
+                      title="Delete document"
+                      onClick={() => removeDocument(document)}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -520,18 +730,22 @@ export function DocumentsPage() {
         </table>
         {!pageDocuments.length && (
           <div className="empty-state compact">
-            {loading && !pageState
-              ? "Loading documents…"
-              : hasSearchScope
-                ? "No documents match these filters."
-                : totals.complete
-                  ? "No documents yet. Add a document to get started."
-                  : "No documents loaded yet."}
+            {loading && source === "live" && !liveSnapshot
+              ? "Searching the live ingest…"
+              : loading && !pageState
+                ? "Loading documents…"
+                : source === "live"
+                  ? "No live results for this query."
+                  : hasSearchScope
+                    ? "No documents match these filters."
+                    : totals.complete
+                      ? "No documents yet. Add a document to get started."
+                      : "No documents loaded yet."}
           </div>
         )}
       </div>
 
-      {error && <div className="empty-state compact">{error}</div>}
+      {activeError && <div className="empty-state compact">{activeError}</div>}
 
       {pageDocuments.length > 0 && (
         <nav className="document-pagination" aria-label="Document result pages">
@@ -569,20 +783,173 @@ export function DocumentsPage() {
             className="pagination-button pagination-step"
             type="button"
             onClick={() => setPage(page + 1)}
-            disabled={loading || (totals.complete && page >= contiguousPages)}
+            disabled={
+              loading ||
+              (source === "live"
+                ? Boolean(liveSnapshot?.complete) && page >= liveHighest
+                : Boolean(totals.complete) && page >= contiguousPages)
+            }
             aria-label="Next page"
           >
             <span>Next</span>
             <ChevronRight size={16} />
           </button>
           <span className="pagination-status">
-            {totals.complete
-              ? `Page ${page.toLocaleString()} of ${Math.max(contiguousPages, 1).toLocaleString()}`
-              : `Page ${page.toLocaleString()} · more results`}
+            {source === "live"
+              ? liveTotal !== null
+                ? `Page ${page.toLocaleString()} of ${Math.max(Math.ceil(liveTotal / pageSize), 1).toLocaleString()}`
+                : `Page ${page.toLocaleString()}`
+              : totals.complete
+                ? `Page ${page.toLocaleString()} of ${Math.max(contiguousPages, 1).toLocaleString()}`
+                : `Page ${page.toLocaleString()} · more results`}
           </span>
         </nav>
       )}
+
+      {liveView && (
+        <LiveDocumentViewer
+          view={liveView}
+          cpClient={cpClient}
+          serverUrl={serverUrl}
+          serverToken={serverToken}
+          onClose={() => setLiveView(null)}
+          onOpenNeighbor={(id) => setLiveView({ id, document: null })}
+        />
+      )}
     </section>
+  );
+}
+
+function LiveDocumentViewer({ view, cpClient, serverUrl, serverToken, onClose, onOpenNeighbor }) {
+  const [document, setDocument] = useState(view.document || null);
+  const [relations, setRelations] = useState([]);
+  const [total, setTotal] = useState(null);
+  const [bookmark, setBookmark] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  // The neighbors call returns the document too, so one request serves both
+  // the viewer and its neighbor list; the relay follows the v1/legacy route.
+  useEffect(() => {
+    if (!cpClient?.starintelNeighbors) return;
+    if (!serverUrl) {
+      setError("Configure a StarIntel server in Settings first.");
+      return;
+    }
+    let active = true;
+    setLoading(true);
+    setError(null);
+    setRelations([]);
+    setBookmark(null);
+    setDocument(view.document || null);
+    (async () => {
+      try {
+        const result = await cpClient.starintelNeighbors({
+          url: serverUrl,
+          token: serverToken || undefined,
+          id: view.id
+        });
+        if (!active) return;
+        if (result?.document) setDocument(result.document);
+        setRelations(result?.relations || []);
+        setTotal(typeof result?.total_relations === "number" ? result.total_relations : null);
+        setBookmark(result?.bookmark || null);
+      } catch (cause) {
+        if (active) setError(cause?.message || "Live document lookup failed.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cpClient, view.id, serverUrl, serverToken]);
+
+  async function loadMoreRelations() {
+    if (!bookmark) return;
+    setLoading(true);
+    try {
+      const result = await cpClient.starintelNeighbors({
+        url: serverUrl,
+        token: serverToken || undefined,
+        id: view.id,
+        bookmark
+      });
+      setRelations((current) => [...current, ...(result?.relations || [])]);
+      setBookmark(result?.bookmark || null);
+    } catch (cause) {
+      setError(cause?.message || "Could not load more relations.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="live-doc-overlay" role="dialog" aria-modal="true" aria-label="Live document">
+      <div className="live-doc-panel">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">Live ingest · star-server</span>
+            <h2>{document ? documentLabel(document) : view.id}</h2>
+            <code>{view.id}</code>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close" onClick={onClose}>
+            <X size={16} />
+          </button>
+        </div>
+        {loading && !document && <p className="muted">Loading document…</p>}
+        {error && <p className="muted">{error}</p>}
+        {document && (
+          <>
+            <div className="metadata-grid">
+              <KeyValue label="Type">{document.dtype}</KeyValue>
+              <KeyValue label="Dataset">{document.dataset}</KeyValue>
+              <KeyValue label="Updated">
+                {document.date_updated
+                  ? new Date(document.date_updated).toLocaleString()
+                  : "—"}
+              </KeyValue>
+            </div>
+            <details className="raw-document">
+              <summary>Complete canonical JSON</summary>
+              <pre>{JSON.stringify(document, null, 2)}</pre>
+            </details>
+          </>
+        )}
+        <section className="live-neighbors">
+          <h3>
+            Neighbors <span>{total === null ? relations.length : `${relations.length} of ${total}`}</span>
+          </h3>
+          <ul>
+            {relations.map((relation) => (
+              <li key={relation.id}>
+                <span className={`direction direction-${relation.direction}`}>
+                  {relation.direction === "subject" ? "→" : "←"}
+                </span>
+                <em>{relation.predicate || "related"}</em>
+                <button
+                  className="link-button"
+                  type="button"
+                  onClick={() => onOpenNeighbor(relation.neighbor)}
+                  title={`Fetch ${relation.neighbor}`}
+                >
+                  {relation.neighbor}
+                </button>
+              </li>
+            ))}
+            {!relations.length && !loading && !error && (
+              <li className="muted">No relations matched on the server.</li>
+            )}
+          </ul>
+          {bookmark && (
+            <button className="button small" type="button" onClick={loadMoreRelations}>
+              Load more relations
+            </button>
+          )}
+        </section>
+      </div>
+    </div>
   );
 }
 

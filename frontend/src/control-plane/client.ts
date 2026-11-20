@@ -38,6 +38,60 @@ interface PendingRequest {
   workspaceId: string;
 }
 
+export interface StarintelServerConfig {
+  url: string;
+  token?: string;
+}
+
+export interface StarintelSearchRequest extends StarintelServerConfig {
+  q?: string;
+  limit?: number;
+  bookmark?: string;
+  sort?: string;
+}
+
+export interface StarintelSearchRow {
+  id: string;
+  order?: number[];
+  fields?: Record<string, unknown>;
+  doc?: Record<string, unknown>;
+}
+
+export interface StarintelSearchResponse {
+  total_rows: number;
+  bookmark?: string;
+  rows: StarintelSearchRow[];
+}
+
+export interface StarintelStats {
+  status?: string;
+  data?: { documents?: { total?: number; by_dtype?: Record<string, number> }; targets?: { total?: number } };
+}
+
+export interface StarintelActors {
+  schema?: string;
+  actors?: Record<string, unknown>[];
+  count?: number;
+}
+
+export interface StarintelRelation {
+  id: string;
+  predicate: string;
+  direction: "subject" | "object";
+  neighbor: string;
+  directed?: unknown;
+}
+
+export interface StarintelNeighborsResponse {
+  id: string;
+  document?: Record<string, unknown>;
+  total_relations?: number;
+  bookmark?: string | null;
+  relations: StarintelRelation[];
+}
+
+
+
 export interface ControlPlaneClient {
   send<T = unknown>(command: string, payload?: Record<string, unknown>): Promise<T>;
   subscribe(handler: EventHandler, eventNames?: string[]): () => void;
@@ -56,6 +110,21 @@ export interface ControlPlaneClient {
   }>;
   purgeDocuments(): Promise<{ deleted: number; revision: number }>;
   starintelRegistry(payload?: { url?: string; token?: string }): Promise<Record<string, unknown>[]>;
+  starintelApi<T = Record<string, unknown>>(
+    op: string,
+    payload?: Record<string, unknown>
+  ): Promise<T>;
+  starintelSearch(payload: StarintelSearchRequest): Promise<StarintelSearchResponse>;
+  starintelStats(payload?: StarintelServerConfig): Promise<StarintelStats>;
+  starintelActors(payload?: StarintelServerConfig): Promise<StarintelActors>;
+  starintelDocument(payload: StarintelServerConfig & { id: string }): Promise<Record<string, unknown>>;
+  starintelTargets(payload: StarintelServerConfig & { actor: string }): Promise<Record<string, unknown>>;
+  starintelNeighbors(
+    payload: StarintelServerConfig & { id: string; limit?: number; bookmark?: string }
+  ): Promise<StarintelNeighborsResponse>;
+  starintelView(
+    payload: StarintelServerConfig & { view: string } & Record<string, unknown>
+  ): Promise<Record<string, unknown>>;
   workspaceBootstrap(): Promise<unknown>;
   graphMembership(graphId: string, options?: Record<string, unknown>): Promise<unknown>;
   documentSearch(query?: Record<string, unknown>): Promise<unknown>;
@@ -623,6 +692,23 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
     purgeDocuments: () => send<{ deleted: number; revision: number }>("workspace.purge-documents", {}),
     starintelRegistry: (payload = {}) =>
       send<Record<string, unknown>[]>("starintel.registry", payload),
+    starintelApi: <T = Record<string, unknown>>(op: string, payload: Record<string, unknown> = {}) =>
+      send<T>("starintel.api", { op, ...payload }),
+    starintelSearch: (payload: StarintelSearchRequest) =>
+      send<StarintelSearchResponse>("starintel.api", { op: "search", ...payload }),
+    starintelStats: (payload: StarintelServerConfig = { url: "" }) =>
+      send<StarintelStats>("starintel.api", { op: "stats", ...payload }),
+    starintelActors: (payload: StarintelServerConfig = { url: "" }) =>
+      send<StarintelActors>("starintel.api", { op: "actors", ...payload }),
+    starintelDocument: (payload: StarintelServerConfig & { id: string }) =>
+      send<Record<string, unknown>>("starintel.api", { op: "document", ...payload }),
+    starintelTargets: (payload: StarintelServerConfig & { actor: string }) =>
+      send<Record<string, unknown>>("starintel.api", { op: "targets", ...payload }),
+    starintelNeighbors: (
+      payload: StarintelServerConfig & { id: string; limit?: number; bookmark?: string }
+    ) => send<StarintelNeighborsResponse>("starintel.api", { op: "neighbors", ...payload }),
+    starintelView: (payload: StarintelServerConfig & { view: string } & Record<string, unknown>) =>
+      send<Record<string, unknown>>("starintel.api", { op: "view", ...payload }),
     workspaceBootstrap: () => send("workspace.bootstrap", {}),
     graphMembership: (graphId, options = {}) => send("graph.membership", { graphId, ...options }),
     documentSearch: (query = {}) => send("document.search", query),

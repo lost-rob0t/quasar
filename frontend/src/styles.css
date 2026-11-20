@@ -2615,3 +2615,68 @@ td small {
     grid-template-columns: 1fr;
   }
 }
+
+/* --- Server API surface (Settings, forgejo #142) ------------------------ */
+
+.server-api-surface {
+  margin-top: 0.9rem;
+  border-top: 1px solid var(--border, #e4e4e7);
+  padding-top: 0.9rem;
+}
+
+.server-api-surface h3 {
+  margin: 0 0 0.3rem;
+}
+
+.server-api-endpoints {
+  list-style: none;
+  margin: 0.5rem 0;
+  padding: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.server-api-endpoints li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.86rem;
+}
+
+.api-method {
+  font-weight: 700;
+  min-width: 4.2ch;
+  text-align: center;
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+  background: var(--muted, #f4f4f5);
+}
+
+.api-get {
+  color: #166534;
+}
+
+.api-post,
+.api-patch,
+.api-put,
+.api-delete {
+  color: #7c2d12;
+}
+
+.server-api-features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.6rem;
+}
+
+.feature-chip {
+  font-size: 0.78rem;
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  border: 1px solid var(--border, #d4d4d8);
+}
+
+.feature-off {
+  opacity: 0.5;
+}
