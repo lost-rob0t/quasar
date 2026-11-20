@@ -88,6 +88,51 @@ describe("route query cache paging", () => {
     expect(cache.totals(query)).toEqual({ known: 3, complete: true, pages: 2 });
   });
 
+  it("never stores the same scope twice under concurrent getPage calls", async () => {
+    // Regression: two overlapping effect runs (param churn) both saw an
+    // empty cache and fetched page 1; the second stored its identical scope
+    // as page 2, inflating totals to duplicate counts and rendering a
+    // phantom page that re-rendered page 1 rows.
+    const client = pagedClient([{ rows: [row("p1"), row("p2")], complete: true }]);
+    const cache = createRouteQueryCache();
+    const query2 = { filters: { q: "ada" }, limit: 50 };
+
+    const [first, second, third] = await Promise.all([
+      cache.getPage(client, query2, 1),
+      cache.getPage(client, query2, 1),
+      cache.getPage(client, query2, 1)
+    ]);
+
+    expect(client.searches).toHaveLength(1);
+    expect(first.rows.map((r) => r.id)).toEqual(["p1", "p2"]);
+    expect(second.rows.map((r) => r.id)).toEqual(["p1", "p2"]);
+    expect(third.rows.map((r) => r.id)).toEqual(["p1", "p2"]);
+    expect(cache.totals(query2)).toEqual({ known: 2, complete: true, pages: 1 });
+  });
+
+  it("serializes queued callers racing for the next page", async () => {
+    const client = pagedClient([
+      { rows: [row("p1")], cursor: "1", complete: false },
+      { rows: [row("p2")], complete: true }
+    ]);
+    const cache = createRouteQueryCache();
+    const query2 = { filters: { q: "ada" }, limit: 50 };
+
+    // Seed page 1 first: the documents route clamps targets to chain + 1,
+    // so page-2 callers only race once page 1 exists.
+    await cache.getPage(client, query2, 1);
+    const [one, two] = await Promise.all([
+      cache.getPage(client, query2, 2),
+      cache.getPage(client, query2, 2)
+    ]);
+
+    expect(one?.pageNumber).toBe(2);
+    expect(two?.pageNumber).toBe(2);
+    expect(two.rows.map((r) => r.id)).toEqual(["p2"]);
+    expect(client.searches).toHaveLength(2);
+    expect(cache.totals(query2)).toEqual({ known: 2, complete: true, pages: 2 });
+  });
+
   it("returns null past a complete scope instead of draining", async () => {
     const client = pagedClient([{ rows: [row("p1")], complete: true }]);
     const cache = createRouteQueryCache();

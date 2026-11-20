@@ -461,9 +461,17 @@ export function DocumentsPage() {
     .map(Number)
     .sort((left, right) => left - right)
     .flatMap((pageNumber) => livePages[pageNumber] || []);
-  const liveOnlyRows = liveRows.filter(
-    (row) => row.id && !corpusIds.has(row.id) && !savedIds.has(row.id)
-  );
+  // forgejo #143 fallback: the server FTS has no dtype/dataset params yet,
+  // so the URL filters are enforced here on server rows until the server
+  // learns faceted filters. Workspace rows are filtered server-side by the
+  // route query; server rows are post-filtered client-side.
+  const liveOnlyRows = liveRows.filter((row) => {
+    if (!row.id || corpusIds.has(row.id) || savedIds.has(row.id)) return false;
+    const document = row.document || {};
+    if (dtype && document.dtype !== dtype) return false;
+    if (dataset && document.dataset !== dataset) return false;
+    return true;
+  });
   const liveHighest = Math.max(0, ...Object.keys(livePages).map(Number));
   const liveTotal = typeof liveSnapshot?.total === "number" ? liveSnapshot.total : null;
   const pageStart = pageDocuments.length ? (page - 1) * pageSize + 1 : 0;
@@ -695,8 +703,8 @@ export function DocumentsPage() {
           )}
           {serverUrl && query && (
             <span className="muted document-live-hint">
-              Server matches below the workspace rows. Type and dataset filters apply to the
-              workspace.
+              Server matches below the workspace rows. Type and dataset filters are applied
+              client-side until the server supports faceted filters (forgejo #143).
             </span>
           )}
         </div>

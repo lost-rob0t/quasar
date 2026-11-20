@@ -49,6 +49,11 @@ class SearchQueryEntry {
     this.records = 0;
     this.bytes = 0;
     this.complete = false;
+    // In-flight tail fill. Concurrent getPage callers (React effects refire
+    // on every param change) must queue behind it: two simultaneous first
+    // fetches used to store the same scope as pages 1 and 2, inflating
+    // totals with duplicate rows and rendering a phantom page.
+    this.inflight = null;
   }
 
   page(number) {
@@ -126,6 +131,16 @@ export function createRouteQueryCache({
   // pageNumber is expected to be at most one beyond the cached chain (the
   // documents route clamps deep links), so each call fetches at most the
   // missing tail instead of draining continuations toward a far page.
+  //
+  // Concurrency: overlapping React effect runs used to race past the cached
+  // check and store the same page-1 scope twice (fetchPage assigns
+  // pageNumber = pages.size + 1), inflating totals with duplicate rows and
+  // rendering a phantom page 2. All callers now queue behind one in-flight
+  // fill per query entry.
+  //
+  // Shape note: getPage stays straight-line (loop isolated in the fill
+  // helper) because vite 8 (oxc) hangs the module transform when this
+  // closure itself loops or recurses (vitest only; node runs it fine).
   async function getPage(client, query, pageNumber) {
     const target = Number(pageNumber);
     if (!Number.isInteger(target) || target < 1) {
@@ -135,6 +150,19 @@ export function createRouteQueryCache({
     const cached = entry.page(target);
     if (cached) return cached;
 
+    if (!entry.inflight) {
+      entry.inflight = fillTowardTarget(client, entry, target).finally(() => {
+        entry.inflight = null;
+      });
+    }
+    const served = await entry.inflight;
+    return served && served.pageNumber === target ? served : entry.page(target);
+  }
+
+  // Drain bounded continuation pages toward one caller's target: restart
+  // once on a stale cursor, stop at scope completion, and assign page
+  // numbers from the serialized chain so scopes can never duplicate.
+  async function fillTowardTarget(client, entry, target) {
     let restarted = false;
     let served = null;
     while (!served) {
@@ -153,12 +181,11 @@ export function createRouteQueryCache({
         continue;
       }
       entry.store(pageRecord);
-      served = pageRecord.pageNumber === target ? pageRecord : null;
+      if (pageRecord.pageNumber === target) served = pageRecord;
+      if (pageRecord.complete) break;
     }
     entry.trim(maxRecordsPerQuery, maxBytesPerQuery);
-    // The served page survives budget trimming as a return value even when
-    // the cache could not keep it; callers hold the record they asked for.
-    return served || entry.page(target);
+    return served;
   }
 
   async function getDocuments(client, query, pageNumber) {
