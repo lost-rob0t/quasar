@@ -335,9 +335,9 @@
       (cons "start_key_doc_id" "reddit:nk0g1vw")))
     (check (search "dataset=progressive-insanity"
                    (first (first *relay-calls*))))
-    (check (search "startkey=%5B%22progressive-insanity%22%2C1710000000%5D"
+    (check (search "start_key=%5B%22progressive-insanity%22%2C1710000000%5D"
                    (first (first *relay-calls*))))
-    (check (search "startkey_docid=reddit%3Ank0g1vw"
+    (check (search "start_key_doc_id=reddit%3Ank0g1vw"
                    (first (first *relay-calls*))))))
 
 (defun run-starintel-relay-tests ()
