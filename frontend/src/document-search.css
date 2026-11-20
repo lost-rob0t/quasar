@@ -301,34 +301,144 @@
   }
 }
 
-/* --- Live-ingest source toggle (forgejo #142) --------------------------- */
+/* --- Merged workspace + server results (forgejo #142) ------------------- */
 
-.document-source-toggle {
+.summary-divider {
+  opacity: 0.5;
+}
+
+.row-actions {
   display: inline-flex;
-  border: 1px solid var(--border, #d4d4d8);
-  border-radius: 999px;
-  overflow: hidden;
-  margin-left: auto;
+  gap: 0.3rem;
 }
 
-.document-source-toggle button {
-  border: 0;
-  background: transparent;
-  color: inherit;
-  padding: 0.35rem 0.85rem;
-  font-size: 0.86rem;
-  cursor: pointer;
-  opacity: 0.72;
+.row-actions .icon-button {
+  opacity: 0.78;
+  transition: opacity 120ms ease;
 }
 
-.document-source-toggle button.active {
-  background: var(--accent, #b8860b);
-  color: #fff;
+.row-actions .icon-button:hover,
+.row-actions .icon-button:focus-visible {
   opacity: 1;
+}
+
+.server-divider-row td,
+.server-more-row td {
+  padding: 0.45rem 0.75rem;
+  border-top: 1px dashed var(--border, #d4d4d8);
+  background: color-mix(in srgb, var(--accent, #b8860b) 6%, transparent);
+}
+
+.server-divider-row {
+  display: table-row;
+}
+
+.server-divider-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-right: 0.75rem;
 }
 
 .document-live-hint {
   font-size: 0.86rem;
+}
+
+.server-row td .document-link {
+  cursor: pointer;
+}
+
+/* --- Dataset combobox (type-to-filter) ---------------------------------- */
+
+.dataset-combobox {
+  position: relative;
+}
+
+.dataset-combobox-field {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid var(--border, #d4d4d8);
+  border-radius: 8px;
+  padding: 0.3rem 0.45rem;
+  background: var(--panel, #fff);
+  color: inherit;
+  transition: border-color 120ms ease;
+}
+
+.dataset-combobox-field:focus-within {
+  border-color: var(--accent, #b8860b);
+}
+
+.dataset-combobox-field input {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  min-width: 10ch;
+  width: 100%;
+  font-size: 0.9rem;
+}
+
+.dataset-combobox-clear {
+  border: 0;
+  background: none;
+  color: var(--muted, #6b7280);
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 0 0.15rem;
+}
+
+.dataset-combobox-list {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: min(240px, 100%);
+  max-height: 260px;
+  overflow: auto;
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  border: 1px solid var(--border, #d4d4d8);
+  border-radius: 10px;
+  background: var(--panel, #fff);
+  color: inherit;
+}
+
+.dataset-combobox-option {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.35rem 0.55rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.dataset-combobox-option:hover,
+.dataset-combobox-option[data-active="true"] {
+  background: color-mix(in srgb, var(--accent, #b8860b) 12%, transparent);
+}
+
+.dataset-combobox-option.active {
+  font-weight: 700;
+}
+
+.dataset-combobox-all {
+  color: var(--muted, #6b7280);
+}
+
+.dataset-combobox-empty {
+  padding: 0.4rem 0.55rem;
+  font-size: 0.86rem;
+  color: var(--muted, #6b7280);
 }
 
 /* --- Live document viewer ---------------------------------------------- */
@@ -392,4 +502,9 @@
   font: inherit;
   text-align: left;
   overflow-wrap: anywhere;
+}
+
+.dataset-combobox-create {
+  color: var(--accent, #b8860b);
+  font-weight: 600;
 }

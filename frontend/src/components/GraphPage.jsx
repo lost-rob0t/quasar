@@ -45,7 +45,9 @@ import {
 import { createGraphAdapter } from "../graph/GraphAdapter";
 import { isGraphUserNavigationActive } from "../graph/user-navigation-guard";
 import { actorApplicability, isBuiltinActor } from "../lib/actors";
+import { toCanonicalDocument } from "../lib/canonical-document";
 import { connectedDocumentIds } from "../lib/document-delete";
+import { liveRowDocument } from "./Documents";
 import {
   buildGraph,
   filterGraph,
@@ -490,10 +492,28 @@ function GraphCreate({ onClose, onCreate }) {
   );
 }
 
-function GraphMembershipAdd({ documents, existingIds, onAdd, onClose }) {
+function GraphMembershipAdd({
+  documents,
+  existingIds,
+  onAdd,
+  onClose,
+  cpClient,
+  serverUrl,
+  serverToken,
+  executeBatch,
+  setNotice
+}) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState([]);
+  const [savingServer, setSavingServer] = useState(false);
+  const [serverRows, setServerRows] = useState([]);
+  const [serverLoading, setServerLoading] = useState(false);
+  const [selectedServer, setSelectedServer] = useState({});
   const existing = useMemo(() => new Set(existingIds || []), [existingIds]);
+  const corpusIds = useMemo(
+    () => new Set(documents.map((document) => document._id)),
+    [documents]
+  );
   const visible = useMemo(
     () =>
       documents
@@ -509,16 +529,85 @@ function GraphMembershipAdd({ documents, existingIds, onAdd, onClose }) {
     [documents, existing, query]
   );
 
+  // Server matches for the query (forgejo #142): one bounded search per
+  // debounced query, filtered to records the workspace does not hold. Best
+  // effort — the picker stays usable when the server is unreachable.
+  useEffect(() => {
+    if (!cpClient?.starintelSearch || !serverUrl) return undefined;
+    const needle = query.trim();
+    if (!needle) {
+      setServerRows([]);
+      return undefined;
+    }
+    let active = true;
+    const timer = setTimeout(async () => {
+      setServerLoading(true);
+      try {
+        const response = await cpClient.starintelSearch({
+          url: serverUrl,
+          token: serverToken || undefined,
+          q: needle,
+          limit: 25
+        });
+        if (!active) return;
+        setServerRows(
+          (response?.rows || [])
+            .map((row) => ({
+              id: row?.id,
+              document: liveRowDocument(row),
+              raw: row?.doc || null
+            }))
+            .filter((row) => row.id && !corpusIds.has(row.id) && !existing.has(row.id))
+        );
+      } catch {
+        if (active) setServerRows([]);
+      } finally {
+        if (active) setServerLoading(false);
+      }
+    }, 350);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cpClient, serverUrl, serverToken, query, corpusIds, existing]);
+
   function toggle(id) {
     setSelected((current) =>
       current.includes(id) ? current.filter((value) => value !== id) : [...current, id]
     );
   }
-  function submit(event) {
-    event.preventDefault();
-    onAdd(selected);
-    onClose();
+  function toggleServer(row) {
+    setSelectedServer((current) => {
+      const next = { ...current };
+      if (next[row.id]) delete next[row.id];
+      else next[row.id] = row.raw;
+      return next;
+    });
   }
+  async function submit(event) {
+    event.preventDefault();
+    const serverIds = Object.keys(selectedServer);
+    try {
+      // Selecting a server record saves a local copy first; the graph can
+      // only reference workspace documents.
+      for (const id of serverIds) {
+        const raw = selectedServer[id];
+        if (!raw) continue;
+        const canonical = toCanonicalDocument(raw, {
+          allowLegacy090: true,
+          preserveUnmapped: true
+        });
+        await executeBatch([canonical], "Save server document", { replace: true });
+      }
+      onAdd([...selected, ...serverIds]);
+      onClose();
+    } catch (cause) {
+      setNotice({ kind: "error", message: cause?.message || "Could not save server document(s)." });
+    }
+  }
+  const serverSelectedCount = Object.keys(selectedServer).length;
+  const totalCount = selected.length + serverSelectedCount;
   return (
     <Modal title="Add corpus documents" onClose={onClose}>
       <form className="modal-form" onSubmit={submit}>
@@ -545,14 +634,35 @@ function GraphMembershipAdd({ documents, existingIds, onAdd, onClose }) {
               </span>
             </label>
           ))}
-          {!visible.length && <p className="muted">No available corpus documents match.</p>}
+          {!visible.length && !serverRows.length && !serverLoading && (
+            <p className="muted">No available corpus documents match.</p>
+          )}
+          {serverRows.length > 0 && (
+            <p className="muted membership-server-divider">
+              On the server — selecting saves a local copy first
+            </p>
+          )}
+          {serverRows.map((row) => (
+            <label key={row.id}>
+              <input
+                type="checkbox"
+                checked={Boolean(selectedServer[row.id])}
+                onChange={() => toggleServer(row)}
+              />
+              <span>
+                <strong>{documentLabel(row.document)}</strong>
+                <code>{row.id}</code>
+              </span>
+            </label>
+          ))}
+          {serverLoading && <p className="muted">Searching the server…</p>}
         </div>
         <div className="form-actions">
           <button type="button" className="button" onClick={onClose}>
             Cancel
           </button>
-          <button className="button primary" disabled={!selected.length}>
-            Add {selected.length || ""} document{selected.length === 1 ? "" : "s"}
+          <button className="button primary" disabled={!totalCount || savingServer}>
+            Add {totalCount || ""} document{totalCount === 1 ? "" : "s"}
           </button>
         </div>
       </form>
@@ -683,6 +793,8 @@ export default function GraphPage() {
     deleteGraph,
     clearGraph,
     execute,
+    executeBatch,
+    cpClient,
     queueStatus,
     startQueue,
     stopQueue,
@@ -2290,6 +2402,11 @@ export default function GraphPage() {
           existingIds={activeGraph?.documentIds || []}
           onAdd={addExistingDocuments}
           onClose={() => setShowMembershipAdd(false)}
+          cpClient={cpClient}
+          serverUrl={settings?.serverUrl || ""}
+          serverToken={settings?.serverToken || ""}
+          executeBatch={executeBatch}
+          setNotice={setNotice}
         />
       )}
       {targetDocument && (

@@ -42,6 +42,11 @@ function actorDraft(actor) {
 }
 
 function actorKind(actor) {
+  if (actor?.runtime === "pro-actor-fleet") {
+    // The pro-actor fleet is retired: these run locally via the
+    // control-plane python checkout, not on a remote fleet.
+    return "local · python";
+  }
   if (actor?.serverManaged) {
     return `${actor.resourceKind} · ${actor.alive ? "alive" : actor.status}`;
   }
@@ -92,6 +97,7 @@ export default function ActorManager() {
     () => actors.filter((actor) => actor?.runtime === "pro-actor-fleet"),
     [actors]
   );
+  const [targetInput, setTargetInput] = useState("");
   const [serverActors, setServerActors] = useState([]);
   const [serverActorState, setServerActorState] = useState({ state: "idle", message: "" });
   const [registryRefresh, setRegistryRefresh] = useState(0);
@@ -110,13 +116,21 @@ export default function ActorManager() {
   const builtin = Boolean(selectedActor && isBuiltinActor(selectedActor));
   const serverManaged = Boolean(selectedActor?.serverManaged);
   const editable = !builtin && !serverManaged;
-  const blocked = Boolean(selectedActor && actorExecutionBlocked(selectedActor, currentSettings));
+  const localFleet = Boolean(selectedActor?.runtime === "pro-actor-fleet");
+  // The pro-actor fleet is retired: registry actors run LOCALLY through the
+  // control-plane python checkout, so the browser-actor gates (e2e
+  // verification, custom-actor toggle, selection requirement) do not apply.
+  const blocked = Boolean(
+    selectedActor && !localFleet && actorExecutionBlocked(selectedActor, currentSettings)
+  );
   const canRunSelected = Boolean(
     selectedActor &&
-    !serverManaged &&
     !blocked &&
-    selectedIds.length &&
-    (builtin || currentSettings.actorsEnabled)
+    (localFleet
+      ? Boolean(targetInput.trim())
+      : !serverManaged &&
+        selectedIds.length &&
+        (builtin || currentSettings.actorsEnabled))
   );
   const filteredActors = allActors.filter((actor) => {
     const needle = query.trim().toLowerCase();
@@ -263,11 +277,24 @@ export default function ActorManager() {
   }
 
   async function runSelectedActor() {
-    if (!selectedActor || serverManaged) return;
+    if (!selectedActor) return;
+    // serverManaged registry entries are manifest-readonly but fleet actors
+    // still run locally (control-plane python checkout).
+    if (serverManaged && !localFleet) return;
     try {
       setStatus({ kind: "running", message: `Running ${selectedActor.label}…` });
-      const result = await runActor(selectedActor, selectedIds);
-      setStatus({ kind: "success", message: result.message || "Actor completed." });
+      const result = await runActor(
+        selectedActor,
+        selectedIds,
+        localFleet ? { target: targetInput } : undefined
+      );
+      setStatus({
+        kind: "success",
+        message:
+          typeof result?.message === "string" && result.message
+            ? result.message
+            : "Actor completed."
+      });
     } catch (error) {
       setStatus({ kind: "error", message: error.message });
     }
@@ -393,21 +420,36 @@ export default function ActorManager() {
               <span>{selectedActor?.actorId || selectedActor?.id || "Unsaved"}</span>
             </div>
             <div className="button-row">
+              {localFleet && (
+                <input
+                  className="actor-target-input"
+                  type="text"
+                  value={targetInput}
+                  onChange={(event) => setTargetInput(event.target.value)}
+                  placeholder="Target (name, domain, id…)"
+                  aria-label="Actor target"
+                  title="What this local actor should run against (e.g. a person name, domain, or id)"
+                />
+              )}
               {selectedActor && (
                 <button
                   className="button small"
                   type="button"
                   disabled={!canRunSelected}
                   title={
-                    serverManaged
-                      ? "Registry entries are selectable for inspection; execution remains server-owned"
-                      : !selectedIds.length
-                        ? "Select one or more graph documents"
-                        : !builtin && !currentSettings.actorsEnabled
-                          ? "Enable custom actor execution in Runtime"
-                          : builtin
-                            ? "Run trusted built-in actor against the current graph selection"
-                            : "Run custom actor in a disposable opaque-origin sandbox"
+                    localFleet
+                      ? targetInput.trim()
+                        ? "Run this actor locally on this machine via the control-plane python checkout"
+                        : "Enter a target (name, domain, id…) to run this local actor"
+                      : serverManaged
+                        ? "Registry entries are selectable for inspection; execution remains server-owned"
+                        : !selectedIds.length
+                          ? "Select one or more graph documents"
+                          : !builtin && !currentSettings.actorsEnabled
+                            ? "Enable custom actor execution in Runtime"
+                            : builtin
+                              ? "Run trusted built-in actor against the current graph selection"
+                              : "Run custom actor in a disposable opaque-origin sandbox"
                   }
                   onClick={runSelectedActor}
                 >
@@ -444,9 +486,20 @@ export default function ActorManager() {
           )}
           {serverManaged && (
             <div className="actor-studio-banner">
-              Registry-managed {selectedActor.resourceKind}: {selectedActor.status} ·{" "}
-              {selectedActor.ready ? "ready" : "not ready"} · {selectedActor.sourcePackage}.
-              Registry entries are read-only in Quasar.
+              {localFleet ? (
+                <>
+                  Local registry actor ({selectedActor.actorId}):{" "}
+                  {selectedActor.description || "runs on this machine"}. Runs via the
+                  control-plane python checkout (starintel-pro-actors) — not in the browser. Give
+                  it a target above and press Run. The manifest is read-only.
+                </>
+              ) : (
+                <>
+                  Registry-managed {selectedActor.resourceKind}: {selectedActor.status} ·{" "}
+                  {selectedActor.ready ? "ready" : "not ready"} · {selectedActor.sourcePackage}.
+                  Registry entries are read-only in Quasar.
+                </>
+              )}
             </div>
           )}
 

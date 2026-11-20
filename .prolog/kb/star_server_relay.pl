@@ -31,7 +31,12 @@ relay_neighbors_contract('starintel.api {op: neighbors, id}',
 relay_endpoint_shapes('gserver wraps /api/v1/capabilities and /api/v1/stats payloads in {status, data}; couchdb /search and views are envelope-free (total_rows top-level)').
 relay_relation_endpoints('relation docs store subject/object as nested {id, dtype} objects on live star-server; %endpoint-id accepts bare ids too').
 relay_param_rules('empty-string params are dropped; limit clamped (search 100, view 200, neighbors default 25); view names from a closed table; path segments quri:url-encode'd').
-relay_ui_wiring('Documents source=live URL param toggles Local/Live; viewer modal fetches neighbors; Settings > StarIntel server renders the capabilities endpoint list after a successful probe; StatsPage shows server totals').
+relay_ui_wiring('Documents: ONE merged table — workspace page first, server-only matches under an "On the server" divider (deduped against the corpus + saved set), first server page follows the query automatically, "Load more from server" pages the bookmark; row titles are clickable (local -> /documents/:id, server -> viewer); row actions: local = add-to-graph + delete, server = save-to-workspace + save-and-add-to-graph; the viewer header carries the same save/add buttons; Graph "Add corpus documents" picker lists server matches under a divider and saves local copies on submit').
+relay_save_contract('save server doc = toCanonicalDocument(raw, {allowLegacy090, preserveUnmapped}) -> executeBatch([canonical], {replace: true}); the corpus event refresh swaps the live-only row for the local one').
+relay_migration_lessons('migrateLegacy090Document preservesUnmapped stashes unknown data/envelope fields in extensions.quasarLegacy090 (default stays strict); legacy source objects {source_id, kind, name, accessed_at} convert to StarReference {schema, id} with metadata bagged; external_ids arrays pass through for array-native targets (payloadExternalIds) and become scheme-keyed objects for object-native targets (Document.externalIds); person external_ids still requires the identifier bundle').
+relay_dataset_picker('Documents dataset filter is a type-ahead combobox (DatasetCombobox) with free-text create: the local bootstrap catalog does not know every server dataset, so typed names commit as filters even when "No matching datasets"').
+relay_badge_semantics('server badge: yellow only while probing, green when reachable, red on failure; the store auto-probes the configured endpoint once per url|token on boot so the badge is truthful without opening Settings').
+relay_filter_limitation('dtype/dataset URL filters apply to the WORKSPACE search only — the server FTS has no dtype/dataset params (server-side follow-up); server matches in the merged view ignore them').
 
 %% --- Forgejo actor registry --------------------------------------------
 forgejo_registry_repo('starintel-labs/starintel-pro-actors').
@@ -39,6 +44,7 @@ forgejo_registry_branch('registry/actors').
 forgejo_registry_file('registry/actors.jsonl').
 forgejo_registry_emitter('scripts/emit_actor_registry.py regenerates from manifest_core.ACTOR_MANIFESTS; rerun whenever actor manifests change').
 forgejo_registry_refresh_rule(commit_a_fresh_jsonl_after_manifest_changes).
+fleet_actor_execution('OPERATOR DECISION 2026-11-19: the pro-actor fleet is retired. Registry actors (runtime=pro-actor-fleet, id pro-actor:<actor_id>) run LOCALLY: store runActor routes them to control-plane pythonActorsRun {actor: actor.id, target: required free-text}; the lisp side runs the actor CLI from the checkout (QUASAR_PRO_ACTORS_PATH or ~/starintel/starintel-pro-actors) and creates a target:python-actors:<actor>:<slug> document. Browser-actor gates (actorsEnabled, e2e verification, graph selection) do NOT apply to fleet actors. ActorManager shows a target input next to Run and banner "Local registry actor"; actorKind is "local - python". Verified live: run round-trips and surfaces typed errors (python-actors.not-configured | .failed); fec fails on missing FEC_API_KEY, which is actor-side.').
 
 %% --- Wiring gotchas (each one cost a live debugging round) --------------
 wiring_gotcha(ws_allowlist,
@@ -48,7 +54,7 @@ wiring_gotcha(ws_origin_allowlist,
 wiring_gotcha(export_init_symbols,
     'init files run in quasar.config; referencing unexported package symbols (e.g. quasar.plugin:+development-origins+) is a read-time error - symbols must be exported').
 wiring_gotcha(actor_manifest_source,
-    'normalizeActorManifest requires non-empty source for browser actors; server-managed entries use runtime pro-actor-fleet and are exempt, and runActor blocks them from browser execution').
+    'normalizeActorManifest requires non-empty source for browser actors. OPERATOR CORRECTION 2026-11-19: the starintel-pro-actors fleet is RETIRED; the old runtime=pro-actor-fleet "server-managed, not runnable in browser" classification is now a BUG - any actor quasar sees must be runnable either as a local actor or a browser actor. Registry manifests marked runtime=pro-actor-fleet currently get blocked from execution; trace and fix the gating (actors-core.js actorExecutionBlocked / E2E_VERIFIED_ACTOR_IDS, normalizeActorManifest runtime classification, store runActor gate)').
 
 %% --- Purge & count invariant -------------------------------------------
 purge_command('workspace.purge-documents',

@@ -751,6 +751,20 @@ export function QuasarProvider({ children }) {
     [settings]
   );
 
+  // Keep the server badge truthful: probe the configured endpoint once on
+  // boot so it reads green when the server is reachable (yellow only while
+  // the probe is in flight, red when it fails) without a manual settings
+  // visit.
+  const lastAutoProbe = useRef(null);
+  useEffect(() => {
+    const key = `${settings?.serverUrl || ""}|${settings?.serverToken || ""}`;
+    if (loading || !settings?.serverUrl) return;
+    if (lastAutoProbe.current === key) return;
+    lastAutoProbe.current = key;
+    void testServer(settings).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, settings?.serverUrl, settings?.serverToken]);
+
   const submitTarget = useCallback(
     async (target, configuration = settings) => {
       setServerStatus((current) => ({ ...current, state: "active", message: "Submitting target" }));
@@ -816,10 +830,22 @@ export function QuasarProvider({ children }) {
     async (actor, requestedSelection = selectedIds, runOptions = {}) => {
       if (!isBuiltinActor(actor) && !settings?.actorsEnabled)
         throw new Error("Custom browser actors are disabled in settings");
-      if (actor.runtime === "pro-actor-fleet")
-        throw new Error(
-          "This actor runs on the starintel-pro-actors fleet, not in the browser."
-        );
+      if (actor.runtime === "pro-actor-fleet") {
+        // The starintel-pro-actors fleet is retired: registry actors run
+        // LOCALLY through the control-plane python actor checkout
+        // (python-actors.run), never in the browser.
+        const target = runOptions?.target;
+        if (!target || typeof target !== "string" || !target.trim()) {
+          throw new Error("Enter a target (name, domain, id…) for this local actor.");
+        }
+        const controlPlane = getControlPlaneOrThrow();
+        const result = await controlPlane.pythonActorsRun({
+          actor: actor.id,
+          target: target.trim(),
+          ...(runOptions?.options ? { options: runOptions.options } : {})
+        });
+        return result;
+      }
       if (actorExecutionBlocked(actor, settings))
         throw new Error(
           "This built-in actor is not verified end-to-end and is disabled. " +

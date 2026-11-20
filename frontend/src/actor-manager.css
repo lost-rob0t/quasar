@@ -384,3 +384,18 @@
     border-bottom: 1px solid var(--line);
   }
 }
+
+.actor-target-input {
+  flex: 1 1 220px;
+  min-width: 180px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface, transparent);
+  color: inherit;
+  font-size: 13px;
+}
+.actor-target-input:focus {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: -1px;
+}

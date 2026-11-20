@@ -114,6 +114,13 @@ export interface ControlPlaneClient {
     op: string,
     payload?: Record<string, unknown>
   ): Promise<T>;
+  pythonActorsStatus(): Promise<Record<string, unknown>>;
+  pythonActorsRun(payload: {
+    actor: string;
+    target: string;
+    options?: Record<string, unknown>;
+    timeoutSeconds?: number;
+  }): Promise<Record<string, unknown>>;
   starintelSearch(payload: StarintelSearchRequest): Promise<StarintelSearchResponse>;
   starintelStats(payload?: StarintelServerConfig): Promise<StarintelStats>;
   starintelActors(payload?: StarintelServerConfig): Promise<StarintelActors>;
@@ -694,6 +701,13 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
       send<Record<string, unknown>[]>("starintel.registry", payload),
     starintelApi: <T = Record<string, unknown>>(op: string, payload: Record<string, unknown> = {}) =>
       send<T>("starintel.api", { op, ...payload }),
+    pythonActorsStatus: () => send<Record<string, unknown>>("python-actors.status", {}),
+    pythonActorsRun: (payload: {
+      actor: string;
+      target: string;
+      options?: Record<string, unknown>;
+      timeoutSeconds?: number;
+    }) => send<Record<string, unknown>>("python-actors.run", payload),
     starintelSearch: (payload: StarintelSearchRequest) =>
       send<StarintelSearchResponse>("starintel.api", { op: "search", ...payload }),
     starintelStats: (payload: StarintelServerConfig = { url: "" }) =>

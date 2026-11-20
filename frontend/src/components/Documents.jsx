@@ -6,7 +6,7 @@ import {
   Download,
   Edit3,
   ExternalLink,
-  Eye,
+  HardDriveDownload,
   Network,
   Plus,
   Search,
@@ -16,7 +16,7 @@ import {
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { dtypes } from "starintel_doc";
 import { documentLabel } from "starintel_doc/legacy";
-import { toLegacyUiDocument } from "../lib/canonical-document";
+import { toLegacyUiDocument, toCanonicalDocument } from "../lib/canonical-document";
 import { connectedDocumentIds } from "../lib/document-delete";
 import { documentsToJsonl, documentsToHistoricalJsonl, downloadText } from "../lib/importer";
 import { operation } from "../lib/operations";
@@ -26,6 +26,7 @@ import {
   searchQueryKey
 } from "../lib/route-query-cache";
 import DatasetsPage from "./DatasetsPage";
+import DatasetCombobox from "./DatasetCombobox";
 import { presentDocument, useDocumentLookup } from "../lib/document-lookup";
 import { useQuasar } from "../store";
 
@@ -105,7 +106,7 @@ function catalogDatasetNames(datasets) {
 // canonical validator rejects — the workspace pipeline converts tek9 rows
 // server-side, the relay does not. Convert when the document validates and
 // fall back to a searchable projection built from the raw record.
-function liveRowDocument(row) {
+export function liveRowDocument(row) {
   const doc = row?.doc;
   if (doc) {
     try {
@@ -131,8 +132,16 @@ function liveRowDocument(row) {
 }
 
 export function DocumentsPage() {
-  const { documents, execute, setNotice, createGraph, addDocumentsToActiveGraph, cpClient, settings } =
-    useQuasar();
+  const {
+    documents,
+    execute,
+    executeBatch,
+    setNotice,
+    createGraph,
+    addDocumentsToActiveGraph,
+    cpClient,
+    settings
+  } = useQuasar();
   const location = useLocation();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -140,7 +149,6 @@ export function DocumentsPage() {
   const dtype = params.get("dtype") || "";
   const dataset = params.get("dataset") || "";
   const group = params.get("group") || "";
-  const source = params.get("source") === "live" ? "live" : "workspace";
   const serverUrl = settings?.serverUrl || "";
   const serverToken = settings?.serverToken || "";
   const requestedPage = parsePage(params.get("page"));
@@ -182,14 +190,16 @@ export function DocumentsPage() {
     setPageState(null);
   }, [corpusVersion]);
 
-  // Live-ingest chain (forgejo #142): bookmark-chained star-server pages,
-  // one bounded request per page, never an automatic drain. The chain lives
-  // in a ref so deep links can walk page N with N-1 chained requests; the
-  // snapshot below triggers renders.
+  // Server results (forgejo #142) share the table with the workspace rows:
+  // one merged list, local first, server-only matches appended with a chip.
+  // The first server page follows the query automatically; further pages are
+  // explicit (one bounded bookmark request per click, never a drain).
   const liveChain = useRef({ key: null, pages: {}, bookmarks: {}, total: null, complete: false });
   const [liveSnapshot, setLiveSnapshot] = useState(null);
   const [liveError, setLiveError] = useState(null);
   const [liveView, setLiveView] = useState(null);
+  const [savedIds, setSavedIds] = useState(() => new Set());
+  const [savingIds, setSavingIds] = useState(() => new Set());
   const liveRequestToken = useRef(0);
 
   const resetLiveChain = () => {
@@ -198,7 +208,6 @@ export function DocumentsPage() {
   };
 
   useEffect(() => {
-    if (source === "live") return;
     let active = true;
     const token = ++requestToken.current;
     (async () => {
@@ -255,56 +264,41 @@ export function DocumentsPage() {
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cpClient, searchKey, requestedPage, corpusVersion, source]);
+  }, [cpClient, searchKey, requestedPage, corpusVersion]);
 
-  // Live-ingest search (forgejo #142): the star-server FTS answers one
-  // bounded page per request; deep links walk the bookmark chain page by
-  // page and stop at the route target. A live search needs a query string
-  // (the server FTS has no empty-scan) and a configured server URL.
+  // Server matches for the current query. One bounded page follows the query
+  // automatically; each further page is an explicit user click.
   useEffect(() => {
-    if (source !== "live") return;
     if (!cpClient?.starintelSearch) return;
-    if (!serverUrl) {
-      setLiveError("Configure a StarIntel server in Settings first.");
-      return;
-    }
-    if (!query) {
-      setLiveError("Enter a query to search the live ingest.");
-      setLiveSnapshot(null);
+    if (!serverUrl || !query) {
+      setLiveError(null);
+      if (!query) resetLiveChain();
       return;
     }
     let active = true;
     const token = ++liveRequestToken.current;
     (async () => {
-      setLoading(true);
       setLiveError(null);
       try {
         const chain = liveChain.current;
         if (chain.key !== searchKey) resetLiveChain();
         const highest = Math.max(0, ...Object.keys(chain.pages).map(Number));
-        const total = chain.total;
-        const cap = total ? Math.ceil(total / pageSize) : Infinity;
-        const target = Math.min(requestedPage, cap);
-        for (let pageNumber = highest + 1; pageNumber <= target; pageNumber += 1) {
-          if (!active || token !== liveRequestToken.current) return;
-          const bookmark = chain.bookmarks[pageNumber - 1];
-          if (pageNumber > 1 && !bookmark) break; // scope exhausted earlier
+        if (highest === 0) {
           const response = await cpClient.starintelSearch({
             url: serverUrl,
             token: serverToken || undefined,
             q: query,
-            limit: pageSize,
-            ...(bookmark ? { bookmark } : {})
+            limit: Math.min(pageSize, 25)
           });
           const rows = (response?.rows || []).map((row) => ({
             id: row?.id,
             document: liveRowDocument(row),
             raw: row?.doc || null
           }));
-          chain.pages[pageNumber] = rows;
+          chain.pages[1] = rows;
           chain.total =
             typeof response?.total_rows === "number" ? response.total_rows : chain.total;
-          chain.bookmarks[pageNumber] = response?.bookmark && rows.length ? response.bookmark : null;
+          chain.bookmarks[1] = response?.bookmark && rows.length ? response.bookmark : null;
         }
         const fetched = Math.max(0, ...Object.keys(chain.pages).map(Number));
         chain.complete = fetched > 0 && !chain.bookmarks[fetched];
@@ -316,17 +310,114 @@ export function DocumentsPage() {
         });
       } catch (cause) {
         if (active && token === liveRequestToken.current) {
-          setLiveError(cause?.message || "Live ingest search failed.");
+          setLiveError(cause?.message || "Server search failed.");
         }
-      } finally {
-        if (active && token === liveRequestToken.current) setLoading(false);
       }
     })();
     return () => {
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cpClient, source, searchKey, requestedPage, pageSize, query, serverUrl, serverToken]);
+  }, [cpClient, searchKey, query, pageSize, serverUrl, serverToken, corpusVersion]);
+
+  async function loadMoreServerResults() {
+    if (!cpClient?.starintelSearch || !serverUrl || !query) return;
+    const chain = liveChain.current;
+    if (chain.key !== searchKey) return;
+    const highest = Math.max(0, ...Object.keys(chain.pages).map(Number));
+    const bookmark = chain.bookmarks[highest];
+    if (!bookmark) return;
+    const token = ++liveRequestToken.current;
+    setLoading(true);
+    setLiveError(null);
+    try {
+      const next = highest + 1;
+      const response = await cpClient.starintelSearch({
+        url: serverUrl,
+        token: serverToken || undefined,
+        q: query,
+        limit: Math.min(pageSize, 25),
+        ...(bookmark ? { bookmark } : {})
+      });
+      const rows = (response?.rows || []).map((row) => ({
+        id: row?.id,
+        document: liveRowDocument(row),
+        raw: row?.doc || null
+      }));
+      chain.pages[next] = rows;
+      chain.total = typeof response?.total_rows === "number" ? response.total_rows : chain.total;
+      chain.bookmarks[next] = response?.bookmark && rows.length ? response.bookmark : null;
+      const fetched = Math.max(0, ...Object.keys(chain.pages).map(Number));
+      chain.complete = fetched > 0 && !chain.bookmarks[fetched];
+      setLiveSnapshot({
+        pages: { ...chain.pages },
+        total: chain.total,
+        complete: chain.complete
+      });
+    } catch (cause) {
+      if (token === liveRequestToken.current) {
+        setLiveError(cause?.message || "Server search failed.");
+      }
+    } finally {
+      if (token === liveRequestToken.current) setLoading(false);
+    }
+  }
+
+  // Mirror a server record into the workspace: migrate the historical 0.9.x
+  // record to the canonical wire, then commit it like any import. The corpus
+  // event refresh swaps the live-only row for the local one.
+  async function saveLiveDocument(row) {
+    if (!row?.raw) {
+      setNotice({ kind: "error", message: "This server record has no embedded document to save." });
+      return;
+    }
+    setSavingIds((current) => new Set(current).add(row.id));
+    try {
+      const canonical = toCanonicalDocument(row.raw, {
+        allowLegacy090: true,
+        preserveUnmapped: true
+      });
+      await executeBatch([canonical], "Save server document", { replace: true });
+      setSavedIds((current) => new Set(current).add(row.id));
+      setNotice({ kind: "success", message: `Saved ${row.id} to the workspace.` });
+    } catch (cause) {
+      setNotice({
+        kind: "error",
+        message: cause?.message || `Could not save ${row.id} locally.`
+      });
+    } finally {
+      setSavingIds((current) => {
+        const next = new Set(current);
+        next.delete(row.id);
+        return next;
+      });
+    }
+  }
+
+  async function addLiveDocumentToGraph(row) {
+    try {
+      if (row?.raw && !savedIds.has(row.id)) {
+        const canonical = toCanonicalDocument(row.raw, {
+          allowLegacy090: true,
+          preserveUnmapped: true
+        });
+        await executeBatch([canonical], "Save server document", { replace: true });
+        setSavedIds((current) => new Set(current).add(row.id));
+      }
+      createGraph(`Search: ${query || "server documents"}`);
+      addDocumentsToActiveGraph([row.id]);
+      navigate("/graph?review=all", {
+        state: { importedIds: [row.id], revealUnreviewed: true, source: "documents-page" }
+      });
+    } catch (cause) {
+      setNotice({ kind: "error", message: cause?.message || "Could not add to graph." });
+    }
+  }
+
+  function openLiveDocument(row) {
+    if (!row) return;
+    setLiveView({ id: row.id, document: row.raw });
+  }
 
   useEffect(() => {
     if (!cpClient?.workspaceBootstrap) return;
@@ -351,34 +442,39 @@ export function DocumentsPage() {
       : datasetNames;
   }, [datasetNames, dataset]);
 
-  // `complete` reports scope exhaustion, never page fullness; totals count
-  // cached rows only, so an incomplete scope renders as "N+".
+  // Merged view: the workspace page renders first; server-only matches
+  // (deduped against the whole local corpus and just-saved rows) append
+  // below with a divider. `complete` reports scope exhaustion, never page
+  // fullness; totals count cached rows only, so an incomplete scope renders
+  // as "N+".
+  const totals = documentsRouteCache.totals(searchQuery);
+  const contiguousPages = totals.pages;
+  const reachablePages = totals.complete ? contiguousPages : contiguousPages + 1;
+  const page = Math.min(requestedPage, Math.max(reachablePages, 1));
+  const pageDocuments = pageState?.documents || [];
+  const corpusIds = useMemo(
+    () => new Set(documents.map((document) => document._id)),
+    [documents]
+  );
   const livePages = liveSnapshot?.pages || {};
-  const liveRows = livePages[requestedPage] || [];
+  const liveRows = Object.keys(livePages)
+    .map(Number)
+    .sort((left, right) => left - right)
+    .flatMap((pageNumber) => livePages[pageNumber] || []);
+  const liveOnlyRows = liveRows.filter(
+    (row) => row.id && !corpusIds.has(row.id) && !savedIds.has(row.id)
+  );
   const liveHighest = Math.max(0, ...Object.keys(livePages).map(Number));
   const liveTotal = typeof liveSnapshot?.total === "number" ? liveSnapshot.total : null;
-  const totals = documentsRouteCache.totals(searchQuery);
-  const contiguousPages = source === "live" ? liveHighest : totals.pages;
-  const liveReachable = liveSnapshot?.complete ? liveHighest : liveHighest + 1;
-  const reachablePages = source === "live" ? liveReachable : totals.complete ? contiguousPages : contiguousPages + 1;
-  const page = Math.min(requestedPage, Math.max(reachablePages, 1));
-  const pageDocuments =
-    source === "live" ? liveRows.map((row) => row.document) : pageState?.documents || [];
   const pageStart = pageDocuments.length ? (page - 1) * pageSize + 1 : 0;
   const pageEnd = pageDocuments.length ? pageStart + pageDocuments.length - 1 : 0;
   const pages = useMemo(
     () => paginationRange(page, Math.max(reachablePages, 1)),
     [page, reachablePages]
   );
-  const resultCount =
-    source === "live"
-      ? liveTotal === null
-        ? "…"
-        : liveTotal.toLocaleString()
-      : totals.complete
-        ? totals.known.toLocaleString()
-        : `${totals.known.toLocaleString()}+`;
-  const activeError = source === "live" ? liveError : error;
+  const resultCount = totals.complete
+    ? totals.known.toLocaleString()
+    : `${totals.known.toLocaleString()}+`;
 
   const set = (key, value, { resetPage = true, replace = false } = {}) => {
     const next = new URLSearchParams(params);
@@ -454,6 +550,19 @@ export function DocumentsPage() {
     }
   }
 
+  function addLocalDocumentToGraph(document) {
+    try {
+      const scope = query || dataset || dtype || "documents";
+      createGraph(`Search: ${scope}`);
+      addDocumentsToActiveGraph([document._id]);
+      navigate("/graph?review=all", {
+        state: { importedIds: [document._id], revealUnreviewed: true, source: "documents-page" }
+      });
+    } catch (error) {
+      setNotice({ kind: "error", message: error.message });
+    }
+  }
+
   function openLiveDocument(row) {
     if (!row) return;
     setLiveView({ id: row.id, document: row.raw });
@@ -470,27 +579,21 @@ export function DocumentsPage() {
           <span className="eyebrow">Corpus</span>
           <h1>Documents</h1>
           <p>
-            {source === "live"
-              ? "Search the live StarIntel ingest on the server."
-              : "Search and inspect the local StarIntel corpus."}
+            One searchable view of the workspace corpus and the live server ingest.
           </p>
         </div>
         <div className="button-row">
           <button
             className="button"
             onClick={importPageToGraph}
-            disabled={source === "live" || !pageDocuments.length}
-            title={
-              source === "live"
-                ? "Live results live on the server; switch to Workspace to graph local documents"
-                : "Create a graph from the documents on this page (bounded read; full search imports arrive with bounded mutations)"
-            }
+            disabled={!pageDocuments.length}
+            title="Create a graph from the documents on this page (bounded read; full search imports arrive with bounded mutations)"
           >
             <Network size={16} /> Add page to graph
           </button>
           <button
             className="button"
-            disabled={source === "live" || !pageDocuments.length}
+            disabled={!pageDocuments.length}
             onClick={() => {
               try {
                 downloadText("starintel-documents.jsonl", documentsToJsonl(pageDocuments));
@@ -508,7 +611,7 @@ export function DocumentsPage() {
           <button
             type="button"
             className="button"
-            disabled={source === "live" || !pageDocuments.length}
+            disabled={!pageDocuments.length}
             onClick={() =>
               downloadText(
                 "starintel-historical-archive.jsonl",
@@ -549,57 +652,21 @@ export function DocumentsPage() {
             )}
           </div>
           <div className="document-result-summary" aria-live="polite">
-            <strong>
-              {loading && (source === "live" ? !liveSnapshot : !pageState) ? "…" : resultCount}
-            </strong>
-            <span>
-              {source === "live"
-                ? liveTotal === 1
-                  ? "result"
-                  : "results"
-                : totals.complete && totals.known === 1
-                  ? "result"
-                  : "results"}
-            </span>
-            {source === "live"
-              ? liveSnapshot && !liveSnapshot.complete && (
-                  <span className="result-hint">more pages available</span>
-                )
-              : !totals.complete && pageState && (
-                  <span className="result-hint">more pages available</span>
-                )}
-          </div>
-          <div className="document-source-toggle" role="tablist" aria-label="Search source">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={source === "workspace"}
-              className={source === "workspace" ? "active" : ""}
-              onClick={() => set("source", null, { replace: true })}
-            >
-              Workspace
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={source === "live"}
-              className={source === "live" ? "active" : ""}
-              onClick={() => set("source", "live", { replace: true })}
-              title="Search the live ingest on the StarIntel server"
-            >
-              Live ingest
-            </button>
+            <strong>{loading && !pageState ? "…" : resultCount}</strong>
+            <span>in workspace</span>
+            {serverUrl && query && (
+              <>
+                <span className="summary-divider" aria-hidden="true">·</span>
+                <strong>
+                  {liveTotal === null ? "…" : liveTotal.toLocaleString()}
+                </strong>
+                <span>on server</span>
+              </>
+            )}
           </div>
         </div>
 
         <div className="document-filter-row">
-          {source === "live" ? (
-            <span className="muted document-live-hint">
-              Live search matches names, titles, and other indexed fields on the server. Type and
-              dataset filters apply to the workspace only.
-            </span>
-          ) : (
-            <>
           <label className="document-filter-control">
             <span>Type</span>
             <select value={dtype} onChange={(event) => set("dtype", event.target.value)}>
@@ -611,19 +678,12 @@ export function DocumentsPage() {
               ))}
             </select>
           </label>
-          <label className="document-filter-control document-filter-dataset">
-            <span>Dataset</span>
-            <select value={dataset} onChange={(event) => set("dataset", event.target.value)}>
-              <option value="">All datasets</option>
-              {datasetOptions.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </label>
-            </>
-          )}
+          <DatasetCombobox
+            value={dataset}
+            options={datasetOptions}
+            onChange={(next) => set("dataset", next)}
+            placeholder="All datasets"
+          />
           {hasSearchScope && (
             <button
               className="button small document-clear-filters"
@@ -633,18 +693,22 @@ export function DocumentsPage() {
               <X size={14} /> Clear filters
             </button>
           )}
+          {serverUrl && query && (
+            <span className="muted document-live-hint">
+              Server matches below the workspace rows. Type and dataset filters apply to the
+              workspace.
+            </span>
+          )}
         </div>
       </div>
 
       <div className="document-list-meta">
         <span>
           {pageDocuments.length
-            ? source === "live"
-              ? `Showing ${pageStart.toLocaleString()}–${pageEnd.toLocaleString()} of ${liveTotal === null ? "?" : liveTotal.toLocaleString()}`
-              : totals.complete
-                ? `Showing ${pageStart.toLocaleString()}–${pageEnd.toLocaleString()} of ${totals.known.toLocaleString()}`
-                : `Showing ${pageStart.toLocaleString()}–${pageEnd.toLocaleString()} of ${totals.known.toLocaleString()}+`
-            : "Showing 0 documents"}
+            ? totals.complete
+              ? `Workspace ${pageStart.toLocaleString()}–${pageEnd.toLocaleString()} of ${totals.known.toLocaleString()}`
+              : `Workspace ${pageStart.toLocaleString()}–${pageEnd.toLocaleString()} of ${totals.known.toLocaleString()}+`
+            : "Showing 0 workspace documents"}
         </span>
         <label className="document-page-size">
           <span>Rows</span>
@@ -674,17 +738,13 @@ export function DocumentsPage() {
             {pageDocuments.map((document) => (
               <tr key={document._id}>
                 <td>
-                  {source === "live" ? (
-                    <span className="document-link">{documentLabel(document)}</span>
-                  ) : (
-                    <Link
-                      className="document-link"
-                      to={`/documents/${encodeURIComponent(document._id)}`}
-                      state={{ documentList: `${location.pathname}${location.search}` }}
-                    >
-                      {documentLabel(document)}
-                    </Link>
-                  )}
+                  <Link
+                    className="document-link"
+                    to={`/documents/${encodeURIComponent(document._id)}`}
+                    state={{ documentList: `${location.pathname}${location.search}` }}
+                  >
+                    {documentLabel(document)}
+                  </Link>
                   <code>{document._id}</code>
                   {document.summary && <small>{document.summary}</small>}
                 </td>
@@ -700,19 +760,16 @@ export function DocumentsPage() {
                   sources
                 </td>
                 <td>
-                  {source === "live" ? (
+                  <div className="row-actions">
                     <button
                       className="icon-button"
                       type="button"
-                      aria-label={`View ${documentLabel(document)} on the server`}
-                      title="View live document and its neighbors"
-                      onClick={() =>
-                        openLiveDocument(liveRows.find((row) => row.id === document._id))
-                      }
+                      aria-label={`Add ${documentLabel(document)} to graph`}
+                      title="Add to graph"
+                      onClick={() => addLocalDocumentToGraph(document)}
                     >
-                      <Eye size={15} />
+                      <Network size={15} />
                     </button>
-                  ) : (
                     <button
                       className="icon-button danger"
                       type="button"
@@ -722,30 +779,114 @@ export function DocumentsPage() {
                     >
                       <Trash2 size={15} />
                     </button>
-                  )}
+                  </div>
                 </td>
               </tr>
             ))}
+            {liveOnlyRows.length > 0 && (
+              <tr className="server-divider-row">
+                <td colSpan={6}>
+                  <span className="server-divider-label">
+                    On the server — not in your workspace yet
+                  </span>
+                  {liveTotal !== null && (
+                    <span className="muted">{liveTotal.toLocaleString()} matches</span>
+                  )}
+                </td>
+              </tr>
+            )}
+            {liveOnlyRows.map((row) => {
+              const saving = savingIds.has(row.id);
+              return (
+                <tr key={row.id} className="server-row">
+                  <td>
+                    <button
+                      type="button"
+                      className="document-link link-button"
+                      onClick={() => openLiveDocument(row)}
+                      title="Open this server record"
+                    >
+                      {documentLabel(row.document)}
+                    </button>
+                    <code>{row.id}</code>
+                    {row.document.summary && <small>{row.document.summary}</small>}
+                  </td>
+                  <td>
+                    <span className={`dtype dtype-${row.document.dtype}`}>
+                      {row.document.dtype}
+                    </span>
+                  </td>
+                  <td>{row.document.dataset}</td>
+                  <td>
+                    {row.document.date_updated
+                      ? new Date(row.document.date_updated).toLocaleString()
+                      : "—"}
+                  </td>
+                  <td>
+                    {row.document.evidence?.length || 0} evidence ·{" "}
+                    {row.document.sources?.length || 0} sources
+                  </td>
+                  <td>
+                    <div className="row-actions">
+                      <button
+                        className="icon-button"
+                        type="button"
+                        disabled={saving}
+                        aria-label={`Save ${documentLabel(row.document)} to workspace`}
+                        title="Save to workspace"
+                        onClick={() => saveLiveDocument(row)}
+                      >
+                        <HardDriveDownload size={15} />
+                      </button>
+                      <button
+                        className="icon-button"
+                        type="button"
+                        disabled={saving}
+                        aria-label={`Add ${documentLabel(row.document)} to graph`}
+                        title="Save and add to graph"
+                        onClick={() => addLiveDocumentToGraph(row)}
+                      >
+                        <Network size={15} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {liveOnlyRows.length > 0 && !liveSnapshot?.complete && (
+              <tr className="server-more-row">
+                <td colSpan={6}>
+                  <button
+                    className="button small"
+                    type="button"
+                    disabled={loading}
+                    onClick={loadMoreServerResults}
+                  >
+                    Load more from server
+                  </button>
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
-        {!pageDocuments.length && (
+        {!pageDocuments.length && !liveOnlyRows.length && (
           <div className="empty-state compact">
-            {loading && source === "live" && !liveSnapshot
-              ? "Searching the live ingest…"
-              : loading && !pageState
-                ? "Loading documents…"
-                : source === "live"
-                  ? "No live results for this query."
-                  : hasSearchScope
-                    ? "No documents match these filters."
-                    : totals.complete
-                      ? "No documents yet. Add a document to get started."
-                      : "No documents loaded yet."}
+            {loading && !pageState
+              ? "Loading documents…"
+              : hasSearchScope
+                ? "No documents match these filters."
+                : totals.complete
+                  ? "No documents yet. Add a document to get started."
+                  : "No documents loaded yet."}
           </div>
         )}
       </div>
 
-      {activeError && <div className="empty-state compact">{activeError}</div>}
+      {(error || liveError) && (
+        <div className="empty-state compact">
+          {[error, liveError].filter(Boolean).join(" · ")}
+        </div>
+      )}
 
       {pageDocuments.length > 0 && (
         <nav className="document-pagination" aria-label="Document result pages">
@@ -783,25 +924,16 @@ export function DocumentsPage() {
             className="pagination-button pagination-step"
             type="button"
             onClick={() => setPage(page + 1)}
-            disabled={
-              loading ||
-              (source === "live"
-                ? Boolean(liveSnapshot?.complete) && page >= liveHighest
-                : Boolean(totals.complete) && page >= contiguousPages)
-            }
+            disabled={loading || (Boolean(totals.complete) && page >= contiguousPages)}
             aria-label="Next page"
           >
             <span>Next</span>
             <ChevronRight size={16} />
           </button>
           <span className="pagination-status">
-            {source === "live"
-              ? liveTotal !== null
-                ? `Page ${page.toLocaleString()} of ${Math.max(Math.ceil(liveTotal / pageSize), 1).toLocaleString()}`
-                : `Page ${page.toLocaleString()}`
-              : totals.complete
-                ? `Page ${page.toLocaleString()} of ${Math.max(contiguousPages, 1).toLocaleString()}`
-                : `Page ${page.toLocaleString()} · more results`}
+            {totals.complete
+              ? `Workspace page ${page.toLocaleString()} of ${Math.max(contiguousPages, 1).toLocaleString()}`
+              : `Workspace page ${page.toLocaleString()} · more results`}
           </span>
         </nav>
       )}
@@ -814,13 +946,34 @@ export function DocumentsPage() {
           serverToken={serverToken}
           onClose={() => setLiveView(null)}
           onOpenNeighbor={(id) => setLiveView({ id, document: null })}
+          onSave={() => saveLiveDocument(
+            liveRows.find((row) => row.id === liveView.id) || {
+              id: liveView.id,
+              raw: liveView.document
+            }
+          )}
+          onAddToGraph={() => addLiveDocumentToGraph(
+            liveRows.find((row) => row.id === liveView.id) || {
+              id: liveView.id,
+              raw: liveView.document
+            }
+          )}
         />
       )}
     </section>
   );
 }
 
-function LiveDocumentViewer({ view, cpClient, serverUrl, serverToken, onClose, onOpenNeighbor }) {
+function LiveDocumentViewer({
+  view,
+  cpClient,
+  serverUrl,
+  serverToken,
+  onClose,
+  onOpenNeighbor,
+  onSave,
+  onAddToGraph
+}) {
   const [document, setDocument] = useState(view.document || null);
   const [relations, setRelations] = useState([]);
   const [total, setTotal] = useState(null);
@@ -894,9 +1047,21 @@ function LiveDocumentViewer({ view, cpClient, serverUrl, serverToken, onClose, o
             <h2>{document ? documentLabel(document) : view.id}</h2>
             <code>{view.id}</code>
           </div>
-          <button className="icon-button" type="button" aria-label="Close" onClick={onClose}>
-            <X size={16} />
-          </button>
+          <div className="button-row">
+            {onSave && (
+              <button className="button small" type="button" onClick={onSave}>
+                <HardDriveDownload size={14} /> Save to workspace
+              </button>
+            )}
+            {onAddToGraph && (
+              <button className="button small primary" type="button" onClick={onAddToGraph}>
+                <Network size={14} /> Add to graph
+              </button>
+            )}
+            <button className="icon-button" type="button" aria-label="Close" onClick={onClose}>
+              <X size={16} />
+            </button>
+          </div>
         </div>
         {loading && !document && <p className="muted">Loading document…</p>}
         {error && <p className="muted">{error}</p>}

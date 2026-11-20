@@ -64,8 +64,8 @@ describe("bounded documents page", () => {
     expect(html).toContain(">p1<");
     expect(html).toContain("dtype dtype-person");
     expect(html).toContain("3");
-    expect(html).toContain("1–3 of 3");
-    expect(html).toContain("Page 1 of 1");
+    expect(html).toContain("Workspace 1–3 of 3");
+    expect(html).toContain("Workspace page 1 of 1");
     // A complete scope does not advertise more pages.
     expect(html).not.toContain("more pages available");
     expect(html).not.toContain("more results");
@@ -89,7 +89,7 @@ describe("bounded documents page", () => {
   it("describes an empty, unfetched corpus without claiming a failed filter", () => {
     const html = renderPage("/documents");
     expect(html).toContain("No documents loaded yet.");
-    expect(html).toContain("Showing 0 documents");
+    expect(html).toContain("Showing 0 workspace documents");
   });
 
   it("distinguishes a filtered empty scope from an empty corpus", async () => {
@@ -98,19 +98,11 @@ describe("bounded documents page", () => {
     expect(html).toContain("No documents match these filters.");
   });
 
-  it("offers the Workspace and Live ingest source tabs", () => {
+  it("renders one merged search surface without source tabs", () => {
     const html = renderPage("/documents");
-    expect(html).toContain("Live ingest");
-    expect(html).toContain("Search and inspect the local StarIntel corpus.");
-  });
-
-  it("switches to the live-ingest surface without touching the workspace corpus", () => {
-    const html = renderPage("/documents?source=live");
-    expect(html).toContain("Search the live StarIntel ingest on the server.");
-    expect(html).toContain("Live search matches names, titles");
-    // The workspace-only filter selects are replaced by the live hint.
-    expect(html).not.toContain("All dtypes");
-    // The workspace corpus stays untouched.
-    expect(html).toContain("Showing 0 documents");
+    expect(html).not.toContain("Live ingest");
+    expect(html).toContain("One searchable view of the workspace corpus and the live server ingest.");
+    expect(html).toContain("in workspace");
+    expect(html).toContain("All datasets");
   });
 });
