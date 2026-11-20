@@ -135,6 +135,7 @@ export async function getSettings() {
     rabbitVhost: "/",
     rabbitPrefetch: 25,
     actors: [],
+    servers: [],
     theme: "midnight",
     ...stored,
     _id: undefined,

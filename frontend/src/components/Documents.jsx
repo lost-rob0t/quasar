@@ -145,7 +145,8 @@ export function DocumentsPage() {
     createGraph,
     addDocumentsToActiveGraph,
     cpClient,
-    settings
+    settings,
+    persistSettings
   } = useQuasar();
   const location = useLocation();
   const navigate = useNavigate();
@@ -787,6 +788,33 @@ export function DocumentsPage() {
             onChange={(next) => set("dataset", next)}
             placeholder="All datasets"
           />
+          {(settings?.servers || []).length > 1 && (
+            <label className="document-filter-control">
+              <span>Server</span>
+              <select
+                value={serverUrl}
+                onChange={(event) => {
+                  const entry = (settings.servers || []).find(
+                    (item) => item.url === event.target.value
+                  );
+                  if (!entry) return;
+                  persistSettings({
+                    serverUrl: entry.url,
+                    serverToken: entry.token || ""
+                  });
+                }}
+              >
+                {(settings.servers || []).map((entry) => (
+                  <option key={entry.url} value={entry.url}>
+                    {entry.name || entry.url}
+                  </option>
+                ))}
+                {!settings.servers.some((entry) => entry.url === serverUrl) && serverUrl && (
+                  <option value={serverUrl}>{serverUrl} (unsaved)</option>
+                )}
+              </select>
+            </label>
+          )}
           {hasSearchScope && (
             <button
               className="button small document-clear-filters"

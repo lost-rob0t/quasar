@@ -7,6 +7,7 @@ import {
   Network,
   Palette,
   Play,
+  Plus,
   RadioTower,
   RefreshCw,
   Save,
@@ -156,6 +157,7 @@ export function ImportPage() {
   const { importFileSet, select, setNotice } = useQuasar();
   const [files, setFiles] = useState([]);
   const [format, setFormat] = useState("starintel");
+  const [serverListName, setServerListName] = useState("");
   const [dataset, setDataset] = useState("wireless-import");
   const [replace, setReplace] = useState(false);
   const [resolveManifestReferences, setResolveManifestReferences] = useState(false);
@@ -600,6 +602,90 @@ export function SettingsPage() {
         {serverStatus.state === "active" && serverStatus.result?.mode === "v1" && (
           <ServerApiSurface capabilities={serverStatus.result.capabilities} />
         )}
+        <div className="server-list">
+          <div className="section-heading">
+            <h3>Saved servers</h3>
+            <small className="muted">
+              Switch the active connection; every surface (documents, recents, stats, actors)
+              follows it.
+            </small>
+          </div>
+          {(form.servers || []).map((entry) => {
+            const active = entry.url === form.serverUrl;
+            return (
+              <div key={entry.url} className="actor-row">
+                <div>
+                  <strong>
+                    {entry.name || entry.url} {active && <em className="muted">(active)</em>}
+                  </strong>
+                  <code>{entry.url}</code>
+                </div>
+                <div className="button-row">
+                  {!active && (
+                    <button
+                      className="button small"
+                      type="button"
+                      onClick={() =>
+                        setForm((current) => ({
+                          ...current,
+                          serverUrl: entry.url,
+                          serverToken: entry.token || ""
+                        }))
+                      }
+                    >
+                      Use
+                    </button>
+                  )}
+                  <button
+                    className="icon-button danger"
+                    type="button"
+                    onClick={() =>
+                      setForm((current) => ({
+                        ...current,
+                        servers: (current.servers || []).filter((item) => item.url !== entry.url)
+                      }))
+                    }
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          {!(form.servers || []).length && (
+            <p className="muted">No saved servers yet — configure one above and save it.</p>
+          )}
+          <div className="button-row">
+            <input
+              type="text"
+              value={serverListName}
+              onChange={(event) => setServerListName(event.target.value)}
+              placeholder="Name for the current connection"
+              aria-label="Server name"
+              disabled={!form.serverUrl}
+            />
+            <button
+              className="button small"
+              type="button"
+              disabled={!form.serverUrl}
+              onClick={() =>
+                setForm((current) => ({
+                  ...current,
+                  servers: [
+                    ...(current.servers || []).filter((item) => item.url !== current.serverUrl),
+                    {
+                      name: serverListName.trim() || current.serverUrl,
+                      url: current.serverUrl,
+                      token: current.serverToken || ""
+                    }
+                  ]
+                }))
+              }
+            >
+              <Plus size={14} /> Save current connection
+            </button>
+          </div>
+        </div>
       </section>
 
       <section className="panel">

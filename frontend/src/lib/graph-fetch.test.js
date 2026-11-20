@@ -41,12 +41,7 @@ describe("walkLocalGraph", () => {
 
   it("walks depth 2 transitively", () => {
     const result = walkLocalGraph(corpus, "a", { depth: 2 });
-    expect(result.documents.map((document) => document._id).sort()).toEqual([
-      "a",
-      "b",
-      "c",
-      "d"
-    ]);
+    expect(result.documents.map((document) => document._id).sort()).toEqual(["a", "b", "c", "d"]);
     expect(result.visited).toContain("d");
   });
 
