@@ -42,6 +42,7 @@ import {
   dtypes,
   touchDocument
 } from "starintel_doc/legacy";
+import { walkLocalGraph, walkRemoteGraph, canonicalRemoteGraph } from "../lib/graph-fetch";
 import { createGraphAdapter } from "../graph/GraphAdapter";
 import { isGraphUserNavigationActive } from "../graph/user-navigation-guard";
 import CascadingMenu from "./CascadingMenu";
@@ -1317,6 +1318,68 @@ export default function GraphPage() {
     }
   }
 
+  async function fetchGraphIntoWorkspace(rootId, mode) {
+    const root = documents.find((document) => document._id === rootId);
+    const label = root ? documentLabel(root) : rootId;
+    try {
+      if (mode.startsWith("local")) {
+        if (!activeGraph) throw new Error("Select or create a graph first.");
+        const depth = mode === "local-neighbors" ? 1 : 2;
+        const result = walkLocalGraph(documents, rootId, { depth });
+        const ids = [
+          ...new Set([
+            ...result.documents.map((document) => document._id),
+            ...result.relations.map((document) => document._id)
+          ])
+        ];
+        addDocumentsToActiveGraph(ids);
+        setNotice({
+          kind: "success",
+          message: `Fetched local graph of ${label}: ${result.documents.length} documents, ${
+            result.relations.length
+          } relations${result.truncated ? " (budget-truncated)" : ""}.`
+        });
+        return;
+      }
+      if (!cpClient?.starintelNeighbors || !settings?.serverUrl) {
+        throw new Error("Configure a StarIntel server in Settings first.");
+      }
+      const depth = mode === "remote-neighbors" ? 1 : mode === "remote-graph-3" ? 3 : 2;
+      const result = await walkRemoteGraph(
+        cpClient,
+        {
+          url: settings.serverUrl,
+          ...(settings.serverToken ? { token: settings.serverToken } : {})
+        },
+        rootId,
+        { depth }
+      );
+      const dataset = root?.dataset || "default";
+      const { documents: canonical, relations: relationDocs } = canonicalRemoteGraph(
+        result,
+        rootId,
+        dataset
+      );
+      const imports = [...canonical, ...relationDocs];
+      if (imports.length) {
+        await executeBatch(imports, `Fetch server graph: ${label}`, { replace: false });
+      }
+      if (activeGraph) {
+        addDocumentsToActiveGraph([
+          ...new Set([...result.documents.map((document) => document._id)])
+        ]);
+      }
+      setNotice({
+        kind: "success",
+        message: `Fetched server graph of ${label}: ${result.documents.length} documents, ${
+          result.relations.length
+        } relations in ${result.requests} requests${result.truncated ? " (budget-truncated)" : ""}.`
+      });
+    } catch (cause) {
+      setNotice({ kind: "error", message: cause?.message || "Graph fetch failed." });
+    }
+  }
+
   async function executeActor(actor, runOptions = {}) {
     setRunningActorId(actor.id);
     setLastActorRun(null);
@@ -1561,6 +1624,64 @@ export default function GraphPage() {
         ...(researchChildren.length
           ? [{ label: "Research", Icon: Network, children: researchChildren }]
           : []),
+        {
+          label: "Fetch graph",
+          Icon: Network,
+          children: [
+            {
+              label: "Neighbors",
+              Icon: Network,
+              children: [
+                {
+                  label: "Local",
+                  Icon: Network,
+                  onSelect: () => {
+                    closeMenu();
+                    fetchGraphIntoWorkspace(contextNode._id, "local-neighbors");
+                  }
+                },
+                {
+                  label: "Server",
+                  Icon: Server,
+                  onSelect: () => {
+                    closeMenu();
+                    fetchGraphIntoWorkspace(contextNode._id, "remote-neighbors");
+                  }
+                }
+              ]
+            },
+            {
+              label: "Whole graph",
+              Icon: Layers,
+              children: [
+                {
+                  label: "Local (depth 2)",
+                  Icon: Network,
+                  onSelect: () => {
+                    closeMenu();
+                    fetchGraphIntoWorkspace(contextNode._id, "local-graph");
+                  }
+                },
+                {
+                  label: "Server (depth 2)",
+                  Icon: Server,
+                  onSelect: () => {
+                    closeMenu();
+                    fetchGraphIntoWorkspace(contextNode._id, "remote-graph");
+                  }
+                },
+                {
+                  label: "Server (depth 3)",
+                  Icon: Server,
+                  onSelect: () => {
+                    closeMenu();
+                    fetchGraphIntoWorkspace(contextNode._id, "remote-graph-3");
+                  }
+                }
+              ]
+            }
+          ]
+        },
         {
           label: "Create",
           Icon: Plus,

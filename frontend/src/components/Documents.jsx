@@ -18,6 +18,7 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from "reac
 import { dtypes } from "starintel_doc";
 import { dtypesOrdered } from "../lib/dtype-meta";
 import { dtypeLabel } from "../lib/schema-form";
+import { walkRemoteGraph, canonicalRemoteGraph } from "../lib/graph-fetch";
 import CascadingMenu from "./CascadingMenu";
 import { documentLabel } from "starintel_doc/legacy";
 import { toLegacyUiDocument, toCanonicalDocument } from "../lib/canonical-document";
@@ -463,6 +464,33 @@ export function DocumentsPage() {
         next.delete(row.id);
         return next;
       });
+    }
+  }
+
+  async function fetchServerGraph(rootId, depth) {
+    try {
+      if (!cpClient?.starintelNeighbors || !serverUrl) {
+        throw new Error("Configure a StarIntel server in Settings first.");
+      }
+      const result = await walkRemoteGraph(
+        cpClient,
+        { url: serverUrl, ...(serverToken ? { token: serverToken } : {}) },
+        rootId,
+        { depth }
+      );
+      const { documents: docs, relations } = canonicalRemoteGraph(result, rootId);
+      const imports = [...docs, ...relations];
+      if (imports.length) {
+        await executeBatch(imports, `Fetch server graph: ${rootId}`, { replace: false });
+      }
+      setNotice({
+        kind: "success",
+        message: `Fetched graph of ${rootId}: ${docs.length} documents, ${relations.length} relations in ${
+          result.requests
+        } requests${result.truncated ? " (budget-truncated)" : ""}.`
+      });
+    } catch (cause) {
+      setNotice({ kind: "error", message: cause?.message || "Graph fetch failed." });
     }
   }
 
@@ -990,6 +1018,28 @@ export function DocumentsPage() {
                         setRowMenu(null);
                         addLiveDocumentToGraph(rowMenu.row);
                       }
+                    },
+                    {
+                      label: "Fetch from server",
+                      Icon: Network,
+                      children: [
+                        {
+                          label: "Neighbors",
+                          Icon: Network,
+                          onSelect: () => {
+                            setRowMenu(null);
+                            fetchServerGraph(rowMenu.row.id, 1);
+                          }
+                        },
+                        {
+                          label: "Graph (depth 2)",
+                          Icon: Network,
+                          onSelect: () => {
+                            setRowMenu(null);
+                            fetchServerGraph(rowMenu.row.id, 2);
+                          }
+                        }
+                      ]
                     },
                     {
                       label: "Copy document ID",
