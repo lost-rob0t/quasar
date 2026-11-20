@@ -3,7 +3,7 @@ import { Play } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useLocation } from "react-router-dom";
 import { assertDocument } from "starintel_doc/legacy";
-import { isBuiltinActor } from "../lib/actors";
+import { actorExecutionBlocked, isBuiltinActor } from "../lib/actors";
 import { operation } from "../lib/operations";
 import {
   mergeTransformationDocuments,
