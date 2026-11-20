@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
+  Clipboard,
   Download,
   Edit3,
   ExternalLink,
@@ -17,6 +18,7 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from "reac
 import { dtypes } from "starintel_doc";
 import { dtypesOrdered } from "../lib/dtype-meta";
 import { dtypeLabel } from "../lib/schema-form";
+import CascadingMenu from "./CascadingMenu";
 import { documentLabel } from "starintel_doc/legacy";
 import { toLegacyUiDocument, toCanonicalDocument } from "../lib/canonical-document";
 import { connectedDocumentIds } from "../lib/document-delete";
@@ -209,6 +211,8 @@ export function DocumentsPage() {
   const [liveView, setLiveView] = useState(null);
   const [savedIds, setSavedIds] = useState(() => new Set());
   const [savingIds, setSavingIds] = useState(() => new Set());
+  // Right-click row menu (graph-style cascade, single level here).
+  const [rowMenu, setRowMenu] = useState(null);
   const liveRequestToken = useRef(0);
 
   const resetLiveChain = () => {
@@ -807,7 +811,18 @@ export function DocumentsPage() {
           </thead>
           <tbody>
             {pageDocuments.map((document) => (
-              <tr key={document._id}>
+              <tr
+                key={document._id}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  setRowMenu({
+                    kind: "workspace",
+                    document,
+                    x: event.clientX,
+                    y: event.clientY
+                  });
+                }}
+              >
                 <td>
                   <Link
                     className="document-link"
@@ -871,7 +886,14 @@ export function DocumentsPage() {
             {liveOnlyRows.map((row) => {
               const saving = savingIds.has(row.id);
               return (
-                <tr key={row.id} className="server-row">
+                <tr
+                  key={row.id}
+                  className="server-row"
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setRowMenu({ kind: "server", row, x: event.clientX, y: event.clientY });
+                  }}
+                >
                   <td>
                     <button
                       type="button"
@@ -942,6 +964,81 @@ export function DocumentsPage() {
             )}
           </tbody>
         </table>
+        {rowMenu && (
+          <CascadingMenu
+            fixed
+            x={rowMenu.x}
+            y={rowMenu.y}
+            header={documentLabel(
+              rowMenu.kind === "server" ? rowMenu.row.document : rowMenu.document
+            )}
+            items={
+              rowMenu.kind === "server"
+                ? [
+                    {
+                      label: "Open",
+                      Icon: ExternalLink,
+                      onSelect: () => {
+                        setRowMenu(null);
+                        openLiveDocument(rowMenu.row);
+                      }
+                    },
+                    {
+                      label: "Save to graph",
+                      Icon: Network,
+                      onSelect: () => {
+                        setRowMenu(null);
+                        addLiveDocumentToGraph(rowMenu.row);
+                      }
+                    },
+                    {
+                      label: "Copy document ID",
+                      Icon: Clipboard,
+                      onSelect: () => {
+                        setRowMenu(null);
+                        navigator.clipboard?.writeText(rowMenu.row.id);
+                      }
+                    }
+                  ]
+                : [
+                    {
+                      label: "Open",
+                      Icon: ExternalLink,
+                      onSelect: () => {
+                        setRowMenu(null);
+                        navigate(`/documents/${encodeURIComponent(rowMenu.document._id)}`);
+                      }
+                    },
+                    {
+                      label: "Add to active graph",
+                      Icon: Network,
+                      onSelect: () => {
+                        setRowMenu(null);
+                        addDocumentsToActiveGraph([rowMenu.document._id]);
+                      }
+                    },
+                    {
+                      label: "Copy document ID",
+                      Icon: Clipboard,
+                      onSelect: () => {
+                        setRowMenu(null);
+                        navigator.clipboard?.writeText(rowMenu.document._id);
+                      }
+                    },
+                    {
+                      label: "Delete",
+                      Icon: Trash2,
+                      danger: true,
+                      onSelect: () => {
+                        setRowMenu(null);
+                        removeDocument(rowMenu.document);
+                      }
+                    }
+                  ]
+            }
+            onClose={() => setRowMenu(null)}
+          />
+        )}
         {!pageDocuments.length && !liveOnlyRows.length && (
           <div className="empty-state compact">
             {loading && !pageState

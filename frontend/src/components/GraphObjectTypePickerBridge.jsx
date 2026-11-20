@@ -52,7 +52,7 @@ export default function GraphObjectTypePickerBridge() {
     const intercept = (event) => {
       const action = event.target.closest?.("button[role='menuitem']");
       if (action?.textContent?.replace(/\s+/g, " ").trim() !== "Other object type") return;
-      const menu = action.closest(".graph-context-menu");
+      const menu = action.closest(".graph-context-menu, .cascading-menu");
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();

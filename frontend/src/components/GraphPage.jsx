@@ -44,6 +44,7 @@ import {
 } from "starintel_doc/legacy";
 import { createGraphAdapter } from "../graph/GraphAdapter";
 import { isGraphUserNavigationActive } from "../graph/user-navigation-guard";
+import CascadingMenu from "./CascadingMenu";
 import { actorApplicability, isBuiltinActor } from "../lib/actors";
 import { toCanonicalDocument } from "../lib/canonical-document";
 import { connectedDocumentIds } from "../lib/document-delete";
@@ -834,7 +835,6 @@ export default function GraphPage() {
   const [showGraphCreate, setShowGraphCreate] = useState(false);
   const [showMembershipAdd, setShowMembershipAdd] = useState(false);
   const [canvasMenu, setCanvasMenu] = useState(null);
-  const [menuQuery, setMenuQuery] = useState("");
   const [emptyStateDismissed, setEmptyStateDismissed] = useState(false);
   const [pathStart, setPathStart] = useState("");
   const [pathEnd, setPathEnd] = useState("");
@@ -1147,13 +1147,6 @@ export default function GraphPage() {
     if (canvasMenu && !event.target.closest(".graph-context-menu")) setCanvasMenu(null);
   }
 
-  const canvasMenuStyle = canvasMenu
-    ? {
-        left: Math.max(8, Math.min(canvasMenu.rendered.x, canvasMenu.bounds.width - 292)),
-        top: Math.max(8, Math.min(canvasMenu.rendered.y, canvasMenu.bounds.height - 430))
-      }
-    : undefined;
-
   function createNamedGraph(name) {
     try {
       createGraph(name);
@@ -1324,11 +1317,11 @@ export default function GraphPage() {
     }
   }
 
-  async function executeActor(actor) {
+  async function executeActor(actor, runOptions = {}) {
     setRunningActorId(actor.id);
     setLastActorRun(null);
     try {
-      const result = await runActor(actor);
+      const result = await runActor(actor, undefined, runOptions);
       const produced = Array.isArray(result?.documents) ? result.documents : [];
       const nodeIds = produced
         .filter((document) => document?.dtype !== "relation")
@@ -1404,8 +1397,6 @@ export default function GraphPage() {
     }
   }
 
-  const menuMatches = (label) =>
-    !menuQuery.trim() || label.toLowerCase().includes(menuQuery.trim().toLowerCase());
   const contextNode =
     canvasMenu?.kind === "node"
       ? documents.find((document) => document._id === canvasMenu.id)
@@ -1427,6 +1418,484 @@ export default function GraphPage() {
     researchRunState[selected?._id]?.state
   );
   const [contextSourceId, contextTargetId] = relationEndpoints(contextRelation);
+
+  // Cascading right-click menu (3 levels): root path -> class -> leaf.
+  // Same handlers the flat menu used; fleet actors take the node label as
+  // their explicit target.
+  const closeMenu = () => setCanvasMenu(null);
+  const runContextActor = (actor, target) => {
+    closeMenu();
+    executeActor(actor, target ? { target } : undefined);
+  };
+  const actorClassItems = (classFilter, withTarget) =>
+    actorEntries
+      .filter(({ actor }) => classFilter(actor))
+      .map(({ actor, availability }) => ({
+        label: actor.label,
+        Icon: Play,
+        disabled: !availability.applicable || Boolean(runningActorId),
+        title: availability.applicable ? undefined : availability.reason,
+        onSelect: () => runContextActor(actor, withTarget ? documentLabel(contextNode) : undefined)
+      }));
+  const contextMenuItems = useMemo(() => {
+    if (!canvasMenu) return [];
+    if (canvasMenu.kind === "node" && contextNode) {
+      const researchChildren = contextResearchScope
+        ? [
+            ...(!contextResearchActive &&
+            ["draft", "queued", "running", "completed", "killed"].includes(contextResearchStatus)
+              ? [
+                  {
+                    label: "Run research node",
+                    Icon: Play,
+                    onSelect: () => {
+                      closeMenu();
+                      executeResearchAction("run", contextNode);
+                    }
+                  }
+                ]
+              : []),
+            ...(contextResearchActive
+              ? [
+                  {
+                    label: "Pause research node",
+                    Icon: Pause,
+                    onSelect: () => {
+                      closeMenu();
+                      executeResearchAction("pause", contextNode);
+                    }
+                  }
+                ]
+              : []),
+            ...(contextResearchStatus === "paused"
+              ? [
+                  {
+                    label: "Resume research node",
+                    Icon: Play,
+                    onSelect: () => {
+                      closeMenu();
+                      executeResearchAction("resume", contextNode);
+                    }
+                  }
+                ]
+              : []),
+            ...(["failed", "blocked"].includes(contextResearchStatus)
+              ? [
+                  {
+                    label: "Retry research node",
+                    Icon: RotateCcw,
+                    onSelect: () => {
+                      closeMenu();
+                      executeResearchAction("retry", contextNode);
+                    }
+                  }
+                ]
+              : []),
+            ...(["queued", "running", "paused", "blocked", "failed"].includes(contextResearchStatus)
+              ? [
+                  {
+                    label: "Kill research node",
+                    Icon: Square,
+                    danger: true,
+                    onSelect: () => {
+                      closeMenu();
+                      executeResearchAction("kill", contextNode);
+                    }
+                  }
+                ]
+              : []),
+            {
+              label: `Inspect outputs (${contextResearchScope.outputs.length})`,
+              Icon: Focus,
+              disabled: !contextResearchScope.outputs.length,
+              onSelect: () => {
+                closeMenu();
+                inspectResearchOutputs(contextNode);
+              }
+            },
+            {
+              label: "Clone research node",
+              Icon: Copy,
+              onSelect: () => {
+                closeMenu();
+                cloneContextResearchNode(contextNode);
+              }
+            }
+          ]
+        : [];
+      return [
+        {
+          label: "Edit",
+          Icon: Pencil,
+          onSelect: () => {
+            closeMenu();
+            if (isResearchNode(contextNode))
+              setResearchDraft({ document: contextNode, position: canvasMenu });
+            else setQuickEdit({ document: contextNode, position: canvasMenu });
+          }
+        },
+        {
+          label: "Run actor",
+          Icon: Play,
+          children: [
+            {
+              label: "Built-in",
+              Icon: Layers,
+              children: actorClassItems((actor) => isBuiltinActor(actor), false)
+            },
+            {
+              label: "Local fleet",
+              Icon: Server,
+              children: actorClassItems((actor) => actor.runtime === "pro-actor-fleet", true)
+            },
+            {
+              label: "Shipped pack",
+              Icon: BookOpen,
+              children: actorClassItems(
+                (actor) => !isBuiltinActor(actor) && actor.runtime !== "pro-actor-fleet",
+                false
+              )
+            }
+          ]
+        },
+        ...(researchChildren.length
+          ? [{ label: "Research", Icon: Network, children: researchChildren }]
+          : []),
+        {
+          label: "Create",
+          Icon: Plus,
+          children: [
+            {
+              label: "Research node from selection",
+              Icon: Network,
+              onSelect: () => {
+                closeMenu();
+                setResearchDraft({
+                  dataset: contextNode.dataset || "default",
+                  inputIds: selectedIds.length ? selectedIds : [contextNode._id],
+                  position: canvasMenu
+                });
+              }
+            },
+            ...QUICK_NODE_TYPES.map(({ dtype, label, Icon }) => ({
+              label: `Create ${label.toLowerCase()}`,
+              Icon,
+              onSelect: () => {
+                closeMenu();
+                openQuickAdd(canvasMenu, dtype);
+              }
+            })),
+            {
+              label: "Other object type",
+              Icon: MoreHorizontal,
+              onSelect: () => {
+                closeMenu();
+                openQuickAdd(canvasMenu);
+              }
+            }
+          ]
+        },
+        {
+          label: "View",
+          Icon: Focus,
+          children: [
+            {
+              label: "Open full editor",
+              Icon: ExternalLink,
+              onSelect: () => {
+                closeMenu();
+                navigate(`/documents/${encodeURIComponent(contextNode._id)}`);
+              }
+            },
+            {
+              label: "Focus",
+              Icon: Focus,
+              onSelect: () => {
+                closeMenu();
+                focus(contextNode._id);
+              }
+            },
+            {
+              label: "Select neighbors",
+              Icon: Network,
+              onSelect: () => {
+                closeMenu();
+                selectNeighbors(contextNode._id);
+              }
+            }
+          ]
+        },
+        {
+          label: "Copy",
+          Icon: Clipboard,
+          children: [
+            {
+              label: "Document ID",
+              Icon: Clipboard,
+              onSelect: () => {
+                closeMenu();
+                copyText(contextNode._id, "Copied document ID");
+              }
+            },
+            {
+              label: "Document JSON",
+              Icon: Braces,
+              onSelect: () => {
+                closeMenu();
+                copyText(JSON.stringify(contextNode, null, 2), "Copied document JSON");
+              }
+            }
+          ]
+        },
+        {
+          label: "Submit as target",
+          Icon: Send,
+          onSelect: () => {
+            closeMenu();
+            setTargetDocument(contextNode);
+          }
+        },
+        ...(activeGraph?.documentIds !== null
+          ? [
+              {
+                label: "Hide",
+                Icon: Trash2,
+                onSelect: () => {
+                  closeMenu();
+                  removeNodeFromGraph(contextNode._id);
+                }
+              }
+            ]
+          : []),
+        {
+          label: "Delete",
+          Icon: Trash2,
+          danger: true,
+          onSelect: () => {
+            closeMenu();
+            deleteCorpusDocuments(selectedIds.length > 1 ? selectedIds : [contextNode._id]);
+          }
+        }
+      ];
+    }
+    if (canvasMenu.kind === "edge" && contextRelation) {
+      return [
+        {
+          label: "Edit relation",
+          Icon: Pencil,
+          onSelect: () => {
+            closeMenu();
+            setRelationEdit({ document: contextRelation, position: canvasMenu });
+          }
+        },
+        {
+          label: "Reverse relation",
+          Icon: ArrowLeftRight,
+          onSelect: () => {
+            closeMenu();
+            reverseRelation(contextRelation);
+          }
+        },
+        ...(contextSourceId
+          ? [
+              {
+                label: "Open source",
+                Icon: ExternalLink,
+                onSelect: () => {
+                  closeMenu();
+                  navigate(`/documents/${encodeURIComponent(contextSourceId)}`);
+                }
+              }
+            ]
+          : []),
+        ...(contextTargetId
+          ? [
+              {
+                label: "Open target",
+                Icon: ExternalLink,
+                onSelect: () => {
+                  closeMenu();
+                  navigate(`/documents/${encodeURIComponent(contextTargetId)}`);
+                }
+              }
+            ]
+          : []),
+        {
+          label: "Inspect JSON",
+          Icon: Copy,
+          onSelect: () => {
+            closeMenu();
+            navigate(`/documents/${encodeURIComponent(contextRelation._id)}`);
+          }
+        },
+        {
+          label: "Delete",
+          Icon: Trash2,
+          danger: true,
+          onSelect: () => {
+            closeMenu();
+            deleteCorpusDocuments([contextRelation._id]);
+          }
+        }
+      ];
+    }
+    if (canvasMenu.kind === "canvas") {
+      return [
+        {
+          label: "Create",
+          Icon: Plus,
+          children: [
+            ...QUICK_NODE_TYPES.map(({ dtype, label, Icon }) => ({
+              label: `Create ${label.toLowerCase()}`,
+              Icon,
+              onSelect: () => {
+                closeMenu();
+                openQuickAdd(canvasMenu, dtype);
+              }
+            })),
+            {
+              label: "Other object type",
+              Icon: MoreHorizontal,
+              onSelect: () => {
+                closeMenu();
+                openQuickAdd(canvasMenu);
+              }
+            }
+          ]
+        },
+        {
+          label: "Layout",
+          Icon: Grid2X2,
+          children: ["cose", "breadthfirst", "circle", "concentric", "grid"].map((name) => ({
+            label: name,
+            Icon: Grid2X2,
+            onSelect: () => {
+              closeMenu();
+              runLayout(name);
+            }
+          }))
+        },
+        {
+          label: "Graph",
+          Icon: Database,
+          children: [
+            {
+              label: "New graph",
+              Icon: FolderPlus,
+              onSelect: () => {
+                closeMenu();
+                setShowGraphCreate(true);
+              }
+            },
+            ...(activeGraph?.documentIds !== null
+              ? [
+                  {
+                    label: "Add from corpus",
+                    Icon: Database,
+                    onSelect: () => {
+                      closeMenu();
+                      setShowMembershipAdd(true);
+                    }
+                  }
+                ]
+              : []),
+            {
+              label: "Import documents",
+              Icon: ExternalLink,
+              onSelect: () => {
+                closeMenu();
+                navigate("/import");
+              }
+            }
+          ]
+        },
+        {
+          label: "Server",
+          Icon: Server,
+          children: [
+            {
+              label: `${queueStatus.state === "active" ? "Stop" : "Start"} queue listener`,
+              Icon: RadioTower,
+              disabled: !settings?.rabbitWebSocketUrl,
+              onSelect: () => {
+                closeMenu();
+                toggleQueueListener();
+              }
+            },
+            {
+              label: "Connection settings",
+              Icon: Server,
+              onSelect: () => {
+                closeMenu();
+                navigate("/settings");
+              }
+            }
+          ]
+        },
+        {
+          label: "View",
+          Icon: Focus,
+          children: [
+            {
+              label: "Fit graph",
+              Icon: Focus,
+              onSelect: () => {
+                closeMenu();
+                fit();
+              }
+            },
+            {
+              label: "Focus selection",
+              Icon: Focus,
+              disabled: !selectedIds.length,
+              onSelect: () => {
+                closeMenu();
+                focusSelection();
+              }
+            },
+            {
+              label: "Clear filters",
+              Icon: X,
+              onSelect: () => {
+                closeMenu();
+                clearFilters();
+              }
+            }
+          ]
+        },
+        ...(activeGraph?.documentIds !== null
+          ? [
+              {
+                label: "Clear graph",
+                Icon: Trash2,
+                danger: true,
+                onSelect: () => {
+                  closeMenu();
+                  clearCurrentGraph();
+                }
+              }
+            ]
+          : [])
+      ];
+    }
+    return [];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    canvasMenu,
+    contextNode,
+    contextRelation,
+    contextResearchScope,
+    contextResearchStatus,
+    contextResearchActive,
+    contextSourceId,
+    contextTargetId,
+    actorEntries,
+    runningActorId,
+    selectedIds,
+    activeGraph,
+    queueStatus,
+    settings
+  ]);
 
   return (
     <section className="graph-page">
@@ -1729,403 +2198,21 @@ export default function GraphPage() {
           )}
 
           {canvasMenu && (
-            <div
-              className={`graph-context-menu expanded ${canvasMenu.kind}-actions`}
-              role="menu"
-              aria-label={`${canvasMenu.kind} actions`}
-              style={canvasMenuStyle}
-              onContextMenu={(event) => event.preventDefault()}
-            >
-              <div className="graph-context-header">
-                <span className="context-kind">{canvasMenu.kind}</span>
-                <strong>
-                  {contextNode
-                    ? documentLabel(contextNode)
-                    : contextRelation
-                      ? documentLabel(contextRelation)
-                      : activeGraph?.name || "Graph"}
-                </strong>
-                {contextResearchScope && (
-                  <span
-                    className={`research-state research-state-${contextNode.data?.status || "draft"}`}
-                  >
-                    {contextNode.data?.status || "draft"}
-                  </span>
-                )}
-              </div>
-              <label className="graph-context-search">
-                <Search size={14} />
-                <input
-                  aria-label="Search context actions"
-                  value={menuQuery}
-                  onChange={(event) => setMenuQuery(event.target.value)}
-                  placeholder="Find action…"
-                />
-              </label>
-
-              {canvasMenu.kind === "node" && contextNode && (
-                <>
-                  {menuMatches("Edit") && (
-                    <button
-                      role="menuitem"
-                      onClick={() => {
-                        if (isResearchNode(contextNode))
-                          setResearchDraft({ document: contextNode, position: canvasMenu });
-                        else setQuickEdit({ document: contextNode, position: canvasMenu });
-                        setCanvasMenu(null);
-                      }}
-                    >
-                      <Pencil size={15} /> Edit
-                    </button>
-                  )}
-                  {menuMatches("Create research node from selection") && (
-                    <button
-                      role="menuitem"
-                      onClick={() => {
-                        setResearchDraft({
-                          dataset: contextNode.dataset || "default",
-                          inputIds: selectedIds.length ? selectedIds : [contextNode._id],
-                          position: canvasMenu
-                        });
-                        setCanvasMenu(null);
-                      }}
-                    >
-                      <Network size={15} /> Create research node from selection
-                    </button>
-                  )}
-                  {menuMatches("Add relation") && (
-                    <button role="menuitem" onClick={() => beginRelationFromNode(contextNode._id)}>
-                      <Link2 size={15} /> Add relation
-                    </button>
-                  )}
-                  {menuMatches("Open full editor") && (
-                    <Link
-                      role="menuitem"
-                      to={`/documents/${encodeURIComponent(contextNode._id)}/edit?returnTo=graph`}
-                    >
-                      <ExternalLink size={15} /> Open full editor
-                    </Link>
-                  )}
-                  {menuMatches("Focus") && (
-                    <button
-                      role="menuitem"
-                      onClick={() => {
-                        setCanvasMenu(null);
-                        focusSelection([contextNode._id]);
-                      }}
-                    >
-                      <Focus size={15} /> Focus
-                    </button>
-                  )}
-                  {menuMatches("Select neighbors") && (
-                    <button role="menuitem" onClick={() => selectNeighbors(contextNode._id)}>
-                      <Network size={15} /> Select neighbors
-                    </button>
-                  )}
-                  {actorEntries
-                    .filter(({ actor }) => menuMatches(`Run actor ${actor.label}`))
-                    .map(({ actor, availability }) => (
-                      <button
-                        role="menuitem"
-                        key={actor.id}
-                        disabled={!availability.applicable || Boolean(runningActorId)}
-                        onClick={() => {
-                          setCanvasMenu(null);
-                          executeActor(actor);
-                        }}
-                      >
-                        <Play size={15} /> Run actor: {actor.label}
-                      </button>
-                    ))}
-                  {contextResearchScope &&
-                    !contextResearchActive &&
-                    ["draft", "queued", "running", "completed", "killed"].includes(
-                      contextResearchStatus
-                    ) &&
-                    menuMatches("Run research node") && (
-                      <button
-                        role="menuitem"
-                        onClick={() => executeResearchAction("run", contextNode)}
-                      >
-                        <Play size={15} />{" "}
-                        {["queued", "running"].includes(contextResearchStatus) ? "Continue" : "Run"}{" "}
-                        research node
-                      </button>
-                    )}
-                  {contextResearchScope &&
-                    contextResearchActive &&
-                    menuMatches("Pause research node") && (
-                      <button
-                        role="menuitem"
-                        onClick={() => executeResearchAction("pause", contextNode)}
-                      >
-                        <Pause size={15} /> Pause research node
-                      </button>
-                    )}
-                  {contextResearchScope &&
-                    contextResearchStatus === "paused" &&
-                    menuMatches("Resume research node") && (
-                      <button
-                        role="menuitem"
-                        onClick={() => executeResearchAction("resume", contextNode)}
-                      >
-                        <Play size={15} /> Resume research node
-                      </button>
-                    )}
-                  {contextResearchScope &&
-                    ["failed", "blocked"].includes(contextResearchStatus) &&
-                    menuMatches("Retry research node") && (
-                      <button
-                        role="menuitem"
-                        onClick={() => executeResearchAction("retry", contextNode)}
-                      >
-                        <RotateCcw size={15} /> Retry research node
-                      </button>
-                    )}
-                  {contextResearchScope &&
-                    ["queued", "running", "paused", "blocked", "failed"].includes(
-                      contextResearchStatus
-                    ) &&
-                    menuMatches("Kill research node") && (
-                      <button
-                        role="menuitem"
-                        className="danger"
-                        onClick={() => executeResearchAction("kill", contextNode)}
-                      >
-                        <Square size={15} /> Kill research node
-                      </button>
-                    )}
-                  {contextResearchScope && menuMatches("Inspect outputs") && (
-                    <button
-                      role="menuitem"
-                      disabled={!contextResearchScope.outputs.length}
-                      onClick={() => inspectResearchOutputs(contextNode)}
-                    >
-                      <Focus size={15} /> Inspect outputs ({contextResearchScope.outputs.length})
-                    </button>
-                  )}
-                  {contextResearchScope && menuMatches("Clone research node") && (
-                    <button role="menuitem" onClick={() => cloneContextResearchNode(contextNode)}>
-                      <Copy size={15} /> Clone research node
-                    </button>
-                  )}
-                  {menuMatches("Submit as target") && (
-                    <button
-                      role="menuitem"
-                      onClick={() => {
-                        setCanvasMenu(null);
-                        setTargetDocument(contextNode);
-                      }}
-                    >
-                      <Send size={15} /> Submit as target
-                    </button>
-                  )}
-                  {menuMatches("Copy document ID") && (
-                    <button
-                      role="menuitem"
-                      onClick={() => copyText(contextNode._id, "Copied document ID")}
-                    >
-                      <Clipboard size={15} /> Copy document ID
-                    </button>
-                  )}
-                  {menuMatches("Copy document JSON") && (
-                    <button
-                      role="menuitem"
-                      onClick={() =>
-                        copyText(JSON.stringify(contextNode, null, 2), "Copied document JSON")
-                      }
-                    >
-                      <Copy size={15} /> Copy document JSON
-                    </button>
-                  )}
-                  <div className="graph-context-divider" />
-                  {activeGraph?.documentIds !== null && menuMatches("Hide") && (
-                    <button role="menuitem" onClick={() => removeNodeFromGraph(contextNode._id)}>
-                      <Trash2 size={15} /> Hide
-                    </button>
-                  )}
-                  {menuMatches("Delete") && (
-                    <button
-                      role="menuitem"
-                      className="danger"
-                      onClick={() =>
-                        deleteCorpusDocuments(
-                          selectedIds.length > 1 ? selectedIds : [contextNode._id]
-                        )
-                      }
-                    >
-                      <Trash2 size={15} /> Delete
-                    </button>
-                  )}
-                </>
-              )}
-
-              {canvasMenu.kind === "edge" && contextRelation && (
-                <>
-                  {menuMatches("Edit relation") && (
-                    <button
-                      role="menuitem"
-                      onClick={() => {
-                        setRelationEdit({ document: contextRelation, position: canvasMenu });
-                        setCanvasMenu(null);
-                      }}
-                    >
-                      <Pencil size={15} /> Edit relation
-                    </button>
-                  )}
-                  {menuMatches("Reverse relation") && (
-                    <button role="menuitem" onClick={() => reverseRelation(contextRelation)}>
-                      <ArrowLeftRight size={15} /> Reverse relation
-                    </button>
-                  )}
-                  {contextSourceId && menuMatches("Open source") && (
-                    <Link role="menuitem" to={`/documents/${encodeURIComponent(contextSourceId)}`}>
-                      <ExternalLink size={15} /> Open source
-                    </Link>
-                  )}
-                  {contextTargetId && menuMatches("Open target") && (
-                    <Link role="menuitem" to={`/documents/${encodeURIComponent(contextTargetId)}`}>
-                      <ExternalLink size={15} /> Open target
-                    </Link>
-                  )}
-                  {menuMatches("Inspect JSON") && (
-                    <Link
-                      role="menuitem"
-                      to={`/documents/${encodeURIComponent(contextRelation._id)}`}
-                    >
-                      <Copy size={15} /> Inspect JSON
-                    </Link>
-                  )}
-                  <div className="graph-context-divider" />
-                  {menuMatches("Delete") && (
-                    <button
-                      role="menuitem"
-                      className="danger"
-                      onClick={() => deleteCorpusDocuments([contextRelation._id])}
-                    >
-                      <Trash2 size={15} /> Delete
-                    </button>
-                  )}
-                </>
-              )}
-
-              {canvasMenu.kind === "canvas" && (
-                <>
-                  {QUICK_NODE_TYPES.filter(({ label }) => menuMatches(`Create ${label}`)).map(
-                    ({ dtype: objectType, label, Icon }) => (
-                      <button
-                        key={objectType}
-                        role="menuitem"
-                        onClick={() => openQuickAdd(canvasMenu, objectType)}
-                      >
-                        <Icon size={15} /> Create {label.toLowerCase()}
-                      </button>
-                    )
-                  )}
-                  {menuMatches("Other object type") && (
-                    <button role="menuitem" onClick={() => openQuickAdd(canvasMenu)}>
-                      <MoreHorizontal size={15} /> Other object type
-                    </button>
-                  )}
-                  <div className="graph-context-divider" />
-                  {menuMatches("Fit graph") && (
-                    <button
-                      role="menuitem"
-                      onClick={() => {
-                        fit();
-                        setCanvasMenu(null);
-                      }}
-                    >
-                      <Focus size={15} /> Fit graph
-                    </button>
-                  )}
-                  {menuMatches("Focus selection") && (
-                    <button
-                      role="menuitem"
-                      disabled={!selectedIds.length}
-                      onClick={() => {
-                        focusSelection();
-                        setCanvasMenu(null);
-                      }}
-                    >
-                      <Focus size={15} /> Focus selection
-                    </button>
-                  )}
-                  {menuMatches("Clear filters") && (
-                    <button
-                      role="menuitem"
-                      onClick={() => {
-                        clearFilters();
-                        setCanvasMenu(null);
-                      }}
-                    >
-                      <X size={15} /> Clear filters
-                    </button>
-                  )}
-                  {["cose", "breadthfirst", "circle", "concentric", "grid"]
-                    .filter((name) => menuMatches(`Layout ${name}`))
-                    .map((name) => (
-                      <button
-                        role="menuitem"
-                        key={name}
-                        onClick={() => {
-                          runLayout(name);
-                          setCanvasMenu(null);
-                        }}
-                      >
-                        <Grid2X2 size={15} /> Layout: {name}
-                      </button>
-                    ))}
-                  {activeGraph?.documentIds !== null && menuMatches("Add from corpus") && (
-                    <button
-                      role="menuitem"
-                      onClick={() => {
-                        setCanvasMenu(null);
-                        setShowMembershipAdd(true);
-                      }}
-                    >
-                      <Database size={15} /> Add from corpus
-                    </button>
-                  )}
-                  {menuMatches("Import documents") && (
-                    <Link role="menuitem" to="/import">
-                      <ExternalLink size={15} /> Import documents
-                    </Link>
-                  )}
-                  {menuMatches("Queue listener") && (
-                    <button
-                      role="menuitem"
-                      disabled={!settings?.rabbitWebSocketUrl}
-                      onClick={toggleQueueListener}
-                    >
-                      <RadioTower size={15} /> {queueStatus.state === "active" ? "Stop" : "Start"}{" "}
-                      queue listener
-                    </button>
-                  )}
-                  {menuMatches("Connection settings") && (
-                    <Link role="menuitem" to="/settings">
-                      <Server size={15} /> Connection settings
-                    </Link>
-                  )}
-                  {menuMatches("New graph") && (
-                    <button
-                      role="menuitem"
-                      onClick={() => {
-                        setCanvasMenu(null);
-                        setShowGraphCreate(true);
-                      }}
-                    >
-                      <FolderPlus size={15} /> New graph
-                    </button>
-                  )}
-                  {menuMatches("Clear graph") && (
-                    <button role="menuitem" className="danger" onClick={clearCurrentGraph}>
-                      <Trash2 size={15} /> Clear graph
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
+            <CascadingMenu
+              key={`${canvasMenu.kind}:${canvasMenu.rendered?.x}:${canvasMenu.rendered?.y}`}
+              x={canvasMenu.rendered?.x ?? 0}
+              y={canvasMenu.rendered?.y ?? 0}
+              bounds={canvasMenu.bounds}
+              header={
+                contextNode
+                  ? documentLabel(contextNode)
+                  : contextRelation
+                    ? documentLabel(contextRelation)
+                    : activeGraph?.name || "Graph"
+              }
+              items={contextMenuItems}
+              onClose={() => setCanvasMenu(null)}
+            />
           )}
 
           {nodeDraft && (

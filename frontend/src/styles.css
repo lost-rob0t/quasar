@@ -2680,3 +2680,84 @@ td small {
 .feature-off {
   opacity: 0.5;
 }
+
+/* Cascading right-click menu: root panel + one panel per path level. */
+.cascading-menu {
+  position: absolute;
+  z-index: 60;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.3rem;
+}
+.cascading-panel {
+  display: flex;
+  flex-direction: column;
+  width: 232px;
+  max-height: min(430px, 100%);
+  padding: 0.35rem;
+  overflow-y: auto;
+  border: 1px solid #38516d;
+  border-radius: 9px;
+  background: #0a1728;
+  box-shadow: 0 16px 36px #000a;
+}
+.cascading-back {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.2rem;
+  padding: 0.4rem 0.55rem;
+  border: 0;
+  border-radius: 6px;
+  background: #12253c;
+  color: #9fb8d0;
+  font: inherit;
+  font-size: 0.72rem;
+  text-align: left;
+  cursor: pointer;
+}
+.cascading-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+  text-align: left;
+  cursor: pointer;
+}
+.cascading-item:hover,
+.cascading-item:focus-visible,
+.cascading-item.active {
+  outline: none;
+  background: #15304d;
+  color: #fff;
+}
+.cascading-item.disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+.cascading-item .cascading-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cascading-item svg + svg,
+.cascading-item > svg:last-child {
+  margin-left: auto;
+  opacity: 0.7;
+}
+.cascading-item.danger {
+  color: #fda4af;
+}
+.cascading-empty {
+  padding: 0.5rem 0.6rem;
+  color: #9fb8d0;
+  font-size: 0.75rem;
+}
