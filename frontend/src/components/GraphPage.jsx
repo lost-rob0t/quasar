@@ -945,7 +945,6 @@ export default function GraphPage() {
     setQuickEdit(null);
     setResearchDraft(null);
     setTargetDocument(null);
-    setMenuQuery("");
     setEmptyStateDismissed(false);
   }, [activeGraph?.id]);
 
@@ -1105,18 +1104,15 @@ export default function GraphPage() {
 
   function openCanvasMenu(context) {
     setEmptyStateDismissed(true);
-    setMenuQuery("");
     setCanvasMenu({ kind: "canvas", ...context });
   }
 
   function openNodeMenu(id, context) {
     if (!selectedIds.includes(id)) select([id]);
-    setMenuQuery("");
     setCanvasMenu({ kind: "node", id, ...context });
   }
 
   function openEdgeMenu(id, context) {
-    setMenuQuery("");
     setCanvasMenu({ kind: "edge", id, ...context });
   }
 
