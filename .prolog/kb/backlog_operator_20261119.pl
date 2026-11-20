@@ -1,8 +1,21 @@
-%% Operator directive backlog, encoded 2026-11-19 ~22:20 for post-compact
-%% execution. Owner: next session on bug-squash. Quasar repo only unless a
-%% fact says otherwise. Items are ordered: the runtime fix
-%% (actorExecutionBlocked import, commit 8b8b4a9) is DONE; everything below
-%% is open. Each fact carries its acceptance criteria.
+%% Operator directive backlog, encoded 2026-11-19 ~22:20, EXECUTED same day
+%% by the post-compact session (commits 8b8b4a9..2c21f3b on bug-squash).
+%% ALL items below are DONE and retained as design/acceptance records:
+%% browser_actors_delete + run_all_bridge_scope  -> 61ae654
+%% dtype_dropdown_icons, document_create_common_fields,
+%% dtype_order_common_first                      -> ce048ba
+%% cascading_context_menu                        -> cf1c45d + 5560099
+%% fetch_document_graph                          -> fd175e5 (lib/graph-fetch.js)
+%% multi_server_support                          -> 0f7307b (active-server switch model)
+%% agent_providers_nano_gpt_glm_codex            -> 6a3a8c9 (codingSub flag;
+%%   deep loop-level code-edit delegation hook remains future work)
+%% agent_bundled_starintel_mcp                   -> 6a3a8c9 (mcp/, verified live)
+%% recents_deployment_pending                    -> docker load + container
+%%   recreate + CP restart DONE 23:26; view index build + UI verify in flight
+%% stats_scoping_fix_pending                     -> still PARKED (server-side #444,
+%%   view-refresh actor one-off prompt at /tmp/opencode/view-refresh-actor-prompt.md)
+%% Follow-up candidate: multi-server AGGREGATION (query all servers at once)
+%% was deferred - the shipped slice switches the active server instead.
 
 %% --- Operator decision: delete browser actors (KEEP the concept) --------
 backlog(browser_actors_delete,
