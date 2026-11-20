@@ -15,9 +15,9 @@ export function normalizeRegistryActor(entry, index = 0) {
   const capabilities = Array.isArray(entry.capabilities) ? entry.capabilities.map(String) : [];
   const inputDtypes = Array.isArray(entry.input_dtypes) ? entry.input_dtypes.map(String) : [];
   const outputDtypes = Array.isArray(entry.output_dtypes) ? entry.output_dtypes.map(String) : [];
-  const auth = entry.authorization && typeof entry.authorization === "object" ? entry.authorization : {};
-  const credentials =
-    auth && typeof auth.credentials === "string" ? auth.credentials : "";
+  const auth =
+    entry.authorization && typeof entry.authorization === "object" ? entry.authorization : {};
+  const credentials = auth && typeof auth.credentials === "string" ? auth.credentials : "";
   return {
     id: `pro-actor:${actorId}`,
     actorId,

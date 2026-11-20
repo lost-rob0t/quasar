@@ -342,8 +342,7 @@ export function DocumentsPage() {
           }
         }
         const fetched = Math.max(0, ...Object.keys(chain.pages).map(Number));
-        chain.complete =
-          fetched > 0 && !chain.bookmarks[fetched] && !chain.cursors[fetched];
+        chain.complete = fetched > 0 && !chain.bookmarks[fetched] && !chain.cursors[fetched];
         if (!active || token !== liveRequestToken.current) return;
         setLiveSnapshot({
           pages: { ...chain.pages },
@@ -389,8 +388,7 @@ export function DocumentsPage() {
           document: liveRowDocument(row),
           raw: row?.doc || null
         }));
-        chain.total =
-          typeof response?.total_rows === "number" ? response.total_rows : chain.total;
+        chain.total = typeof response?.total_rows === "number" ? response.total_rows : chain.total;
         chain.bookmarks[next] = response?.bookmark && rows.length ? response.bookmark : null;
       } else {
         const response = await cpClient.starintelApi("documents-recent", {
@@ -399,9 +397,7 @@ export function DocumentsPage() {
           limit: Math.min(pageSize, 25),
           ...(dataset ? { dataset } : {}),
           ...(cursor?.start_key ? { start_key: cursor.start_key } : {}),
-          ...(cursor?.start_key_doc_id
-            ? { start_key_doc_id: cursor.start_key_doc_id }
-            : {})
+          ...(cursor?.start_key_doc_id ? { start_key_doc_id: cursor.start_key_doc_id } : {})
         });
         rows = (response?.rows || []).map((row) => ({
           id: row?.id,
@@ -418,8 +414,7 @@ export function DocumentsPage() {
       }
       chain.pages[next] = rows;
       const fetched = Math.max(0, ...Object.keys(chain.pages).map(Number));
-      chain.complete =
-        fetched > 0 && !chain.bookmarks[fetched] && !chain.cursors[fetched];
+      chain.complete = fetched > 0 && !chain.bookmarks[fetched] && !chain.cursors[fetched];
       setLiveSnapshot({
         pages: { ...chain.pages },
         total: chain.total,
@@ -523,10 +518,7 @@ export function DocumentsPage() {
   const reachablePages = totals.complete ? contiguousPages : contiguousPages + 1;
   const page = Math.min(requestedPage, Math.max(reachablePages, 1));
   const pageDocuments = pageState?.documents || [];
-  const corpusIds = useMemo(
-    () => new Set(documents.map((document) => document._id)),
-    [documents]
-  );
+  const corpusIds = useMemo(() => new Set(documents.map((document) => document._id)), [documents]);
   const livePages = liveSnapshot?.pages || {};
   const liveRows = Object.keys(livePages)
     .map(Number)
@@ -657,9 +649,7 @@ export function DocumentsPage() {
         <div>
           <span className="eyebrow">Corpus</span>
           <h1>Documents</h1>
-          <p>
-            One searchable view of the workspace corpus and the live server ingest.
-          </p>
+          <p>One searchable view of the workspace corpus and the live server ingest.</p>
         </div>
         <div className="button-row">
           <button
@@ -735,10 +725,10 @@ export function DocumentsPage() {
             <span>in workspace</span>
             {serverUrl && query && (
               <>
-                <span className="summary-divider" aria-hidden="true">·</span>
-                <strong>
-                  {liveTotal === null ? "…" : liveTotal.toLocaleString()}
-                </strong>
+                <span className="summary-divider" aria-hidden="true">
+                  ·
+                </span>
+                <strong>{liveTotal === null ? "…" : liveTotal.toLocaleString()}</strong>
                 <span>on server</span>
               </>
             )}
@@ -964,9 +954,7 @@ export function DocumentsPage() {
       </div>
 
       {(error || liveError) && (
-        <div className="empty-state compact">
-          {[error, liveError].filter(Boolean).join(" · ")}
-        </div>
+        <div className="empty-state compact">{[error, liveError].filter(Boolean).join(" · ")}</div>
       )}
 
       {pageDocuments.length > 0 && (
@@ -1027,18 +1015,22 @@ export function DocumentsPage() {
           serverToken={serverToken}
           onClose={() => setLiveView(null)}
           onOpenNeighbor={(id) => setLiveView({ id, document: null })}
-          onSave={() => saveLiveDocument(
-            liveRows.find((row) => row.id === liveView.id) || {
-              id: liveView.id,
-              raw: liveView.document
-            }
-          )}
-          onAddToGraph={() => addLiveDocumentToGraph(
-            liveRows.find((row) => row.id === liveView.id) || {
-              id: liveView.id,
-              raw: liveView.document
-            }
-          )}
+          onSave={() =>
+            saveLiveDocument(
+              liveRows.find((row) => row.id === liveView.id) || {
+                id: liveView.id,
+                raw: liveView.document
+              }
+            )
+          }
+          onAddToGraph={() =>
+            addLiveDocumentToGraph(
+              liveRows.find((row) => row.id === liveView.id) || {
+                id: liveView.id,
+                raw: liveView.document
+              }
+            )
+          }
         />
       )}
     </section>
@@ -1152,9 +1144,7 @@ function LiveDocumentViewer({
               <KeyValue label="Type">{document.dtype}</KeyValue>
               <KeyValue label="Dataset">{document.dataset}</KeyValue>
               <KeyValue label="Updated">
-                {document.date_updated
-                  ? new Date(document.date_updated).toLocaleString()
-                  : "—"}
+                {document.date_updated ? new Date(document.date_updated).toLocaleString() : "—"}
               </KeyValue>
             </div>
             <details className="raw-document">
@@ -1165,7 +1155,8 @@ function LiveDocumentViewer({
         )}
         <section className="live-neighbors">
           <h3>
-            Neighbors <span>{total === null ? relations.length : `${relations.length} of ${total}`}</span>
+            Neighbors{" "}
+            <span>{total === null ? relations.length : `${relations.length} of ${total}`}</span>
           </h3>
           <ul>
             {relations.map((relation) => (

@@ -65,7 +65,10 @@ export interface StarintelSearchResponse {
 
 export interface StarintelStats {
   status?: string;
-  data?: { documents?: { total?: number; by_dtype?: Record<string, number> }; targets?: { total?: number } };
+  data?: {
+    documents?: { total?: number; by_dtype?: Record<string, number> };
+    targets?: { total?: number };
+  };
 }
 
 export interface StarintelActors {
@@ -89,8 +92,6 @@ export interface StarintelNeighborsResponse {
   bookmark?: string | null;
   relations: StarintelRelation[];
 }
-
-
 
 export interface ControlPlaneClient {
   send<T = unknown>(command: string, payload?: Record<string, unknown>): Promise<T>;
@@ -124,8 +125,12 @@ export interface ControlPlaneClient {
   starintelSearch(payload: StarintelSearchRequest): Promise<StarintelSearchResponse>;
   starintelStats(payload?: StarintelServerConfig): Promise<StarintelStats>;
   starintelActors(payload?: StarintelServerConfig): Promise<StarintelActors>;
-  starintelDocument(payload: StarintelServerConfig & { id: string }): Promise<Record<string, unknown>>;
-  starintelTargets(payload: StarintelServerConfig & { actor: string }): Promise<Record<string, unknown>>;
+  starintelDocument(
+    payload: StarintelServerConfig & { id: string }
+  ): Promise<Record<string, unknown>>;
+  starintelTargets(
+    payload: StarintelServerConfig & { actor: string }
+  ): Promise<Record<string, unknown>>;
   starintelNeighbors(
     payload: StarintelServerConfig & { id: string; limit?: number; bookmark?: string }
   ): Promise<StarintelNeighborsResponse>;
@@ -696,11 +701,14 @@ export function createControlPlaneClient(url = defaultWebSocketUrl()): ControlPl
         "starintel.probe",
         payload
       ),
-    purgeDocuments: () => send<{ deleted: number; revision: number }>("workspace.purge-documents", {}),
+    purgeDocuments: () =>
+      send<{ deleted: number; revision: number }>("workspace.purge-documents", {}),
     starintelRegistry: (payload = {}) =>
       send<Record<string, unknown>[]>("starintel.registry", payload),
-    starintelApi: <T = Record<string, unknown>>(op: string, payload: Record<string, unknown> = {}) =>
-      send<T>("starintel.api", { op, ...payload }),
+    starintelApi: <T = Record<string, unknown>>(
+      op: string,
+      payload: Record<string, unknown> = {}
+    ) => send<T>("starintel.api", { op, ...payload }),
     pythonActorsStatus: () => send<Record<string, unknown>>("python-actors.status", {}),
     pythonActorsRun: (payload: {
       actor: string;

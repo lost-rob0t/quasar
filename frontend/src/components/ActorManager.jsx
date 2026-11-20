@@ -128,9 +128,7 @@ export default function ActorManager() {
     !blocked &&
     (localFleet
       ? Boolean(targetInput.trim())
-      : !serverManaged &&
-        selectedIds.length &&
-        (builtin || currentSettings.actorsEnabled))
+      : !serverManaged && selectedIds.length && (builtin || currentSettings.actorsEnabled))
   );
   const filteredActors = allActors.filter((actor) => {
     const needle = query.trim().toLowerCase();
@@ -489,9 +487,9 @@ export default function ActorManager() {
               {localFleet ? (
                 <>
                   Local registry actor ({selectedActor.actorId}):{" "}
-                  {selectedActor.description || "runs on this machine"}. Runs via the
-                  control-plane python checkout (starintel-pro-actors) — not in the browser. Give
-                  it a target above and press Run. The manifest is read-only.
+                  {selectedActor.description || "runs on this machine"}. Runs via the control-plane
+                  python checkout (starintel-pro-actors) — not in the browser. Give it a target
+                  above and press Run. The manifest is read-only.
                 </>
               ) : (
                 <>

@@ -112,7 +112,6 @@ export default function StatsPage() {
     };
   }, [cpClient, serverUrl, serverToken]);
 
-
   if (!documents.length) {
     return (
       <section className="dashboard-empty-page">
@@ -237,7 +236,9 @@ export default function StatsPage() {
             <span className="eyebrow">Live ingest</span>
             <h2>Server totals</h2>
           </div>
-          <span>{serverUrl ? "Live via star-server" : "Configure a StarIntel server in Settings"}</span>
+          <span>
+            {serverUrl ? "Live via star-server" : "Configure a StarIntel server in Settings"}
+          </span>
         </div>
         {liveStats?.data ? (
           <>

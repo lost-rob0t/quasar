@@ -39,8 +39,8 @@ function ServerApiSurface({ capabilities }) {
     <div className="server-api-surface">
       <h3>Server API surface</h3>
       <p className="muted">
-        Every endpoint the client can reach through the control-plane relay. The relay only
-        forwards read routes; writes stay on the workspace commands.
+        Every endpoint the client can reach through the control-plane relay. The relay only forwards
+        read routes; writes stay on the workspace commands.
       </p>
       <ul className="server-api-endpoints">
         {endpoints.map((endpoint) => (
@@ -574,8 +574,8 @@ export function SettingsPage() {
           <h2>Danger zone</h2>
         </div>
         <p className="muted">
-          Deletes every local document in this workspace from the Tek9 store.
-          Graphs and settings are kept. This cannot be undone.
+          Deletes every local document in this workspace from the Tek9 store. Graphs and settings
+          are kept. This cannot be undone.
         </p>
         <div className="button-row">
           <button

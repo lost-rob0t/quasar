@@ -6,7 +6,9 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 // The filter logic is exported pure for unit tests.
 
 export function filterDatasetOptions(options, query) {
-  const text = String(query || "").trim().toLowerCase();
+  const text = String(query || "")
+    .trim()
+    .toLowerCase();
   if (!text) return options;
   return options.filter((option) => String(option).toLowerCase().includes(text));
 }

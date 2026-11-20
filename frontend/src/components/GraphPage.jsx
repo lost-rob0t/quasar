@@ -510,10 +510,7 @@ function GraphMembershipAdd({
   const [serverLoading, setServerLoading] = useState(false);
   const [selectedServer, setSelectedServer] = useState({});
   const existing = useMemo(() => new Set(existingIds || []), [existingIds]);
-  const corpusIds = useMemo(
-    () => new Set(documents.map((document) => document._id)),
-    [documents]
-  );
+  const corpusIds = useMemo(() => new Set(documents.map((document) => document._id)), [documents]);
   const visible = useMemo(
     () =>
       documents

@@ -101,7 +101,9 @@ describe("bounded documents page", () => {
   it("renders one merged search surface without source tabs", () => {
     const html = renderPage("/documents");
     expect(html).not.toContain("Live ingest");
-    expect(html).toContain("One searchable view of the workspace corpus and the live server ingest.");
+    expect(html).toContain(
+      "One searchable view of the workspace corpus and the live server ingest."
+    );
     expect(html).toContain("in workspace");
     expect(html).toContain("All datasets");
   });

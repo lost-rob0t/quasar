@@ -34,22 +34,20 @@ describe("actorE2eVerified", () => {
 describe("actorExecutionBlocked", () => {
   it("allows e2e-verified builtins regardless of settings", () => {
     expect(actorExecutionBlocked(verifiedBuiltin, {})).toBe(false);
-    expect(actorExecutionBlocked(verifiedBuiltin, { enableExperimentalActors: false })).toBe(
-      false
-    );
+    expect(actorExecutionBlocked(verifiedBuiltin, { enableExperimentalActors: false })).toBe(false);
   });
 
   it("blocks non-verified builtins without the experimental opt-in", () => {
     expect(actorExecutionBlocked(unverifiedBuiltin, {})).toBe(true);
-    expect(
-      actorExecutionBlocked(unverifiedBuiltin, { enableExperimentalActors: false })
-    ).toBe(true);
+    expect(actorExecutionBlocked(unverifiedBuiltin, { enableExperimentalActors: false })).toBe(
+      true
+    );
   });
 
   it("allows non-verified builtins once experimental actors are enabled", () => {
-    expect(
-      actorExecutionBlocked(unverifiedBuiltin, { enableExperimentalActors: true })
-    ).toBe(false);
+    expect(actorExecutionBlocked(unverifiedBuiltin, { enableExperimentalActors: true })).toBe(
+      false
+    );
   });
 
   it("follows actorsEnabled for custom actors", () => {
