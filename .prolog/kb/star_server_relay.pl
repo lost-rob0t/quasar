@@ -20,8 +20,18 @@ star_server_auth_mode(dev_bypass,
     'any credential or none returns 200 administrator with admin scopes; token forwarding is wired for the future').
 star_server_health_endpoint('http://127.0.0.1:5000/health').
 star_server_search_endpoint('http://127.0.0.1:5000/search?q=...&limit=...',
-    'couchdb-shaped response: total_rows, rows, bookmark cursor').
-star_server_search_ui_gap('forgejo issue nsaspy/quasar #142: UI document.search only queries the local tek9 store; star-server /search is never called').
+    'couchdb-shaped response: total_rows, rows, bookmark cursor; NO {status,data} envelope').
+star_server_search_ui_gap('RESOLVED 2026-11-19 (forgejo #142): starintel.api relay op table + Documents Live ingest source filter; UI reaches every star-server fetch/view endpoint through one bounded WS command').
+
+%% --- starintel.api relay (implemented 2026-11-19, issue #142) -----------
+relay_read_ops(['search', 'stats', 'actors', 'document', 'neighbors', 'targets', 'view', 'dataset-size'],
+    'one command starintel.api {url, token?, op, ...params, byteLimit?}; allowlisted params only; bounded via bounded-wire-result; write routes deliberately absent').
+relay_neighbors_contract('starintel.api {op: neighbors, id}',
+    'returns {id, document, total_relations, bookmark?, relations[]} where each relation carries {id, predicate, direction subject|object, neighbor, neighbor_dtype}; relations come from FTS on the exact quoted id; paged via bookmark').
+relay_endpoint_shapes('gserver wraps /api/v1/capabilities and /api/v1/stats payloads in {status, data}; couchdb /search and views are envelope-free (total_rows top-level)').
+relay_relation_endpoints('relation docs store subject/object as nested {id, dtype} objects on live star-server; %endpoint-id accepts bare ids too').
+relay_param_rules('empty-string params are dropped; limit clamped (search 100, view 200, neighbors default 25); view names from a closed table; path segments quri:url-encode'd').
+relay_ui_wiring('Documents source=live URL param toggles Local/Live; viewer modal fetches neighbors; Settings > StarIntel server renders the capabilities endpoint list after a successful probe; StatsPage shows server totals').
 
 %% --- Forgejo actor registry --------------------------------------------
 forgejo_registry_repo('starintel-labs/starintel-pro-actors').
@@ -32,7 +42,7 @@ forgejo_registry_refresh_rule(commit_a_fresh_jsonl_after_manifest_changes).
 
 %% --- Wiring gotchas (each one cost a live debugging round) --------------
 wiring_gotcha(ws_allowlist,
-    'new WS commands must be added to +standard-client-commands in control-plane/src/websocket-server.lisp or the client gets "Command X is not permitted"').
+    'new WS commands must be added to +default-capabilities in control-plane/src/websocket-server.lisp or the client gets "Command X is not permitted"').
 wiring_gotcha(ws_origin_allowlist,
     'the UI origin must be in *websocket-allowed-origins* (init file) or the WS handshake returns 403; moving the Vite port silently breaks the handshake').
 wiring_gotcha(export_init_symbols,
