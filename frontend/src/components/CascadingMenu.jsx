@@ -109,13 +109,14 @@ export default function CascadingMenu({
   }, [rootItems, path, header]);
 
   const panelWidth = 232;
+  // SSR-safe viewport bounds (the suite renders to static markup).
+  const viewportWidth = bounds?.width ?? (typeof window === "undefined" ? 1280 : window.innerWidth);
+  const viewportHeight =
+    bounds?.height ?? (typeof window === "undefined" ? 800 : window.innerHeight);
   const style = {
     position: fixed ? "fixed" : "absolute",
-    left: Math.max(
-      8,
-      Math.min(x, (bounds?.width || window.innerWidth) - panelWidth * panels.length - 16)
-    ),
-    top: Math.max(8, Math.min(y, (bounds?.height || window.innerHeight) - 120))
+    left: Math.max(8, Math.min(x, viewportWidth - panelWidth * panels.length - 16)),
+    top: Math.max(8, Math.min(y, viewportHeight - 120))
   };
 
   const flattenedIndex = (panelIndex, itemIndex) =>
