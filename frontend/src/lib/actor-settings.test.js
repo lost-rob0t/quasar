@@ -2,7 +2,7 @@ import { expect, it, vi } from "vitest";
 import { initializeActorSettings, migrateActorSettings } from "./actor-settings";
 import { REVIEW_ACTOR_ID } from "./review-actor-pack";
 
-it("composes both migrations while preserving user settings and actor definitions", () => {
+it("v2 migration keeps only shipped actors and drops user-authored ones", () => {
   const review = { id: REVIEW_ACTOR_ID, source: "user-edited", label: "My review" };
   const custom = { id: "custom", source: "custom source" };
   const settings = {
@@ -16,15 +16,19 @@ it("composes both migrations while preserving user settings and actor definition
     melissaActorPackVersion: 1
   };
   const migrated = migrateActorSettings(settings);
-  expect(migrated).toEqual({
-    ...settings,
-    quasarActorSettingsVersion: 1,
-    actors: [review, custom],
-    melissaActorPackInstalled: false,
-    melissaActorPackVersion: 0
-  });
+  expect(migrated.quasarActorSettingsVersion).toBe(2);
+  expect(migrated.actors.map((actor) => actor.id)).toEqual([REVIEW_ACTOR_ID]);
+  expect(migrated.melissaActorPackInstalled).toBe(false);
+  expect(migrated.melissaActorPackVersion).toBe(0);
+  expect(migrated.theme).toBe("light");
   expect(migrateActorSettings(migrated)).toBe(migrated);
   expect(settings.actors).toHaveLength(3);
+});
+
+it("installs the review pack for legacy settings that never migrated", () => {
+  const migrated = migrateActorSettings({ theme: "midnight" });
+  expect(migrated.quasarActorSettingsVersion).toBe(2);
+  expect(migrated.actors.map((actor) => actor.id)).toEqual([REVIEW_ACTOR_ID]);
 });
 
 it("rebases the migration on conflicting user changes instead of replaying stale settings", async () => {
@@ -32,7 +36,7 @@ it("rebases the migration on conflicting user changes instead of replaying stale
     _id: "settings",
     _rev: "2-user",
     theme: "light",
-    actors: [{ id: "new-custom" }],
+    actors: [{ id: "leftover-custom" }],
     serverUrl: "https://new.example.test"
   };
   const database = {
@@ -44,7 +48,7 @@ it("rebases the migration on conflicting user changes instead of replaying stale
   };
   const result = await initializeActorSettings(database);
   expect(database.put.mock.calls[1][0]).toMatchObject({ ...userEdit, actors: expect.any(Array) });
-  expect(result.actors.map((actor) => actor.id)).toEqual(["new-custom", REVIEW_ACTOR_ID]);
+  expect(result.actors.map((actor) => actor.id)).toEqual([REVIEW_ACTOR_ID]);
   expect(result.theme).toBe("light");
 });
 
@@ -68,21 +72,17 @@ it("does not suppress genuine storage failures", async () => {
   expect(database.put).toHaveBeenCalledTimes(1);
 });
 
-it("preserves intentional actor removal and disabled execution after migration", async () => {
+it("leaves current-version settings untouched, including intentional removal", () => {
   const removed = {
     _id: "settings",
     _rev: "3-user",
-    quasarActorSettingsVersion: 1,
-    actors: [],
-    actorsEnabled: false
+    quasarActorSettingsVersion: 2,
+    actors: []
   };
-  const database = { get: vi.fn().mockResolvedValue(removed), put: vi.fn() };
   expect(migrateActorSettings(removed)).toBe(removed);
-  await expect(initializeActorSettings(database)).resolves.toBe(removed);
-  expect(database.put).not.toHaveBeenCalled();
 });
 
 it("does not downgrade a newer migration marker", () => {
-  const current = { quasarActorSettingsVersion: 2, actors: [] };
+  const current = { quasarActorSettingsVersion: 3, actors: [] };
   expect(migrateActorSettings(current)).toBe(current);
 });

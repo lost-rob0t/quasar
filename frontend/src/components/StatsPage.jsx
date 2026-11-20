@@ -1,7 +1,8 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
   CheckCircle2,
+  Database,
   FileText,
   GitBranch,
   Link2,
@@ -80,7 +81,8 @@ function ReviewSummary({ stats }) {
 }
 
 export default function StatsPage() {
-  const { documents, workspace } = useQuasar();
+  const { documents, workspace, cpClient, settings } = useQuasar();
+  const [liveStats, setLiveStats] = useState(null);
   const reviewGroups = useMemo(() => partitionDocumentsByReview(documents), [documents]);
   const reviewedGraph = useMemo(
     () => buildGraph(reviewGroups.reviewed, workspace?.positions || {}),
@@ -90,6 +92,25 @@ export default function StatsPage() {
     () => graphStatistics(documents, reviewedGraph),
     [documents, reviewedGraph]
   );
+  const serverUrl = settings?.serverUrl || "";
+  const serverToken = settings?.serverToken || "";
+
+  // One bounded stats fetch per configured server; failures hide the section.
+  useEffect(() => {
+    if (!cpClient?.starintelStats || !serverUrl) return;
+    let active = true;
+    cpClient
+      .starintelStats({ url: serverUrl, token: serverToken || undefined })
+      .then((data) => {
+        if (active) setLiveStats(data || null);
+      })
+      .catch(() => {
+        if (active) setLiveStats(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [cpClient, serverUrl, serverToken]);
 
   if (!documents.length) {
     return (
@@ -207,6 +228,47 @@ export default function StatsPage() {
             tone="unreviewed"
           />
         </div>
+      </section>
+
+      <section className="dashboard-section">
+        <div className="section-heading dashboard-section-heading">
+          <div>
+            <span className="eyebrow">Live ingest</span>
+            <h2>Server totals</h2>
+          </div>
+          <span>
+            {serverUrl ? "Live via star-server" : "Configure a StarIntel server in Settings"}
+          </span>
+        </div>
+        {liveStats?.data ? (
+          <>
+            <div className="stats-grid reviewed-stats-grid">
+              <StatCard
+                label="Server documents"
+                value={liveStats.data.documents?.total || 0}
+                Icon={Database}
+                detail="Every record on the star-server, reviewed or not"
+              />
+              <StatCard
+                label="Server targets"
+                value={liveStats.data.targets?.total || 0}
+                Icon={Target}
+              />
+            </div>
+            <div className="dashboard-grid">
+              <Distribution
+                title="Server documents by dtype"
+                values={liveStats.data.documents?.by_dtype || {}}
+              />
+            </div>
+          </>
+        ) : (
+          <p className="muted">
+            {serverUrl
+              ? "Server stats are unavailable right now."
+              : "Set a StarIntel server URL in Settings to mirror its totals here."}
+          </p>
+        )}
       </section>
 
       <section className="panel distribution">

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { dtypes } from "starintel_doc";
+import { dtypesOrdered } from "../lib/dtype-meta";
 import {
   parseBrowserDocumentJson,
   assertDocument,
@@ -10,6 +11,7 @@ import {
   toLegacyUiDocument
 } from "../lib/canonical-document";
 import { operation } from "../lib/operations";
+import { useDocumentLookup } from "../lib/document-lookup";
 import { useQuasar } from "../store";
 
 function resolve(node) {
@@ -128,7 +130,7 @@ function Editor({ initial, mode, params, draftToken }) {
               setRaw(null);
             }}
           >
-            {dtypes.map((dtype) => (
+            {dtypesOrdered(dtypes).map((dtype) => (
               <option key={dtype}>{dtype}</option>
             ))}
           </select>
@@ -304,8 +306,13 @@ function CanonicalField({ name, field, value, required, disabled, onChange, onEr
 export default function CanonicalDocumentEditor({ mode }) {
   const { id } = useParams();
   const [params] = useSearchParams();
-  const { documents } = useQuasar();
-  const existing = documents.find((document) => (document.id || document._id) === id);
+  const { documents, cpClient } = useQuasar();
+  // Prefer the corpus copy, then fetch exactly this canonical record.
+  const corpusDocument = documents.find((document) => (document.id || document._id) === id);
+  const lookup = useDocumentLookup(cpClient, mode === "edit" ? id : null, {
+    skip: Boolean(corpusDocument)
+  });
+  const existing = corpusDocument || lookup.document;
   const draftToken = params.get("draft");
   let initial;
   try {
@@ -315,7 +322,11 @@ export default function CanonicalDocumentEditor({ mode }) {
         : null;
     const draft = draftText ? parseBrowserDocumentJson(draftText) : null;
     if (mode === "edit" && !existing && !draft)
-      return <p role="alert">Document is not available yet.</p>;
+      return (
+        <p role="alert">
+          {lookup.loading ? "Loading document…" : "Document is not available yet."}
+        </p>
+      );
     initial =
       draft || existing
         ? toCanonicalDocument(draft || existing, { allowLegacy090: true })

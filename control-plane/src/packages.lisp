@@ -65,6 +65,7 @@
     #:direct-document
     #:direct-document-list
     #:direct-workspace-snapshot-page
+    #:purge-workspace-documents
     #:direct-workspace-revision
     #:direct-graph-snapshot
     #:workspace-bootstrap
@@ -193,6 +194,7 @@
     #:subscribe
     #:unsubscribe
     #:broadcast-event
+    #:bounded-wire-result
     #:control-plane-capabilities
     #:control-plane-workspaces
     #:control-plane-store))
@@ -208,6 +210,18 @@
   (:export
    #:install-starlang-commands
    #:starlang-available-p))
+
+(defpackage #:quasar.starintel-relay
+  (:use #:cl)
+  (:import-from #:quasar.protocol
+                #:json-object
+                #:json-value
+                #:quasar-error)
+  (:import-from #:quasar.control-plane
+                #:register-command
+                #:bounded-wire-result)
+  (:export
+   #:install-starintel-relay-commands))
 
 (defpackage #:quasar.ws
   (:use #:cl)
@@ -242,6 +256,7 @@
   (:export
    #:*default-user-storage-bytes*
    #:*shared-local-session-enabled*
+   #:+development-origins+
    #:*websocket-allowed-origins*
    #:add-session-registered-hook
    #:remove-session-registered-hook

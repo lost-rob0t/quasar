@@ -242,7 +242,12 @@ export function essentialDataFieldsForDtype(dtype, limit = 6, activeSchema = sch
         !["object", "value"].includes(descriptor.type) && !descriptor.type.endsWith("[]")
     )
     .map((descriptor) => descriptor.name);
-  return [...new Set([...explicit, ...preferred, ...required, ...simple])].slice(0, limit);
+  const essentials = [...new Set([...explicit, ...preferred, ...required])];
+  // Required fields are never hidden behind "Add field": the limit applies
+  // only to the optional simple fields padding the visible set.
+  const optional = simple.filter((name) => !essentials.includes(name));
+  const limitWithRequired = Math.max(limit, essentials.length);
+  return [...essentials, ...optional].slice(0, limitWithRequired);
 }
 
 export function formatSchemaValue(value, fieldSchema) {

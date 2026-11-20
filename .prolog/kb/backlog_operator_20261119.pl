@@ -1,0 +1,67 @@
+%% Operator directive backlog, encoded 2026-11-19 ~22:20, EXECUTED same day
+%% by the post-compact session (commits 8b8b4a9..2c21f3b on bug-squash).
+%% ALL items below are DONE and retained as design/acceptance records:
+%% browser_actors_delete + run_all_bridge_scope  -> 61ae654
+%% dtype_dropdown_icons, document_create_common_fields,
+%% dtype_order_common_first                      -> ce048ba
+%% cascading_context_menu                        -> cf1c45d + 5560099
+%% fetch_document_graph                          -> fd175e5 (lib/graph-fetch.js)
+%% multi_server_support                          -> 0f7307b (active-server switch model)
+%% agent_providers_nano_gpt_glm_codex            -> 6a3a8c9 (codingSub flag;
+%%   deep loop-level code-edit delegation hook remains future work)
+%% agent_bundled_starintel_mcp                   -> 6a3a8c9 (mcp/, verified live)
+%% recents_deployment_pending                    -> docker load + container
+%%   recreate + CP restart DONE 23:26; view index build + UI verify in flight
+%% stats_scoping_fix_pending                     -> still PARKED (server-side #444,
+%%   view-refresh actor one-off prompt at /tmp/opencode/view-refresh-actor-prompt.md)
+%% Follow-up candidate: multi-server AGGREGATION (query all servers at once)
+%% was deferred - the shipped slice switches the active server instead.
+
+%% --- Operator decision: delete browser actors (KEEP the concept) --------
+backlog(browser_actors_delete,
+    "OPERATOR DECISION 2026-11-19: delete the browser-actor FEATURE - user-authored JS actors executed in a browser sandbox - but KEEP the concept: actor manifests, runtime field, the actor registry, builtin actors, and local fleet actors all stay. Scope of removal: settings.actors CRUD UI + code editor tab in ActorManager.jsx, the custom-actor execution branch in store.jsx runActor (the sandbox/opaque-origin path in lib/actors-core.js), the actorsEnabled custom-actor toggle, RunAllTransformationsBridge.jsx custom-actor branch, and their tests. After deletion ActorManager lists BUILTIN actors + local fleet actors (pro-actor-fleet -> pythonActorsRun) only; the sandbox execution machinery in actors-core.js (ACTOR_RESPONSE_LIMIT, FORBIDDEN_ACTOR_HEADER, literal-host checks) goes with the feature. Tests: ActorManager.test.jsx, actors.test.js, actor-transforms.test.js need pruning + updates. Acceptance: no UI path creates/edits/runs a browser actor; builtins + fleet actors still run; vitest green.").
+
+backlog(run_all_bridge_scope_after_browser_actor_removal,
+    "RunAllTransformationsBridge.jsx 'Run all transformations' must run BUILTIN actors over the current selection only after browser actors are deleted. Local fleet actors are EXCLUDED from run-all: pythonActorsRun requires an explicit free-text target, a selection is not a target. If the operator later wants fleet actors in run-all, the bridge needs a per-actor target prompt - do not silently use document ids as targets. Acceptance: bridge with builtin+fleet actors present runs builtins, reports fleet actors as skipped with reason 'local actor needs a target', and never throws.").
+
+%% --- UI issue 1: icons in the dtype dropdown ----------------------------
+backlog(dtype_dropdown_icons,
+    "UI issue: the document-create 'Type' dropdown (other types) shows no icons. Add a lucide icon per dtype (person=UserRound, org=Building2, relation=Network, social-media-post=MessageSquare, url=Link, user=Circles/AtSign, host=Server, device=Cpu - follow the icon mapping GraphPage.jsx already uses per dtype) and render a custom select menu (DatasetCombobox/GraphSelectMenu pattern) instead of a native <select> so icons are possible. Acceptance: every dtype option renders an icon + label; keyboard navigation works; matches dataset-menu.css design language.").
+
+%% --- UI issue 2: common fields visible, extras behind add-field ---------
+backlog(document_create_common_fields,
+    "UI issue: the document create form must show COMMON/REQUIRED fields for the chosen dtype up front; everything else lives behind an 'Add field' expander. Source of truth for required/common fields: the starintel 0.10.1 schema (starintel_doc package / schema/starintel-schema.lock.json consumer side); per dtype at minimum: title/summary (where applicable), dataset, url for url dtype, predicate+source+destination for relation. Extra/advanced fields render under an 'Add field' disclosure with a field picker. Acceptance: switching dtype swaps the visible common fields; no blank schema dump; 'Add field' exposes the rest; existing create flow still submits canonical documents (assertDocument passes).").
+
+%% --- UI issue 3: common types first ------------------------------------
+backlog(dtype_order_common_first,
+    "UI issue: dtype pickers order COMMON types first. Order: person, org, social-media-post, user, relation, url, then everything else alphabetical (device/host/target datasets last). Centralize as dtypesOrdered in lib/actors-adjacent or lib/document-meta and reuse in document create + graph add + filters. Acceptance: consistent order across all dtype surfaces.").
+
+%% --- UI issue 4: 3-way cascading right-click menu ----------------------
+backlog(cascading_context_menu,
+    "UI issue: operator wants a 3-level cascading right-click menu system - selecting down each path opens the next submenu (e.g. right-click graph node -> 'Run actor' -> 'local' -> actor list -> run; or 'Create' -> dtype -> template). Build a CascadingMenu component (portal, keyboard + hover navigation, path breadcrumb, closes on Esc/outside) in a new component file, styled per gesture-menu.css/design language, and wire graph nodes + documents table rows. Keep existing single-action items (add to graph, delete, open) as top-level entries. Acceptance: right click on graph node and document row opens the cascade; selecting a leaf fires exactly one action; Esc/outside closes; no portal focus traps.").
+
+%% --- UI issue 5: fetch full document graph + neighbors, local + remote --
+backlog(fetch_document_graph,
+    "UI issue: from a document, operator can fetch (a) just neighbors and (b) the WHOLE document graph reachable from it, both from the local workspace AND the server. Neighbors remote path exists: starintel.api neighbors op (control-plane/src/starintel-relay.lisp, allowlist id/limit/bookmark). Whole-graph: add a bounded walk - client-side breadth-first via repeated neighbors calls with depth limit (default 2, max 3) and a per-walk node budget (e.g. 500 docs), then save/merge results into the workspace or render a preview subgraph before import. Surface in the cascading menu (see cascading_context_menu): 'Fetch graph' -> depth -> local/remote. Acceptance: neighbors one-hop works local+remote; depth-2 walk on a relation-heavy doc returns <= budget and renders; cursor-safe (walk pages via bookmark); no unbounded drain.").
+
+%% --- UI issue 6: multiple server selection -----------------------------
+backlog(multi_server_support,
+    "UI issue: support MULTIPLE star-server endpoints. Settings stores a list (name, url, token) instead of a single serverUrl/serverToken; store auto-probes each (badge per server); Documents/graph/stats surfaces gain a server selector defaulting to 'all' or the first. starintel.api ops already take a per-request url param - the store keeps a map of clients/settings and surfaces pass the selected server. DatasetCombobox + recents + search + actor discovery (listStarIntelActors) must accept a server choice. Acceptance: two servers configured -> badges per server; Documents recents/search hits the selected server; stats page can aggregate or switch; removing a server cleans cached chains (documentsRouteCache.invalidate + liveChain reset).").
+
+%% --- Agent system: new providers ---------------------------------------
+backlog(agent_providers_nano_gpt_glm_codex,
+    "UI/agent issue: the agent system needs three new backends. (a) nanoGPT - OpenAI-compatible chat completions endpoint (https://nano-gpt.com/api/v1), API key in settings; (b) GLM - zhipu/GLM API (https://api.z.ai or https://open.bigmodel.cn/api/paas/v4, OpenAI-compatible chat completions) PLUS a GLM CODING SUB-AGENT configuration (a second model entry flagged as coding sub-agent that the agent loop can delegate code-edit steps to); (c) codex - OpenAI Codex models via the OpenAI-compatible API. Implementation home: the agent backend/provider registry the agent loop uses (lib/agent-loop.js, lib/agent-budget.js, agent chat components) - add a provider table (id, baseUrl, auth header style, default model list, coding-sub flag), settings UI per provider (key + model + enable), and wire the loop's provider selection. Acceptance: each provider can complete a one-turn chat from the agent panel with its key; GLM coding sub-agent appears as a delegation target; budget accounting uses per-provider token counting; failures surface typed errors.").
+
+backlog(agent_bundled_starintel_mcp,
+    "OPERATOR ADDITION 2026-11-19: agents also get a BUNDLED StarIntel MCP server. The agent system ships/exposes a Model Context Protocol server that wraps StarIntel data access so any connected agent (nanoGPT/GLM/codex/whatever) can call StarIntel as tools. Tool surface mirrors the starintel.api read ops (search, stats, document, neighbors, targets, view, dataset-size, documents-recent) plus local workspace reads (documents, graphs, actors list); write ops stay OUT unless the operator later asks. Implementation direction: an MCP server module in quasar (stdio for local agents, or streamable HTTP) backed by the same control-plane relay commands the UI uses - one implementation, both surfaces. Registered per agent provider session (provider-agnostic MCP config); keys/tools discoverable by agents without hand-pasting documents. Acceptance: an MCP client listing tools sees the StarIntel toolset; a tool call (e.g. search) returns live results through the relay; the bundled server starts/stops with quasar; works for at least one of the three new providers end-to-end.").
+
+%% --- Carried-over in-flight work (pre-compact state) -------------------
+backlog(recents_deployment_pending,
+    "IN FLIGHT (2026-11-19 ~22:15): the recents feature is committed both sides (quasar 175ad86 relay op + UI; starintel-server recents-projection 7259ff6, unit suite green, PR-ish) but NOT YET DEPLOYED: (1) docker image built at /tmp/opencode/star-server-image (tarball store path) - docker load was INTERRUPTED mid-command, redo: docker load < $(readlink -f /tmp/opencode/star-server-image); (2) recreate the container ONLY with the desktop overlay: docker compose --project-directory ~/starintel/starintel-desktop -f ~/starintel/starintel-server/docker-compose.yml -f ~/starintel/starintel-desktop/compose/server-env.yaml -p starintel-desktop up -d star-server (plain compose up in the server dir FAILS on missing secrets bind mounts); (3) restart the quasar control plane for the relay op (kill the sbcl child by port via ss -tlnp, then the setsid nix develop launch into /tmp/opencode/quasar-cp-watchdog.log); (4) headless verify: fresh context, /documents with server configured but EMPTY search box -> server rows under 'On the server - recent ingest (newest first)', Load more pages via cursor. PRs: verify tea pr create actually created them (the create outputs were EMPTY - list and re-create if missing); then merge-on-green (skill). Server issue #443, quasar #142.").
+
+backlog(stats_scoping_fix_pending,
+    "PARKED (issue starintel-labs/starintel-server#444): /api/v1/stats must be UNSCOPED (every doc, all tenants/datasets) when auth is disabled/dev-bypass, per-tenant/account otherwise. Verified undercount: stats total 615,744 vs progressive-insanity dataset alone 415,912; count_by_tenant_dataset_dtype drops docs without a tenant field and only scans *public-search-datasets* with tenant 'public'. ALSO the operator's view-refresh concern: aggregate views are read with update=false/stale and nothing forces a refresh. The VIEW-REFRESH ACTOR is handed off as a one-off prompt at /tmp/opencode/view-refresh-actor-prompt.md (actor, NO threads, cadence scaling with doc count) - hand that prompt to a fresh session; it is server-side (starintel-server), not quasar.").
+
+%% --- Session facts worth keeping ---------------------------------------
+wiring_gotcha(run_all_bridge_missing_import,
+    'RunAllTransformationsBridge.jsx called actorExecutionBlocked without importing it - any run-all threw ReferenceError mid-loop and the UI reported "0 documents returned". Fixed 8b8b4a9. Lesson: adding actors-core exports to new components - grep the component dir for actors-core symbols when touching runActor gating.').

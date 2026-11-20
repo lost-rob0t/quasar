@@ -101,7 +101,7 @@ const aliases = { _id: "id", _rev: "rev", date_added: "createdAt", date_updated:
 
 // Migration is deliberately opt-in and fail-closed. Never stamp a legacy object
 // with a new version or silently drop a field whose semantics are unknown.
-export function migrateLegacy090Document(input) {
+export function migrateLegacy090Document(input, { preserveUnmapped = false } = {}) {
   if (input?.schemaVersion) return assertDocument(input);
   if (input?.schema_version !== "0.9.0")
     throw new TypeError("Expected explicit historical 0.9.0 document");
@@ -111,25 +111,66 @@ export function migrateLegacy090Document(input) {
   const domainFields = new Set(Object.values(mapping || {}));
   const historical = {};
   const historicalData = {};
+  const historicalSources = [];
+  // Historical source entries are objects {source_id, kind, name, accessed_at};
+  // the canonical reference is {schema, id} with no additional properties, so
+  // the descriptive metadata is preserved in the legacy extension bag.
+  const legacySource = (item) => {
+    if (item && typeof item === "object" && !Array.isArray(item) && item.source_id && !item.id) {
+      const { source_id, ...meta } = item;
+      if (Object.keys(meta).length) {
+        historicalSources.push({ id: source_id, meta });
+      }
+      return reference(source_id);
+    }
+    return reference(item);
+  };
+  const preserve = (name, value, path) => {
+    if (path.startsWith("data.")) historicalData[name] = value;
+    else historical[name] = value;
+  };
   const write = (name, value, path) => {
     const relationAliases =
       input.dtype === "relation"
         ? { subject: "source", object: "destination", target: "destination", directed: "direction" }
         : {};
     const inPayload = path.startsWith("data.");
-    if (mapping && inPayload && !Object.hasOwn(mapping, name))
+    if (mapping && inPayload && !Object.hasOwn(mapping, name)) {
+      if (preserveUnmapped) {
+        preserve(name, value, path);
+        return;
+      }
       throw new TypeError(`Unmapped historical field ${path}; manual migration required`);
+    }
     const canonical =
       inPayload && mapping ? mapping[name] : relationAliases[name] || aliases[name] || camel(name);
     if (input.dtype === "dataset-manifest" && inPayload && name === "counts_by_dtype")
       value = Object.entries(value).map(([key, count]) => ({ key, value: count }));
-    if (canonical === "sources" && Array.isArray(value)) value = value.map(reference);
+    if (canonical === "sources" && Array.isArray(value)) value = value.map(legacySource);
     if (input.dtype === "relation" && ["source", "destination"].includes(canonical))
       value = reference(value);
     if (input.dtype === "relation" && name === "directed")
       value = value === false ? "symmetric" : "directed";
     if (!Object.hasOwn(definition.properties, canonical)) {
+      if (preserveUnmapped) {
+        preserve(name, value, path);
+        return;
+      }
       throw new TypeError(`Unmapped historical field ${path}; manual migration required`);
+    }
+    // Historical external id lists: array-native canonical targets pass
+    // through; object-native targets (Document.externalIds) take the
+    // scheme-keyed object form.
+    if (name === "external_ids" && Array.isArray(value)) {
+      const field = resolvedField(definition.properties[canonical], value);
+      if (field?.type === "object") {
+        value = Object.fromEntries(
+          value.map((item, index) => [
+            String(item?.scheme ?? item?.issuer ?? index),
+            item && typeof item === "object" ? item : { value: item }
+          ])
+        );
+      }
     }
     value = canonicalValue(value, definition.properties[canonical]);
     if (
@@ -175,9 +216,9 @@ export function migrateLegacy090Document(input) {
   if (!input.data || typeof input.data !== "object" || Array.isArray(input.data)) {
     throw new TypeError("Historical data must be an object");
   }
-  for (const [name, value] of Object.entries(input.data)) {
-    if (input.dtype === "person" && name === "external_ids" && Array.isArray(value)) {
-      if (value.length)
+  for (const [name, rawValue] of Object.entries(input.data)) {
+    if (input.dtype === "person" && name === "external_ids" && Array.isArray(rawValue)) {
+      if (rawValue.length)
         throw new TypeError(
           "Person external_ids requires an identifier-document bundle; atomic bundle application is unavailable in this editor"
         );
@@ -186,9 +227,10 @@ export function migrateLegacy090Document(input) {
       continue;
     }
     // The historical active flag has no exact validity-interval equivalent.
-    if (input.dtype === "relation" && name === "active") historicalData[name] = value;
-    else write(name, value, `data.${name}`);
+    if (input.dtype === "relation" && name === "active") historicalData[name] = rawValue;
+    else write(name, rawValue, `data.${name}`);
   }
+  if (historicalSources.length) historical.sources = historicalSources;
   if (Object.keys(historicalData).length) historical.data = historicalData;
   if (Object.keys(historical).length) {
     if (Object.hasOwn(output.extensions || {}, "quasarLegacy090")) {
@@ -199,9 +241,12 @@ export function migrateLegacy090Document(input) {
   return assertDocument(output);
 }
 
-export function toCanonicalDocument(input, { allowLegacy090 = false } = {}) {
+export function toCanonicalDocument(
+  input,
+  { allowLegacy090 = false, preserveUnmapped = false } = {}
+) {
   if (input?.schemaVersion === SPEC_VERSION) return assertDocument(input);
-  if (allowLegacy090) return migrateLegacy090Document(input);
+  if (allowLegacy090) return migrateLegacy090Document(input, { preserveUnmapped });
   throw new TypeError(
     "Canonical StarIntel 0.10.1 document required; select legacy migration explicitly"
   );

@@ -7,6 +7,7 @@ import {
   Network,
   Palette,
   Play,
+  Plus,
   RadioTower,
   RefreshCw,
   Save,
@@ -17,11 +18,55 @@ import {
   UploadCloud
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { normalizeActorManifest } from "../lib/actors";
 import { openImportedGraph } from "../lib/graph-navigation";
 import { createSettingsExport, parseSettingsImport } from "../lib/settings-transfer";
 import { applyTheme, THEMES } from "../lib/themes";
 import { useQuasar } from "../store";
+
+// Every star-server endpoint the probe reports, so the operator can see the
+// full fetch/view surface the control-plane relay (starintel.api) exposes.
+// The relay itself is read-only: write routes are listed for reference.
+function ServerApiSurface({ capabilities }) {
+  // gserver wraps payloads: {status, data:{endpoints, features, ...}}.
+  const payload = capabilities?.data ?? capabilities ?? {};
+  const endpoints = Array.isArray(payload.endpoints) ? payload.endpoints : [];
+  const features =
+    payload.features && typeof payload.features === "object"
+      ? Object.entries(payload.features).filter(([, value]) => typeof value === "boolean")
+      : [];
+  if (!endpoints.length) return null;
+  return (
+    <div className="server-api-surface">
+      <h3>Server API surface</h3>
+      <p className="muted">
+        Every endpoint the client can reach through the control-plane relay. The relay only forwards
+        read routes; writes stay on the workspace commands.
+      </p>
+      <ul className="server-api-endpoints">
+        {endpoints.map((endpoint) => (
+          <li key={`${endpoint.method}-${endpoint.path}`}>
+            <code className={`api-method api-${String(endpoint.method || "GET").toLowerCase()}`}>
+              {endpoint.method}
+            </code>
+            <code>{endpoint.path}</code>
+            {(endpoint.scopes || []).length > 0 && (
+              <small className="muted">{endpoint.scopes.join(", ")}</small>
+            )}
+          </li>
+        ))}
+      </ul>
+      {features.length > 0 && (
+        <div className="server-api-features">
+          {features.map(([name, value]) => (
+            <span key={name} className={`feature-chip feature-${value ? "on" : "off"}`}>
+              {value ? "✓" : "✗"} {name}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function Report({ report }) {
   if (!report) return null;
@@ -112,6 +157,7 @@ export function ImportPage() {
   const { importFileSet, select, setNotice } = useQuasar();
   const [files, setFiles] = useState([]);
   const [format, setFormat] = useState("starintel");
+  const [serverListName, setServerListName] = useState("");
   const [dataset, setDataset] = useState("wireless-import");
   const [replace, setReplace] = useState(false);
   const [resolveManifestReferences, setResolveManifestReferences] = useState(false);
@@ -272,21 +318,6 @@ export function ImportPage() {
   );
 }
 
-const ACTOR_TEMPLATE = JSON.stringify(
-  {
-    id: "quasar.actor.example",
-    label: "Example actor",
-    description: "Describe what this actor returns.",
-    version: 1,
-    accepts: ["*"],
-    minSelection: 1,
-    maxSelection: 8,
-    source: `(context) => ({ documents: [], message: "Selected " + context.selection.length + " document(s)" })`
-  },
-  null,
-  2
-);
-
 export function SettingsPage() {
   const {
     settings,
@@ -298,6 +329,7 @@ export function SettingsPage() {
     serverStatus,
     queueStatus,
     testServer,
+    deleteAllDocuments,
     startQueue,
     stopQueue,
     databaseInfo,
@@ -305,10 +337,22 @@ export function SettingsPage() {
     setNotice
   } = useQuasar();
   const [form, setForm] = useState(settings || {});
-  const [actorText, setActorText] = useState(ACTOR_TEMPLATE);
   const [info, setInfo] = useState(null);
   const [viewStatus, setViewStatus] = useState("");
-  const actors = useMemo(() => form.actors || [], [form.actors]);
+  const [purgeArmed, setPurgeArmed] = useState(false);
+
+  async function purgeLocalDocuments() {
+    if (!purgeArmed) {
+      setPurgeArmed(true);
+      return;
+    }
+    setPurgeArmed(false);
+    try {
+      await deleteAllDocuments();
+    } catch (error) {
+      setNotice({ kind: "error", message: error.message });
+    }
+  }
 
   useEffect(() => setForm(settings || {}), [settings]);
   useEffect(() => {
@@ -424,37 +468,13 @@ export function SettingsPage() {
     }
   }
 
-  function addActor() {
-    try {
-      const actor = normalizeActorManifest(JSON.parse(actorText));
-      const nextActors = [...actors.filter((item) => item.id !== actor.id), actor];
-      setForm((current) => ({ ...current, actors: nextActors }));
-      setNotice({
-        kind: "success",
-        message: `Actor staged: ${actor.id}. Save settings to persist it.`
-      });
-    } catch (error) {
-      setNotice({ kind: "error", message: error.message });
-    }
-  }
-
-  function removeActor(id) {
-    setForm((current) => ({
-      ...current,
-      actors: (current.actors || []).filter((actor) => actor.id !== id)
-    }));
-  }
-
   return (
     <section>
       <div className="page-heading">
         <div>
           <span className="eyebrow">Configuration</span>
           <h1>Settings</h1>
-          <p>
-            Local storage, StarIntel services, optional queue ingest, synchronization, and browser
-            actors.
-          </p>
+          <p>Local storage, StarIntel services, optional queue ingest, and synchronization.</p>
         </div>
         <button className="button primary" onClick={save}>
           <Save size={16} /> Save settings
@@ -511,6 +531,27 @@ export function SettingsPage() {
 
       <section className="panel">
         <div className="section-heading">
+          <h2>Danger zone</h2>
+        </div>
+        <p className="muted">
+          Deletes every local document in this workspace from the Tek9 store. Graphs and settings
+          are kept. This cannot be undone.
+        </p>
+        <div className="button-row">
+          <button
+            className={purgeArmed ? "button danger" : "button"}
+            type="button"
+            onClick={purgeLocalDocuments}
+            onBlur={() => setPurgeArmed(false)}
+          >
+            <Trash2 size={15} />
+            {purgeArmed ? "Confirm: delete all documents" : "Delete all documents…"}
+          </button>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="section-heading">
           <h2>StarIntel server</h2>
           <span className={`sync-badge sync-${serverStatus.state}`}>{serverStatus.state}</span>
         </div>
@@ -558,6 +599,93 @@ export function SettingsPage() {
         <button className="button primary" onClick={probeServer} disabled={!form.serverUrl}>
           <Server size={15} /> Test server connection
         </button>
+        {serverStatus.state === "active" && serverStatus.result?.mode === "v1" && (
+          <ServerApiSurface capabilities={serverStatus.result.capabilities} />
+        )}
+        <div className="server-list">
+          <div className="section-heading">
+            <h3>Saved servers</h3>
+            <small className="muted">
+              Switch the active connection; every surface (documents, recents, stats, actors)
+              follows it.
+            </small>
+          </div>
+          {(form.servers || []).map((entry) => {
+            const active = entry.url === form.serverUrl;
+            return (
+              <div key={entry.url} className="actor-row">
+                <div>
+                  <strong>
+                    {entry.name || entry.url} {active && <em className="muted">(active)</em>}
+                  </strong>
+                  <code>{entry.url}</code>
+                </div>
+                <div className="button-row">
+                  {!active && (
+                    <button
+                      className="button small"
+                      type="button"
+                      onClick={() =>
+                        setForm((current) => ({
+                          ...current,
+                          serverUrl: entry.url,
+                          serverToken: entry.token || ""
+                        }))
+                      }
+                    >
+                      Use
+                    </button>
+                  )}
+                  <button
+                    className="icon-button danger"
+                    type="button"
+                    onClick={() =>
+                      setForm((current) => ({
+                        ...current,
+                        servers: (current.servers || []).filter((item) => item.url !== entry.url)
+                      }))
+                    }
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          {!(form.servers || []).length && (
+            <p className="muted">No saved servers yet — configure one above and save it.</p>
+          )}
+          <div className="button-row">
+            <input
+              type="text"
+              value={serverListName}
+              onChange={(event) => setServerListName(event.target.value)}
+              placeholder="Name for the current connection"
+              aria-label="Server name"
+              disabled={!form.serverUrl}
+            />
+            <button
+              className="button small"
+              type="button"
+              disabled={!form.serverUrl}
+              onClick={() =>
+                setForm((current) => ({
+                  ...current,
+                  servers: [
+                    ...(current.servers || []).filter((item) => item.url !== current.serverUrl),
+                    {
+                      name: serverListName.trim() || current.serverUrl,
+                      url: current.serverUrl,
+                      token: current.serverToken || ""
+                    }
+                  ]
+                }))
+              }
+            >
+              <Plus size={14} /> Save current connection
+            </button>
+          </div>
+        </div>
       </section>
 
       <section className="panel">
@@ -701,57 +829,6 @@ export function SettingsPage() {
             Stop
           </button>
         </div>
-      </section>
-
-      <section className="panel">
-        <div className="section-heading">
-          <h2>Browser actors</h2>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={Boolean(form.actorsEnabled)}
-              onChange={update("actorsEnabled")}
-            />{" "}
-            Enable actor execution
-          </label>
-        </div>
-        <p className="muted">
-          Bundled actors run without enabling custom code. Custom actors run as Web Workers and
-          return StarIntel document batches. Returned documents pass through canonical validation
-          and transaction-level undo.
-        </p>
-        <div className="actor-list">
-          {actors.map((actor) => (
-            <div key={actor.id} className="actor-row">
-              <div>
-                <strong>{actor.label}</strong>
-                <code>
-                  {actor.id} · v{actor.version}
-                </code>
-              </div>
-              <button className="icon-button danger" onClick={() => removeActor(actor.id)}>
-                <Trash2 size={16} />
-              </button>
-            </div>
-          ))}
-          {!actors.length && (
-            <p className="muted">
-              No custom actors configured. The built-in deterministic actor remains available when
-              actors are enabled.
-            </p>
-          )}
-        </div>
-        <label className="field">
-          <span>Custom actor manifest JSON</span>
-          <textarea
-            className="code-editor tall"
-            value={actorText}
-            onChange={(event) => setActorText(event.target.value)}
-          />
-        </label>
-        <button className="button" onClick={addActor}>
-          Stage actor manifest
-        </button>
       </section>
 
       <section className="panel">

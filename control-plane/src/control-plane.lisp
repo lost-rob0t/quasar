@@ -257,6 +257,45 @@ returns a result envelope with revision, operation ID, and canonical data."
                   (cons "type" type-name)
                   (cons "payload" payload))))
 
+(defun handle-workspace-purge (plane payload envelope)
+  "Delete every document in the workspace in one durable operation.
+Graphs and settings survive; the revision advances so clients converge
+on the emptied corpus through the normal event broadcast."
+  (declare (ignore payload))
+  (let* ((workspace (workspace-for plane envelope))
+         (workspace-id (quasar.workspace:workspace-id workspace))
+         (deleted (quasar.store:purge-workspace-documents
+                   (control-plane-store plane) workspace-id))
+         (candidate (quasar.workspace:copy-workspace workspace))
+         (operation-id (next-operation-id)))
+    (clrhash (quasar.workspace:workspace-documents candidate))
+    (incf (quasar.workspace:workspace-revision candidate))
+    (quasar.plugin:authorize-storage-commit
+     (current-command-principal) candidate)
+    (quasar.store:commit-workspace
+     (control-plane-store plane) candidate
+     (quasar.protocol:json-object
+      (cons "operationId" operation-id)
+      (cons "workspaceId" workspace-id)
+      (cons "baseRevision" (quasar.workspace:workspace-revision workspace))
+      (cons "committedRevision" (quasar.workspace:workspace-revision candidate))
+      (cons "command" (quasar.protocol:json-object
+                       (cons "type" "workspace.purge-documents")))
+      (cons "result" (quasar.protocol:json-object
+                      (cons "deleted" deleted)))
+      (cons "timestamp" (get-universal-time))
+      (cons "client" (or (quasar.protocol:command-envelope-client envelope) "unknown"))))
+    (setf (gethash workspace-id (control-plane-workspaces plane)) candidate)
+    (broadcast-event plane "workspace.purged" workspace-id
+                     (quasar.workspace:workspace-revision candidate)
+                     operation-id
+                     (quasar.protocol:json-object
+                      (cons "deleted" deleted)))
+    (quasar.protocol:json-object
+     (cons "deleted" deleted)
+     (cons "revision" (quasar.workspace:workspace-revision candidate))
+     (cons "operationId" operation-id))))
+
 (defun array-elements (value)
   "Return the elements of a JSON array, handling both :array-tagged
   (our convention) and plain-list (JSOWN parsed) representations."
@@ -408,6 +447,9 @@ returns a result envelope with revision, operation ID, and canonical data."
   (register-command plane "document.delete"
    (lambda (payload envelope)
      (handle-operation plane payload envelope "document.delete")))
+  (register-command plane "workspace.purge-documents"
+   (lambda (payload envelope)
+     (handle-workspace-purge plane payload envelope)))
   (register-command plane "graph.snapshot"
    (lambda (payload envelope)
      (handle-graph-snapshot plane payload envelope)))

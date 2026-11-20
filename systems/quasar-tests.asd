@@ -8,7 +8,6 @@
   :serial t
   :pathname "../control-plane/tests/"
   :components ((:file "control-plane-tests")
-               (:file "pro-actor-tests")
                (:file "plugin-tests")
                (:file "python-actor-tests")
                (:file "autodig-control-tests")
@@ -28,6 +27,8 @@
                (:file "phase2-protocol-tests")
                (:file "phase2-large-corpus-tests")
                (:file "bounded-read-tests")
+               (:file "starintel-relay-tests")
+               (:file "purge-documents-tests")
                (:file "catalog-tests")
                (:file "bounded-read-benchmark")
                (:file "melissa-tests")
@@ -37,7 +38,6 @@
   :perform (test-op (operation component)
              (declare (ignore operation component))
              (uiop:symbol-call :quasar.tests :run-tests)
-             (funcall (find-symbol "RUN-PRO-ACTOR-TESTS" "QUASAR.TESTS"))
              (funcall (find-symbol "RUN-PLUGIN-TESTS" "QUASAR.TESTS"))
              (funcall (find-symbol "RUN-PYTHON-ACTOR-TESTS" "QUASAR.TESTS"))
              (funcall (find-symbol "RUN-AUTODIG-CONTROL-TESTS" "QUASAR.TESTS"))
@@ -55,6 +55,8 @@
              (funcall (find-symbol "RUN-PHASE2-PROTOCOL-TESTS" "QUASAR.TESTS"))
              (funcall (find-symbol "RUN-PHASE2-LARGE-CORPUS-TESTS" "QUASAR.TESTS"))
              (funcall (find-symbol "RUN-BOUNDED-READ-TESTS" "QUASAR.TESTS"))
+             (funcall (find-symbol "RUN-STARINTEL-RELAY-TESTS" "QUASAR.TESTS"))
+             (funcall (find-symbol "RUN-PURGE-DOCUMENTS-TESTS" "QUASAR.TESTS"))
              (funcall (find-symbol "RUN-CATALOG-TESTS" "QUASAR.TESTS"))
              (funcall (find-symbol "RUN-BOUNDED-MEMORY-TESTS" "QUASAR.TESTS"))
              (funcall (find-symbol "RUN-MELISSA-TESTS" "QUASAR.TESTS"))

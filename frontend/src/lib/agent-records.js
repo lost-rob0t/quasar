@@ -45,9 +45,6 @@ export const AGENT_PERMISSIONS = Object.freeze([
   "graph.read",
   "graph.edit",
   "actors.run",
-  "actors.create",
-  "actors.edit",
-  "actors.delete",
   "targets.read",
   "targets.edit",
   "sources.external",
@@ -97,20 +94,6 @@ export const DEFAULT_ROLES = Object.freeze([
     review: "destructive",
     retry: { maxAttempts: 2, backoffMs: 1_000 },
     budget: { maxCostUsd: 1, maxIterations: 12, maxToolCalls: 36, maxRuntimeMs: 600_000 }
-  },
-  {
-    id: "actor-builder",
-    name: "Actor builder",
-    instructions:
-      "Create Quasar actors as declarative transforms. Validate and test them before saving. Never access PouchDB, Cytoscape, application state, or secrets directly.",
-    permissions: ["documents.read", "actors.run", "actors.create", "actors.edit"],
-    actions: ["inspect", "create_actor", "test_actor", "repair_actor"],
-    accepts: ["*"],
-    outputs: ["actor"],
-    autonomy: "bounded",
-    review: "save-actor",
-    retry: { maxAttempts: 3, backoffMs: 500 },
-    budget: { maxCostUsd: 1, maxIterations: 12, maxToolCalls: 30, maxRuntimeMs: 600_000 }
   },
   {
     id: "supervisor",

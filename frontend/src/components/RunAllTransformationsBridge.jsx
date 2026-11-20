@@ -3,7 +3,7 @@ import { Play } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useLocation } from "react-router-dom";
 import { assertDocument } from "starintel_doc/legacy";
-import { isBuiltinActor } from "../lib/actors";
+import { actorExecutionBlocked } from "../lib/actors";
 import { operation } from "../lib/operations";
 import {
   mergeTransformationDocuments,
@@ -122,12 +122,21 @@ export default function RunAllTransformationsBridge() {
           });
           continue;
         }
-        const customDisabled = !isBuiltinActor(actor) && !settings?.actorsEnabled;
-        if (customDisabled) {
+        if (actor.runtime === "pro-actor-fleet") {
+          // Local fleet actors need an explicit target; a run-all selection
+          // is not a target, so they never silently run here.
           reports.push({
             actorId: actor.id,
             status: "skipped",
-            reason: "Custom actor execution is disabled."
+            reason: "Local actor needs a target; run it from the Actor Manager."
+          });
+          continue;
+        }
+        if (actorExecutionBlocked(actor, settings)) {
+          reports.push({
+            actorId: actor.id,
+            status: "skipped",
+            reason: "Built-in actor is not verified end-to-end; disabled."
           });
           continue;
         }

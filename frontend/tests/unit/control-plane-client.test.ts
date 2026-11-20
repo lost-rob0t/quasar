@@ -187,28 +187,16 @@ describe("control-plane client lifecycle", () => {
       graphs: [],
       documentPage: { nextOffset: 1, total: 2, complete: false }
     });
-    await vi.waitFor(() => expect(socket.sent).toHaveLength(2));
-    expect(states.at(-1)).toMatchObject({
-      phase: "synchronizing",
-      progress: { received: 1, total: 2 }
-    });
-    expect(JSON.parse(socket.sent[1]).payload.documentOffset).toBe(1);
-    socket.respond(
-      {
-        id: "default",
-        revision: 4,
-        documents: [{ _id: "document:2" }],
-        graphs: [],
-        documentPage: { nextOffset: 2, total: 2, complete: true }
-      },
-      1
-    );
 
+    // Startup synchronization is bounded: one page only, then the client is
+    // synchronized. The remaining corpus is fetched by explicit snapshot()
+    // calls, never drained during connect.
     await vi.waitFor(() => expect(client.getConnected()).toBe(true));
+    expect(socket.sent).toHaveLength(1);
     expect(states.at(-1)).toMatchObject({ phase: "connected", synchronized: true });
     expect(states.at(-1)).toHaveProperty("progress", undefined);
-    expect(snapshots[0].documents).toEqual([{ _id: "document:1" }, { _id: "document:2" }]);
-    expect(snapshots[0]).not.toHaveProperty("documentPage");
+    expect(snapshots[0].documents).toEqual([{ _id: "document:1" }]);
+    expect(snapshots[0]).toHaveProperty("documentPage");
     client.dispose();
   });
 

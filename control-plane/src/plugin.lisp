@@ -13,6 +13,7 @@
 (defparameter *websocket-allowed-origins* +development-origins+
   "Exact browser origins accepted by the WebSocket server.")
 
+
 (defvar *session-registered-hooks* nil)
 (defvar *request-session-resolver* nil)
 (defvar *actor-spawn-authorizer* nil)

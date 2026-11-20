@@ -1,4 +1,5 @@
-import { fromPouchDocument } from "./lib/canonical-document";
+import { fromPouchDocument, toLegacyUiDocument } from "./lib/canonical-document";
+import { lookupDocument } from "./lib/document-lookup";
 import {
   createContext,
   useCallback,
@@ -26,7 +27,7 @@ import {
   cpSnapshot,
   cpTransaction
 } from "./control-plane/mutations";
-import { getControlPlane } from "./control-plane/client";
+import { getControlPlane, getControlPlaneOrThrow } from "./control-plane/client";
 import { chunkTransactionOperations } from "./control-plane/transaction-chunks";
 import { documentsToJsonl, downloadText, importFiles } from "./lib/importer";
 import { operation } from "./lib/operations";
@@ -34,6 +35,7 @@ import { validateDocumentBatch } from "./lib/document-batch";
 import {
   BUILTIN_ACTORS,
   actorApplicability,
+  actorExecutionBlocked,
   actorsForTarget,
   isBuiltinActor,
   runBrowserActor
@@ -41,7 +43,8 @@ import {
 import { actorWithTransformEnvelope, buildActorTransform } from "./lib/actor-transforms";
 import { createResearchNodeRunner } from "./lib/research-node-runner";
 import { startRabbitMqIngest } from "./lib/rabbitmq-ingest";
-import { probeStarIntelServer, submitTargetToServer } from "./lib/starintel-server";
+import { submitTargetToServer } from "./lib/starintel-server";
+import { normalizeRegistryActor } from "./lib/actor-registry";
 import { applyTheme } from "./lib/themes";
 import {
   addDocumentsToActiveGraph as addDocumentsToGraphWorkspace,
@@ -167,12 +170,28 @@ export function QuasarProvider({ children }) {
     setHistory((current) => ({ undo: [...current.undo.slice(-99), entry], redo: [] }));
   }, []);
 
+  // Undo preimages must not depend on the startup corpus: resolve the
+  // previous record for a touched id from the corpus, then from a bounded
+  // direct lookup. Null means the store reports the record missing.
+  const resolvePreviousDocument = useCallback(async (id) => {
+    const key = id?.id || id?._id || id;
+    const local = documentsRef.current.find(
+      (item) => item._id === key || (item.id || item._id) === key
+    );
+    if (local) return local;
+    try {
+      const canonical = await lookupDocument(getControlPlane(), key);
+      return canonical ? toLegacyUiDocument(canonical) : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const execute = useCallback(
     async (command, label = command.type, { recordHistory = true } = {}) => {
       if (command?.type === "save-document") {
         const doc = command.document;
-        const existing =
-          documentsRef.current.find((item) => item._id === (doc.id || doc._id)) || null;
+        const existing = await resolvePreviousDocument(doc.id || doc._id);
         let result;
         if (existing) {
           result = await cpDocumentUpdate(doc);
@@ -185,7 +204,7 @@ export function QuasarProvider({ children }) {
         return result;
       }
       if (command?.type === "remove-document") {
-        const existing = documentsRef.current.find((item) => item._id === command.id) || null;
+        const existing = await resolvePreviousDocument(command.id);
         const result = await cpDocumentDelete(command.id);
         await refresh();
         const inverse = existing ? operation.save(existing) : null;
@@ -193,8 +212,28 @@ export function QuasarProvider({ children }) {
         return result;
       }
       if (command?.type === "batch") {
+        // Fetch missing preimages directly; only the touched ids are visited.
         const known = new Map(
           documentsRef.current.map((document) => [document.id || document._id, document])
+        );
+        const missingIds = [
+          ...new Set(
+            (command.operations || [])
+              .flatMap((op) =>
+                op.type === "save-document"
+                  ? [op.document.id || op.document._id]
+                  : op.type === "remove-document"
+                    ? [op.id]
+                    : []
+              )
+              .filter((id) => id && !known.has(id))
+          )
+        ];
+        await Promise.all(
+          missingIds.map(async (id) => {
+            const previous = await resolvePreviousDocument(id);
+            if (previous) known.set(previous.id || previous._id, previous);
+          })
         );
         const inverses = [];
         const ops = (command.operations || []).map((op) => {
@@ -265,7 +304,7 @@ export function QuasarProvider({ children }) {
       }
       throw new TypeError(`Unknown operation type: ${command?.type || "<missing>"}`);
     },
-    [record, refresh]
+    [record, refresh, resolvePreviousDocument]
   );
   executeRef.current = execute;
 
@@ -676,11 +715,25 @@ export function QuasarProvider({ children }) {
     [executeBatch, refresh, settings]
   );
 
+  const deleteAllDocuments = useCallback(async () => {
+    const controlPlane = getControlPlaneOrThrow();
+    const result = await controlPlane.purgeDocuments();
+    await refresh();
+    setNotice({
+      kind: "success",
+      message: `Deleted ${result.deleted} document${result.deleted === 1 ? "" : "s"}.`
+    });
+    return result;
+  }, [refresh]);
+
   const testServer = useCallback(
     async (configuration = settings) => {
       setServerStatus({ state: "connecting", message: "Probing StarIntel server" });
       try {
-        const result = await probeStarIntelServer(configuration);
+        const result = await getControlPlaneOrThrow().starintelProbe({
+          url: configuration.serverUrl,
+          token: configuration.serverToken
+        });
         setServerStatus({
           state: "active",
           message:
@@ -697,6 +750,20 @@ export function QuasarProvider({ children }) {
     },
     [settings]
   );
+
+  // Keep the server badge truthful: probe the configured endpoint once on
+  // boot so it reads green when the server is reachable (yellow only while
+  // the probe is in flight, red when it fails) without a manual settings
+  // visit.
+  const lastAutoProbe = useRef(null);
+  useEffect(() => {
+    const key = `${settings?.serverUrl || ""}|${settings?.serverToken || ""}`;
+    if (loading || !settings?.serverUrl) return;
+    if (lastAutoProbe.current === key) return;
+    lastAutoProbe.current = key;
+    void testServer(settings).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, settings?.serverUrl, settings?.serverToken]);
 
   const submitTarget = useCallback(
     async (target, configuration = settings) => {
@@ -715,16 +782,77 @@ export function QuasarProvider({ children }) {
     [addDocumentsToActiveGraph, execute, settings]
   );
 
+  const [registryActors, setRegistryActors] = useState([]);
+  const registryRetryRef = useRef(null);
+
+  useEffect(() => {
+    if (!controlPlaneStatus?.connected) return () => {};
+    let active = true;
+    const attempt = () => {
+      const controlPlane = getControlPlane();
+      if (!controlPlane?.starintelRegistry) return;
+      controlPlane
+        .starintelRegistry()
+        .then((entries) => {
+          if (!active) return;
+          const normalized = [];
+          for (const entry of Array.isArray(entries) ? entries : []) {
+            try {
+              normalized.push(normalizeRegistryActor(entry));
+            } catch {
+              // Skip malformed registry entries; the registry is additive.
+            }
+          }
+          setRegistryActors(normalized);
+          clearTimeout(registryRetryRef.current);
+        })
+        .catch(() => {
+          // Registry is optional daily-use sugar; retry while connected.
+          if (!active) return;
+          clearTimeout(registryRetryRef.current);
+          registryRetryRef.current = setTimeout(attempt, 15000);
+        });
+    };
+    attempt();
+    return () => {
+      active = false;
+      clearTimeout(registryRetryRef.current);
+    };
+  }, [controlPlaneStatus?.connected]);
+
   const actors = useMemo(
-    () => [...BUILTIN_ACTORS, ...(settings?.actors || [])],
-    [settings?.actors]
+    () => [...BUILTIN_ACTORS, ...(settings?.actors || []), ...registryActors],
+    [settings?.actors, registryActors]
   );
   actorsRef.current = actors;
 
   const runActor = useCallback(
     async (actor, requestedSelection = selectedIds, runOptions = {}) => {
-      if (!isBuiltinActor(actor) && !settings?.actorsEnabled)
-        throw new Error("Custom browser actors are disabled in settings");
+      if (actor.runtime === "pro-actor-fleet") {
+        // The starintel-pro-actors fleet is retired: registry actors run
+        // LOCALLY through the control-plane python actor checkout
+        // (python-actors.run), never in the browser.
+        const target = runOptions?.target;
+        if (!target || typeof target !== "string" || !target.trim()) {
+          throw new Error("Enter a target (name, domain, id…) for this local actor.");
+        }
+        const controlPlane = getControlPlaneOrThrow();
+        const result = await controlPlane.pythonActorsRun({
+          actor: actor.id,
+          target: target.trim(),
+          ...(runOptions?.options ? { options: runOptions.options } : {})
+        });
+        return result;
+      }
+      if (!isBuiltinActor(actor))
+        throw new Error(
+          "Only built-in and local fleet actors run; browser actor authoring was removed."
+        );
+      if (actorExecutionBlocked(actor, settings))
+        throw new Error(
+          "This built-in actor is not verified end-to-end and is disabled. " +
+            "Enable experimental actors in the Actor Manager to run it."
+        );
       const requested = Array.isArray(requestedSelection)
         ? requestedSelection
         : [requestedSelection];
@@ -770,7 +898,7 @@ export function QuasarProvider({ children }) {
       documents,
       execute,
       selectedIds,
-      settings?.actorsEnabled,
+      settings?.enableExperimentalActors,
       workspace?.layout
     ]
   );
@@ -780,7 +908,11 @@ export function QuasarProvider({ children }) {
     if (!researchRunnerRef.current) {
       researchRunnerRef.current = createResearchNodeRunner({
         resolveActor: (id) => actorsRef.current.find((actor) => actor.id === id),
-        resolveDocument: (id) => documentsRef.current.find((document) => document._id === id),
+        resolveDocument: async (id) =>
+          documentsRef.current.find((document) => document._id === id) ||
+          (await lookupDocument(getControlPlane(), id)
+            .then((canonical) => (canonical ? toLegacyUiDocument(canonical) : null))
+            .catch(() => null)),
         runActor: (...args) => runActorRef.current(...args),
         saveNode: (document, label) => executeRef.current(operation.save(document), label),
         onStatus: (status) =>
@@ -925,6 +1057,7 @@ export function QuasarProvider({ children }) {
       stopSync,
       synchronize,
       testServer,
+      deleteAllDocuments,
       submitTarget,
       startQueue,
       stopQueue,
@@ -973,6 +1106,7 @@ export function QuasarProvider({ children }) {
       stopSync,
       synchronize,
       testServer,
+      deleteAllDocuments,
       submitTarget,
       startQueue,
       stopQueue,

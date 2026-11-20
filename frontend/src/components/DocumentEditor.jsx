@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Braces, Plus, Save, Trash2, X } from "lucide-react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
@@ -10,6 +10,8 @@ import {
   touchDocument
 } from "starintel_doc/legacy";
 import { operation } from "../lib/operations";
+import { presentDocument, useDocumentLookup } from "../lib/document-lookup";
+import { dtypesOrdered } from "../lib/dtype-meta";
 import {
   dataFieldDescriptorsForDtype,
   dataFieldsForDtype,
@@ -378,6 +380,7 @@ export default function DocumentEditor({ mode }) {
   const [params] = useSearchParams();
   const {
     documents,
+    cpClient,
     execute,
     setNotice,
     workspace,
@@ -385,7 +388,13 @@ export default function DocumentEditor({ mode }) {
     flushWorkspace,
     runTargetActors
   } = useQuasar();
-  const existing = mode === "edit" ? documents.find((document) => document._id === id) : null;
+  // Edit mode targets one canonical record: prefer the corpus copy, then
+  // fetch exactly this document via document.batch (see document-lookup).
+  const corpusDocument = mode === "edit" ? documents.find((document) => document._id === id) : null;
+  const lookup = useDocumentLookup(cpClient, mode === "edit" ? id : null, {
+    skip: Boolean(corpusDocument)
+  });
+  const existing = presentDocument(corpusDocument || lookup.document);
   const draftToken = params.get("draft");
   const initialDraft = useMemo(() => readDraft(draftToken), [draftToken]);
   const initialDocument = initialDraft || existing;
@@ -461,6 +470,39 @@ export default function DocumentEditor({ mode }) {
       })),
     [documents]
   );
+  // Bounded reference suggestions: one document.search page instead of the
+  // whole corpus. Merge in ids already referenced by the document so current
+  // values always resolve, then corpus options when the drain is still active.
+  const [searchedReferences, setSearchedReferences] = useState([]);
+  useEffect(() => {
+    if (!cpClient?.documentSearch) return;
+    let active = true;
+    cpClient
+      .documentSearch({ limit: 100 })
+      .then((response) => {
+        if (active) {
+          setSearchedReferences(
+            (Array.isArray(response?.documents) ? response.documents : []).map((row) => ({
+              value: row.id,
+              label: `${row.title || row.name || row.id} · ${row.dtype}`
+            }))
+          );
+        }
+      })
+      .catch(() => {
+        if (active) setSearchedReferences([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [cpClient]);
+  const boundedReferenceOptions = useMemo(() => {
+    const byValue = new Map();
+    for (const option of [...referenceOptions, ...searchedReferences]) {
+      if (option.value && !byValue.has(option.value)) byValue.set(option.value, option);
+    }
+    return [...byValue.values()];
+  }, [referenceOptions, searchedReferences]);
 
   useEffect(() => {
     const source = baseDocument?.dtype === form.dtype ? baseDocument.data || {} : {};
@@ -614,10 +656,34 @@ export default function DocumentEditor({ mode }) {
     }
   }
 
+  // Hydrate the form once the async direct lookup resolves (no draft, no
+  // corpus copy): populate the base document and fields exactly as the
+  // synchronous path does.
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (mode !== "edit" || !existing || initialDraft) return;
+    if (hydratedRef.current || form.id) return;
+    hydratedRef.current = true;
+    setBaseDocument(existing);
+    setForm({
+      id: existing._id || "",
+      dataset: existing.dataset || "default",
+      dtype: existing.dtype || "entity",
+      title: existing.title || "",
+      summary: existing.summary || "",
+      description: existing.description || "",
+      status: existing.status || "",
+      tags: (existing.tags || []).join(", "),
+      sources: JSON.stringify(existing.sources || [], null, 2),
+      evidence: JSON.stringify(existing.evidence || [], null, 2),
+      raw: JSON.stringify(existing, null, 2)
+    });
+  }, [mode, existing, initialDraft, form.id]);
+
   if (mode === "edit" && !existing && !initialDraft) {
     return (
       <section className="empty-state">
-        <h1>Document not found</h1>
+        {lookup.loading ? <h1>Loading document…</h1> : <h1>Document not found</h1>}
         <code>{id}</code>
       </section>
     );
@@ -634,7 +700,7 @@ export default function DocumentEditor({ mode }) {
             fieldSchema={descriptor?.schema || currentDataSchema.properties?.[name] || {}}
             required={requiredFields.has(name)}
             value={dataValues[name] ?? ""}
-            referenceOptions={referenceOptions}
+            referenceOptions={boundedReferenceOptions}
             onChange={(value) => updateData(name, value)}
           />
           {removable && (
@@ -712,7 +778,7 @@ export default function DocumentEditor({ mode }) {
                         setForm((current) => ({ ...current, dtype: next }));
                       }}
                     >
-                      {dtypes.map((name) => (
+                      {dtypesOrdered(dtypes).map((name) => (
                         <option key={name} value={name}>
                           {dtypeLabel(name)}
                         </option>
@@ -856,7 +922,7 @@ export default function DocumentEditor({ mode }) {
                       schema.properties?.sources || { type: "array", items: { type: "string" } }
                     }
                     value={form.sources}
-                    referenceOptions={referenceOptions}
+                    referenceOptions={boundedReferenceOptions}
                     onChange={(value) => setForm((current) => ({ ...current, sources: value }))}
                   />
                   <SchemaField
@@ -865,7 +931,7 @@ export default function DocumentEditor({ mode }) {
                       schema.properties?.evidence || { type: "array", items: { type: "string" } }
                     }
                     value={form.evidence}
-                    referenceOptions={referenceOptions}
+                    referenceOptions={boundedReferenceOptions}
                     onChange={(value) => setForm((current) => ({ ...current, evidence: value }))}
                   />
                 </div>

@@ -48,4 +48,27 @@ if [[ "${LOAD_ONLY:-0}" != "1" ]]; then
   sbcl_args+=(--eval '(quasar.app:main :open-browser-p nil :insecure-development-p t)')
 fi
 
-exec sbcl "${sbcl_args[@]}"
+# Bundled StarIntel MCP server: starts and stops with the control plane.
+# LOAD_ONLY (CI) never starts it; QUASAR_MCP=0 opts out. Node 24 has the
+# global WebSocket the server needs to reach the CP command bus.
+mcp_pid=""
+cleanup_mcp() {
+  if [[ -n "${mcp_pid}" ]]; then
+    kill "${mcp_pid}" 2>/dev/null || true
+    wait "${mcp_pid}" 2>/dev/null || true
+  fi
+}
+trap cleanup_mcp EXIT INT TERM
+
+if command -v node >/dev/null 2>&1; then
+  if [[ "${LOAD_ONLY:-0}" != "1" && "${QUASAR_MCP:-1}" != "0" ]]; then
+    node mcp/starintel-mcp-server.mjs \
+      --cp-url "ws://127.0.0.1:${QUASAR_WS_PORT:-8081}" \
+      --port "${QUASAR_MCP_PORT:-8083}" &
+    mcp_pid=$!
+  fi
+else
+  echo "run-control-plane: node not found; bundled StarIntel MCP server disabled" >&2
+fi
+
+sbcl "${sbcl_args[@]}"

@@ -1005,7 +1005,8 @@ export function normalizeActorManifest(manifest) {
       `Actor maxSelection must be an integer from minSelection to ${MAX_ACTOR_SELECTION}`
     );
   }
-  if (!actor.source) throw new TypeError("Actor source is required");
+  if (!actor.source && actor.runtime !== "pro-actor-fleet")
+    throw new TypeError("Actor source is required");
   return actor;
 }
 
@@ -1044,6 +1045,25 @@ export function isBuiltinActor(actor) {
   return BUILTIN_ACTORS.some(
     (candidate) => candidate.id === actor?.id && candidate.source === actor?.source
   );
+}
+
+// Built-in browser actors exercised end-to-end by frontend/e2e. Everything
+// else in BUILTIN_ACTORS is disabled by default: it exists, is inspectable
+// in the Actor Manager, but refuses execution until the operator opts in
+// (settings.enableExperimentalActors).
+export const E2E_VERIFIED_ACTOR_IDS = Object.freeze([
+  "quasar.actor.mark-reviewed",
+  "quasar.actor.target-input-expansion"
+]);
+
+export function actorE2eVerified(actor) {
+  return E2E_VERIFIED_ACTOR_IDS.includes(actor?.id);
+}
+
+export function actorExecutionBlocked(actor, settings) {
+  // Browser-actor authoring is gone; only shipped built-ins execute in the
+  // browser, gated on end-to-end verification (experimental escape hatch).
+  return !actorE2eVerified(actor) && !settings?.enableExperimentalActors;
 }
 
 const ACTOR_RESPONSE_LIMIT = 1_048_576;

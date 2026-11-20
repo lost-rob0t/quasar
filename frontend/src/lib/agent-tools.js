@@ -393,44 +393,6 @@ export function createAgentToolRegistry(environment) {
     }
   });
 
-  define({
-    name: "validate_actor",
-    description:
-      "Validate generated actor source and test it against scoped sample documents without saving it.",
-    permission: "actors.create",
-    parameters: {
-      type: "object",
-      required: ["actor"],
-      properties: {
-        actor: { type: "object" },
-        sampleDocumentIds: { type: "array", items: { type: "string" } }
-      },
-      additionalProperties: false
-    },
-    async execute(args, context) {
-      return environment.validateActor(
-        args.actor,
-        args.sampleDocumentIds || context.selectionIds || [],
-        context
-      );
-    }
-  });
-
-  define({
-    name: "save_actor",
-    description: "Save an actor candidate only after its validation and worker test succeeded.",
-    permission: "actors.create",
-    parameters: {
-      type: "object",
-      required: ["candidateId"],
-      properties: { candidateId: { type: "string" } },
-      additionalProperties: false
-    },
-    async execute(args, context) {
-      return environment.saveValidatedActor(args.candidateId, context);
-    }
-  });
-
   return {
     list(agent) {
       const permissions = new Set(agent.permissions || []);

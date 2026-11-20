@@ -2615,3 +2615,149 @@ td small {
     grid-template-columns: 1fr;
   }
 }
+
+/* --- Server API surface (Settings, forgejo #142) ------------------------ */
+
+.server-api-surface {
+  margin-top: 0.9rem;
+  border-top: 1px solid var(--border, #e4e4e7);
+  padding-top: 0.9rem;
+}
+
+.server-api-surface h3 {
+  margin: 0 0 0.3rem;
+}
+
+.server-api-endpoints {
+  list-style: none;
+  margin: 0.5rem 0;
+  padding: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.server-api-endpoints li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.86rem;
+}
+
+.api-method {
+  font-weight: 700;
+  min-width: 4.2ch;
+  text-align: center;
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+  background: var(--muted, #f4f4f5);
+}
+
+.api-get {
+  color: #166534;
+}
+
+.api-post,
+.api-patch,
+.api-put,
+.api-delete {
+  color: #7c2d12;
+}
+
+.server-api-features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.6rem;
+}
+
+.feature-chip {
+  font-size: 0.78rem;
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  border: 1px solid var(--border, #d4d4d8);
+}
+
+.feature-off {
+  opacity: 0.5;
+}
+
+/* Cascading right-click menu: root panel + one panel per path level. */
+.cascading-menu {
+  position: absolute;
+  z-index: 60;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.3rem;
+}
+.cascading-panel {
+  display: flex;
+  flex-direction: column;
+  width: 232px;
+  max-height: min(430px, 100%);
+  padding: 0.35rem;
+  overflow-y: auto;
+  border: 1px solid #38516d;
+  border-radius: 9px;
+  background: #0a1728;
+  box-shadow: 0 16px 36px #000a;
+}
+.cascading-back {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.2rem;
+  padding: 0.4rem 0.55rem;
+  border: 0;
+  border-radius: 6px;
+  background: #12253c;
+  color: #9fb8d0;
+  font: inherit;
+  font-size: 0.72rem;
+  text-align: left;
+  cursor: pointer;
+}
+.cascading-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+  text-align: left;
+  cursor: pointer;
+}
+.cascading-item:hover,
+.cascading-item:focus-visible,
+.cascading-item.active {
+  outline: none;
+  background: #15304d;
+  color: #fff;
+}
+.cascading-item.disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+.cascading-item .cascading-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cascading-item svg + svg,
+.cascading-item > svg:last-child {
+  margin-left: auto;
+  opacity: 0.7;
+}
+.cascading-item.danger {
+  color: #fda4af;
+}
+.cascading-empty {
+  padding: 0.5rem 0.6rem;
+  color: #9fb8d0;
+  font-size: 0.75rem;
+}

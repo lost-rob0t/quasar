@@ -120,9 +120,13 @@ export function createResearchNodeRunner({
         ? plan.actorIds.indexOf(node.data.current_actor_id)
         : -1;
     let actorIndex = mode === "run" ? 0 : Math.max(0, currentIndex);
-    let selection = unique([...plan.inputIds, ...plan.targetIds, ...node.data.output_ids])
-      .map((id) => resolveDocument(id))
-      .filter(Boolean);
+    let selection = (
+      await Promise.all(
+        unique([...plan.inputIds, ...plan.targetIds, ...node.data.output_ids]).map((id) =>
+          resolveDocument(id)
+        )
+      )
+    ).filter(Boolean);
     let successfulRuns = 0;
     let failedRuns = 0;
 
@@ -143,10 +147,14 @@ export function createResearchNodeRunner({
 
       if (record.requested !== "running") return settleRequested(node, record);
 
-      const blockedDependency = plan.dependencyIds
-        ?.map((id) => resolveDocument(id))
-        .find((dependency) => dependency?.data?.status !== "completed");
-      const missingDependency = plan.dependencyIds?.find((id) => !resolveDocument(id));
+      const blockedDependency = (
+        await Promise.all((plan.dependencyIds || []).map(async (id) => await resolveDocument(id)))
+      ).find((dependency) => dependency?.data?.status !== "completed");
+      const missingDependency = plan.dependencyIds?.length
+        ? (
+            await Promise.all(plan.dependencyIds.map(async (id) => [id, await resolveDocument(id)]))
+          ).find(([, document]) => !document)?.[0]
+        : undefined;
       if (missingDependency || blockedDependency) {
         const dependencyId = missingDependency || blockedDependency._id;
         return move(node, "blocked", {
@@ -322,10 +330,10 @@ export function createResearchNodeRunner({
     pause(id, reason = "Paused by operator") {
       return request(id, "paused", reason);
     },
-    kill(id, reason = "Killed by operator") {
+    async kill(id, reason = "Killed by operator") {
       const record = active.get(id);
       if (record) return request(id, "killed", reason);
-      const document = resolveDocument(id);
+      const document = await resolveDocument(id);
       if (!document) throw new Error(`Research node not found: ${id}`);
       return move(document, "killed", { message: reason });
     },

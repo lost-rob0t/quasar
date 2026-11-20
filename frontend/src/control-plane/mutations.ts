@@ -89,21 +89,6 @@ export async function cpSystemCapabilities(): Promise<string[]> {
   return Array.isArray(result) ? result.map(String) : [];
 }
 
-export async function cpProActorManifests(): Promise<Record<string, unknown>[]> {
-  const result = await client().send<unknown>("pro-actors.manifests", {});
-  return Array.isArray(result)
-    ? result.filter((item): item is Record<string, unknown> =>
-        Boolean(item && typeof item === "object")
-      )
-    : [];
-}
-
-export async function cpAuthorizeProActorTarget(
-  target: Record<string, unknown>
-): Promise<Record<string, unknown>> {
-  return await client().send<Record<string, unknown>>("pro-actors.submit-target", { target });
-}
-
 export async function cpImportDocuments(chunks: unknown[][]): Promise<Record<string, unknown>> {
   const c = client();
   const started = await c.send<Record<string, unknown>>("document.import.begin", {});
