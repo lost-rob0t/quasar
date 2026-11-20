@@ -70,3 +70,16 @@ count_invariant('meta documentCount can silently diverge from prefix rows (live:
 
 %% --- Bounded startup contract ------------------------------------------
 startup_sync_contract('synchronize() fetches exactly ONE bounded snapshot page (512KiB) then publishes synchronized; full paged drains are explicit snapshot() callers (stats/export/refresh); oversized single documents fail bounded with query.record-too-large instead of exhausting the heap').
+
+%% Bundled MCP server (6a3a8c9): mcp/starintel-mcp-server.mjs serves
+%% streamable-HTTP MCP on 127.0.0.1:8083/mcp, proxies JSON-RPC tools to CP
+%% WebSocket commands (envelope protocol MUST be the string
+%% "quasar.control.v1"; document.search takes datasets[]/limit, NOT
+%% page/perPage). Co-started by scripts/run-control-plane; the operator's
+%% MCP clients (agent system mcp tab, external agents) attach via HTTP.
+mcp_server_contract("quasar-mcp",
+    tools([starintel_search, starintel_stats, starintel_recent_documents,
+           starintel_document, starintel_neighbors, starintel_targets,
+           starintel_dataset_size, workspace_search]),
+    endpoint("http://127.0.0.1:8083/mcp"),
+    transport(cp_websocket_ws_8081)).
