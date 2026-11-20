@@ -101,11 +101,14 @@ bounded-read budget.")
                                               "limit" "descending" "skip"
                                               "start_key" "end_key" "reduce"
                                               "include_docs"))
-    ("dataset-size" "/dataset-size"          nil))
+    ("dataset-size" "/dataset-size"          nil)
+    ("documents-recent" "/documents/recent"  ("dataset" "tenant" "limit"
+                                              "start_key" "start_key_doc_id")))
   "Every star-server read (fetch/view) endpoint, per the v1 capabilities
 endpoint list. starintel.probe already covers /api/v1/capabilities.
 document and neighbors compose server calls (v1 + legacy fallback, or
-document + relation search); the rest are single GETs.")
+document + relation search); the rest are single GETs. documents-recent
+serves the empty-query recents projection (newest-first listing).")
 
 ;; view name -> path + key parameter name (nil when the view is unkeyed;
 ;; by-channel takes both channel and group from the common parameters).
@@ -126,7 +129,7 @@ bookmark beyond that.")
   (let ((entry (assoc op +read-operations+ :test #'string=)))
     (unless entry
       (%relay-error "starintel.unknown-op"
-                    (format nil "Unknown StarIntel read operation ~S. Known operations: search, stats, actors, document, neighbors, targets, view, dataset-size."
+                    (format nil "Unknown StarIntel read operation ~S. Known operations: search, stats, actors, document, neighbors, targets, view, dataset-size, documents-recent."
                             (or op ""))))
     entry))
 

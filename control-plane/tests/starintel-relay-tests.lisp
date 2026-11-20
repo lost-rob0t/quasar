@@ -311,6 +311,35 @@
     (check (= 2 (length *relay-calls*))
            )))
 
+(defun test-relay-documents-recent ()
+  ;; Empty-query recents projection: dataset omitted -> global newest-first;
+  ;; dataset given -> scoped key range; pagination cursor forwarded.
+  (%with-fake-dex ((%relay-fake-responder
+                    "{\"total_rows\":2,\"rows\":[],\"next_start_key\":[\"reddit\",1710000000]}"
+                    200))
+    (let ((result (quasar.starintel-relay::%starintel-read
+                   (%relay-payload
+                    (cons "url" "http://127.0.0.1:5000")
+                    (cons "op" "documents-recent")
+                    (cons "limit" 25)
+                    (cons "injected" "nope")))))
+      (check (string= (first (first *relay-calls*))
+                      "http://127.0.0.1:5000/documents/recent?limit=25"))))
+  (%with-fake-dex ((%relay-fake-responder "{\"total_rows\":1,\"rows\":[]}" 200))
+    (quasar.starintel-relay::%starintel-read
+     (%relay-payload
+      (cons "url" "http://127.0.0.1:5000")
+      (cons "op" "documents-recent")
+      (cons "dataset" "progressive-insanity")
+      (cons "start_key" "[\"progressive-insanity\",1710000000]")
+      (cons "start_key_doc_id" "reddit:nk0g1vw")))
+    (check (search "dataset=progressive-insanity"
+                   (first (first *relay-calls*))))
+    (check (search "startkey=%5B%22progressive-insanity%22%2C1710000000%5D"
+                   (first (first *relay-calls*))))
+    (check (search "startkey_docid=reddit%3Ank0g1vw"
+                   (first (first *relay-calls*))))))
+
 (defun run-starintel-relay-tests ()
   (test-relay-unknown-op)
   (test-relay-missing-param)
@@ -320,6 +349,7 @@
   (test-relay-limit-clamp)
   (test-relay-path-encoding)
   (test-relay-happy-path)
+  (test-relay-documents-recent)
   (test-relay-legacy-fallback)
   (test-relay-neighbors)
   (test-relay-neighbors-missing-param)

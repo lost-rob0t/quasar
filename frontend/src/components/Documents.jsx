@@ -194,7 +194,14 @@ export function DocumentsPage() {
   // one merged list, local first, server-only matches appended with a chip.
   // The first server page follows the query automatically; further pages are
   // explicit (one bounded bookmark request per click, never a drain).
-  const liveChain = useRef({ key: null, pages: {}, bookmarks: {}, total: null, complete: false });
+  const liveChain = useRef({
+    key: null,
+    pages: {},
+    bookmarks: {},
+    cursors: {},
+    total: null,
+    complete: false
+  });
   const [liveSnapshot, setLiveSnapshot] = useState(null);
   const [liveError, setLiveError] = useState(null);
   const [liveView, setLiveView] = useState(null);
@@ -203,7 +210,14 @@ export function DocumentsPage() {
   const liveRequestToken = useRef(0);
 
   const resetLiveChain = () => {
-    liveChain.current = { key: searchKey, pages: {}, bookmarks: {}, total: null, complete: false };
+    liveChain.current = {
+      key: searchKey,
+      pages: {},
+      bookmarks: {},
+      cursors: {},
+      total: null,
+      complete: false
+    };
     setLiveSnapshot(null);
   };
 
@@ -267,12 +281,15 @@ export function DocumentsPage() {
   }, [cpClient, searchKey, requestedPage, corpusVersion]);
 
   // Server matches for the current query. One bounded page follows the query
-  // automatically; each further page is an explicit user click.
+  // automatically; each further page is an explicit user click. With no
+  // query the same chain serves the recents projection (newest-first
+  // listing via /documents/recent), so remote ingest is visible while
+  // browsing without a search term.
   useEffect(() => {
     if (!cpClient?.starintelSearch) return;
-    if (!serverUrl || !query) {
+    if (!serverUrl) {
       setLiveError(null);
-      if (!query) resetLiveChain();
+      resetLiveChain();
       return;
     }
     let active = true;
@@ -284,24 +301,49 @@ export function DocumentsPage() {
         if (chain.key !== searchKey) resetLiveChain();
         const highest = Math.max(0, ...Object.keys(chain.pages).map(Number));
         if (highest === 0) {
-          const response = await cpClient.starintelSearch({
-            url: serverUrl,
-            token: serverToken || undefined,
-            q: query,
-            limit: Math.min(pageSize, 25)
-          });
-          const rows = (response?.rows || []).map((row) => ({
-            id: row?.id,
-            document: liveRowDocument(row),
-            raw: row?.doc || null
-          }));
-          chain.pages[1] = rows;
-          chain.total =
-            typeof response?.total_rows === "number" ? response.total_rows : chain.total;
-          chain.bookmarks[1] = response?.bookmark && rows.length ? response.bookmark : null;
+          if (query) {
+            const response = await cpClient.starintelSearch({
+              url: serverUrl,
+              token: serverToken || undefined,
+              q: query,
+              limit: Math.min(pageSize, 25)
+            });
+            const rows = (response?.rows || []).map((row) => ({
+              id: row?.id,
+              document: liveRowDocument(row),
+              raw: row?.doc || null
+            }));
+            chain.pages[1] = rows;
+            chain.total =
+              typeof response?.total_rows === "number" ? response.total_rows : chain.total;
+            chain.bookmarks[1] = response?.bookmark && rows.length ? response.bookmark : null;
+          } else {
+            const response = await cpClient.starintelApi("documents-recent", {
+              url: serverUrl,
+              token: serverToken || undefined,
+              limit: Math.min(pageSize, 25),
+              ...(dataset ? { dataset } : {})
+            });
+            const rows = (response?.rows || []).map((row) => ({
+              id: row?.id,
+              document: liveRowDocument(row),
+              raw: row?.doc || null
+            }));
+            chain.pages[1] = rows;
+            // total_rows on recents pages is the authorized page length, not
+            // the scope size - never surface it as a workspace-style count.
+            chain.cursors[1] =
+              response?.next_start_key && rows.length
+                ? {
+                    start_key: response.next_start_key,
+                    start_key_doc_id: response.next_start_key_doc_id || null
+                  }
+                : null;
+          }
         }
         const fetched = Math.max(0, ...Object.keys(chain.pages).map(Number));
-        chain.complete = fetched > 0 && !chain.bookmarks[fetched];
+        chain.complete =
+          fetched > 0 && !chain.bookmarks[fetched] && !chain.cursors[fetched];
         if (!active || token !== liveRequestToken.current) return;
         setLiveSnapshot({
           pages: { ...chain.pages },
@@ -318,37 +360,66 @@ export function DocumentsPage() {
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cpClient, searchKey, query, pageSize, serverUrl, serverToken, corpusVersion]);
+  }, [cpClient, searchKey, query, dataset, pageSize, serverUrl, serverToken, corpusVersion]);
 
   async function loadMoreServerResults() {
-    if (!cpClient?.starintelSearch || !serverUrl || !query) return;
+    if (!cpClient?.starintelSearch || !serverUrl) return;
     const chain = liveChain.current;
     if (chain.key !== searchKey) return;
     const highest = Math.max(0, ...Object.keys(chain.pages).map(Number));
     const bookmark = chain.bookmarks[highest];
-    if (!bookmark) return;
+    const cursor = chain.cursors[highest];
+    if (!bookmark && !cursor) return;
     const token = ++liveRequestToken.current;
     setLoading(true);
     setLiveError(null);
     try {
       const next = highest + 1;
-      const response = await cpClient.starintelSearch({
-        url: serverUrl,
-        token: serverToken || undefined,
-        q: query,
-        limit: Math.min(pageSize, 25),
-        ...(bookmark ? { bookmark } : {})
-      });
-      const rows = (response?.rows || []).map((row) => ({
-        id: row?.id,
-        document: liveRowDocument(row),
-        raw: row?.doc || null
-      }));
+      let rows = [];
+      if (query) {
+        const response = await cpClient.starintelSearch({
+          url: serverUrl,
+          token: serverToken || undefined,
+          q: query,
+          limit: Math.min(pageSize, 25),
+          ...(bookmark ? { bookmark } : {})
+        });
+        rows = (response?.rows || []).map((row) => ({
+          id: row?.id,
+          document: liveRowDocument(row),
+          raw: row?.doc || null
+        }));
+        chain.total =
+          typeof response?.total_rows === "number" ? response.total_rows : chain.total;
+        chain.bookmarks[next] = response?.bookmark && rows.length ? response.bookmark : null;
+      } else {
+        const response = await cpClient.starintelApi("documents-recent", {
+          url: serverUrl,
+          token: serverToken || undefined,
+          limit: Math.min(pageSize, 25),
+          ...(dataset ? { dataset } : {}),
+          ...(cursor?.start_key ? { start_key: cursor.start_key } : {}),
+          ...(cursor?.start_key_doc_id
+            ? { start_key_doc_id: cursor.start_key_doc_id }
+            : {})
+        });
+        rows = (response?.rows || []).map((row) => ({
+          id: row?.id,
+          document: liveRowDocument(row),
+          raw: row?.doc || null
+        }));
+        chain.cursors[next] =
+          response?.next_start_key && rows.length
+            ? {
+                start_key: response.next_start_key,
+                start_key_doc_id: response.next_start_key_doc_id || null
+              }
+            : null;
+      }
       chain.pages[next] = rows;
-      chain.total = typeof response?.total_rows === "number" ? response.total_rows : chain.total;
-      chain.bookmarks[next] = response?.bookmark && rows.length ? response.bookmark : null;
       const fetched = Math.max(0, ...Object.keys(chain.pages).map(Number));
-      chain.complete = fetched > 0 && !chain.bookmarks[fetched];
+      chain.complete =
+        fetched > 0 && !chain.bookmarks[fetched] && !chain.cursors[fetched];
       setLiveSnapshot({
         pages: { ...chain.pages },
         total: chain.total,
@@ -795,7 +866,9 @@ export function DocumentsPage() {
               <tr className="server-divider-row">
                 <td colSpan={6}>
                   <span className="server-divider-label">
-                    On the server — not in your workspace yet
+                    {query
+                      ? "On the server — not in your workspace yet"
+                      : "On the server — recent ingest (newest first)"}
                   </span>
                   {liveTotal !== null && (
                     <span className="muted">{liveTotal.toLocaleString()} matches</span>
