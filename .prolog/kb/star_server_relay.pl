@@ -52,6 +52,8 @@ route_cache_invariant('route-query-cache pages are a contiguous chain of DISTINC
 %% --- Wiring gotchas (each one cost a live debugging round) --------------
 wiring_gotcha(vite8_oxc_transform_hang,
     'vite 8 (rolldown/oxc) can hang the module transform INDEFINITELY when an async closure in a module loops (for(;;)/while(true)/condition-while) or self-recurses - vitest prints the RUN banner and then produces nothing (0 CPU, no test output), while node imports and runs the same file perfectly. Symptom triage: a single test file hangs while other files pass. Fix: keep the closure straight-line and isolate the loop in a separate helper function (see route-query-cache.js getPage/fillTowardTarget); comment the constraint at the site so nobody reintroduces it').
+wiring_gotcha(ws_port_plain_http,
+    'NEVER probe the WS port (:8081) with plain HTTP - before the websocket-upgrade-request-p guard (websocket-server.lisp) wsd signaled "No Sec-WebSocket-Version header" and under --disable-debugger that quit the whole control plane. The guard now answers 400, but keep health checks on :8082. Related: pgrep -f run-control-plane + kill only kills bash wrappers - the sbcl child keeps ports 8081/8082, so a relaunch dies on USOCKET:ADDRESS-IN-USE-ERROR while the OLD server keeps answering; kill by port/process, then relaunch. A watchdog (/tmp/opencode/quasar-watchdog.sh) keeps the stack supervised and restarts the CP if HTTP :8082 dies.').
 wiring_gotcha(ws_allowlist,
     'new WS commands must be added to +default-capabilities in control-plane/src/websocket-server.lisp or the client gets "Command X is not permitted"').
 wiring_gotcha(ws_origin_allowlist,

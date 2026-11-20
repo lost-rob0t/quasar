@@ -389,6 +389,23 @@ Expired entries are removed while holding the session-table lock."
   (or (cookie-value env "quasar_session")
       (query-parameter env "session")))
 
+;; A plain HTTP request (curl health probe, browser favicon hit, port
+;; scanner) must be rejected with 400 BEFORE wsd:make-server reads the
+;; handshake headers - wsd signals "No Sec-WebSocket-Version header" on
+;; such requests, and under --disable-debugger that unhandled error quits
+;; the whole control plane (observed 2026-11-19: a curl to :8081 killed
+;; the server).
+(defun websocket-upgrade-request-p (env)
+  (let ((upgrade (request-header env "upgrade"))
+        (connection (request-header env "connection"))
+        (version (request-header env "sec-websocket-version"))
+        (key (request-header env "sec-websocket-key")))
+    (and (string-equal (or upgrade "") "websocket")
+         version
+         key
+         (or (null connection)
+             (search "upgrade" (string-downcase (princ-to-string connection)))))))
+
 (defun handshake-session (server env)
   (if (websocket-server-insecure-development-p server)
       (list :principal "insecure-development"
@@ -406,8 +423,15 @@ Expired entries are removed while holding the session-table lock."
     (let ((app
             (lambda (env)
                (let* ((origin (request-header env "origin"))
-                      (session (handshake-session server env)))
+                      (session (and (websocket-upgrade-request-p env)
+                                    (handshake-session server env))))
                   (cond
+                    ((not (websocket-upgrade-request-p env))
+                     (quasar.log:log-event
+                      :warn "websocket" "handshake.rejected"
+                      :reason "not-a-websocket-upgrade")
+                     (record-audit server "handshake" :outcome "not-upgrade")
+                     '(400 (:content-type "text/plain") ("WebSocket upgrade required")))
                     ((not (origin-allowed-p server origin))
                      (quasar.log:log-event
                       :warn "websocket" "handshake.rejected"
