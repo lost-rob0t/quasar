@@ -828,8 +828,6 @@ export function QuasarProvider({ children }) {
 
   const runActor = useCallback(
     async (actor, requestedSelection = selectedIds, runOptions = {}) => {
-      if (!isBuiltinActor(actor) && !settings?.actorsEnabled)
-        throw new Error("Custom browser actors are disabled in settings");
       if (actor.runtime === "pro-actor-fleet") {
         // The starintel-pro-actors fleet is retired: registry actors run
         // LOCALLY through the control-plane python actor checkout
@@ -846,6 +844,10 @@ export function QuasarProvider({ children }) {
         });
         return result;
       }
+      if (!isBuiltinActor(actor))
+        throw new Error(
+          "Only built-in and local fleet actors run; browser actor authoring was removed."
+        );
       if (actorExecutionBlocked(actor, settings))
         throw new Error(
           "This built-in actor is not verified end-to-end and is disabled. " +
@@ -896,7 +898,7 @@ export function QuasarProvider({ children }) {
       documents,
       execute,
       selectedIds,
-      settings?.actorsEnabled,
+      settings?.enableExperimentalActors,
       workspace?.layout
     ]
   );

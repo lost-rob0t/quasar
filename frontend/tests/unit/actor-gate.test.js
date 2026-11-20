@@ -12,13 +12,6 @@ const verifiedBuiltin = normalizeActorManifest(
 const unverifiedBuiltin = normalizeActorManifest(
   BUILTIN_ACTORS.find((actor) => actor.id === "quasar.actor.normalize-names")
 );
-const customActor = normalizeActorManifest({
-  id: "quasar.actor.custom-test",
-  label: "Custom test actor",
-  description: "Test actor",
-  source: "(context) => ({ documents: [], message: 'ok' })"
-});
-
 describe("actorE2eVerified", () => {
   it("marks e2e-verified builtins as verified", () => {
     expect(actorE2eVerified(verifiedBuiltin)).toBe(true);
@@ -26,7 +19,6 @@ describe("actorE2eVerified", () => {
 
   it("marks other builtins as not verified", () => {
     expect(actorE2eVerified(unverifiedBuiltin)).toBe(false);
-    expect(actorE2eVerified(customActor)).toBe(false);
     expect(actorE2eVerified(null)).toBe(false);
   });
 });
@@ -48,11 +40,5 @@ describe("actorExecutionBlocked", () => {
     expect(actorExecutionBlocked(unverifiedBuiltin, { enableExperimentalActors: true })).toBe(
       false
     );
-  });
-
-  it("follows actorsEnabled for custom actors", () => {
-    expect(actorExecutionBlocked(customActor, {})).toBe(true);
-    expect(actorExecutionBlocked(customActor, { actorsEnabled: false })).toBe(true);
-    expect(actorExecutionBlocked(customActor, { actorsEnabled: true })).toBe(false);
   });
 });

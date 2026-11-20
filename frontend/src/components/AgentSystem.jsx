@@ -38,7 +38,6 @@ import {
   saveRole
 } from "../lib/agent-records";
 import { actorWithTransformEnvelope, buildActorTransform } from "../lib/actor-transforms";
-import { normalizeActorManifest, runBrowserActor } from "../lib/actors";
 import { budgetState, remainingBudget } from "../lib/agent-budget";
 import { filterAgentChats } from "../lib/agent-chat-search";
 import { buildAgentContext, systemPromptForAgent } from "../lib/agent-context";
@@ -422,78 +421,6 @@ export function AgentSystemProvider({ children }) {
           },
           { approved: context.agent.permissions?.includes("destructive") }
         );
-      },
-      async validateActor(actorInput, sampleDocumentIds, context) {
-        const actor = normalizeActorManifest(actorInput);
-        const current = quasarRef.current;
-        const sample = current.documents.filter((document) =>
-          sampleDocumentIds.includes(document._id)
-        );
-        const result = await runBrowserActor(actorWithTransformEnvelope(actor), {
-          selection: sample,
-          documents: current.documents.map((document) => ({ ...document })),
-          workspace: { layout: current.workspace?.layout || "cose" }
-        });
-        const transform = buildActorTransform(
-          result,
-          current.documents,
-          `Test actor: ${actor.label}`
-        );
-        const candidate = await saveAgentRecord(
-          {
-            id: `actor-candidate:${crypto.randomUUID()}`,
-            recordType: AGENT_RECORD_TYPES.generatedActor,
-            agentId: context.agent.id,
-            runId: context.run.id,
-            actor,
-            validation: {
-              valid: true,
-              testedAt: new Date().toISOString(),
-              sampleDocumentIds,
-              operationCount: transform.operationCount,
-              counts: transform.counts,
-              message: transform.message
-            },
-            saved: false
-          },
-          AGENT_RECORD_TYPES.generatedActor
-        );
-        return {
-          candidateId: candidate.id,
-          actor: {
-            id: actor.id,
-            label: actor.label,
-            version: actor.version,
-            accepts: actor.accepts
-          },
-          test: candidate.validation
-        };
-      },
-      async saveValidatedActor(candidateId, context) {
-        const candidate = await getAgentRecord(AGENT_RECORD_TYPES.generatedActor, candidateId);
-        if (!candidate?.validation?.valid)
-          throw new Error("Actor candidate has not passed validation");
-        if (candidate.agentId !== context.agent.id)
-          throw new Error("Actor candidate belongs to another agent");
-        const current = quasarRef.current;
-        const actors = [
-          ...(current.settings?.actors || []).filter((actor) => actor.id !== candidate.actor.id),
-          candidate.actor
-        ];
-        await current.persistSettings({ actors });
-        await saveAgentRecord(
-          {
-            ...candidate,
-            saved: true,
-            savedAt: new Date().toISOString()
-          },
-          AGENT_RECORD_TYPES.generatedActor
-        );
-        return {
-          saved: true,
-          actorId: candidate.actor.id,
-          affected: [{ id: candidate.actor.id, action: "save-actor" }]
-        };
       }
     }),
     []

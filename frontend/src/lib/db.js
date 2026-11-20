@@ -134,7 +134,6 @@ export async function getSettings() {
     rabbitPassword: "guest",
     rabbitVhost: "/",
     rabbitPrefetch: 25,
-    actorsEnabled: false,
     actors: [],
     theme: "midnight",
     ...stored,

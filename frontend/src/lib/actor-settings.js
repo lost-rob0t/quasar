@@ -1,18 +1,30 @@
 import { mergeReviewActor, REVIEW_ACTOR_ID } from "./review-actor-pack";
 
-const MELISSA_ACTOR_PREFIX = "quasar.actor.melissa-";
+// Browser-actor authoring is removed. The only actor kept in settings is the
+// shipped review-actor pack; user-authored manifests from the old editor are
+// dropped by the v2 migration.
+const SHIPPED_ACTOR_IDS = Object.freeze([REVIEW_ACTOR_ID]);
 
 export function migrateActorSettings(settings) {
-  if (Number(settings.quasarActorSettingsVersion || 0) >= 1) return settings;
-  const actors = (settings.actors || []).filter(
-    (actor) => !String(actor?.id || "").startsWith(MELISSA_ACTOR_PREFIX)
+  const version = Number(settings.quasarActorSettingsVersion || 0);
+  if (version >= 2) return settings;
+  if (version < 1) {
+    // First-time or legacy settings: install the review pack, nothing else.
+    return {
+      ...settings,
+      quasarActorSettingsVersion: 2,
+      actors: mergeReviewActor([]),
+      melissaActorPackInstalled: false,
+      melissaActorPackVersion: 0
+    };
+  }
+  const actors = (settings.actors || []).filter((actor) =>
+    SHIPPED_ACTOR_IDS.includes(String(actor?.id || ""))
   );
-  const hasReviewActor = actors.some((actor) => actor?.id === REVIEW_ACTOR_ID);
   return {
     ...settings,
-    quasarActorSettingsVersion: 1,
-    actors: hasReviewActor ? actors : mergeReviewActor(actors),
-    ...(hasReviewActor ? {} : { actorsEnabled: true }),
+    quasarActorSettingsVersion: 2,
+    actors: mergeReviewActor(actors),
     melissaActorPackInstalled: false,
     melissaActorPackVersion: 0
   };

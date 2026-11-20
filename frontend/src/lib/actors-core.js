@@ -1061,7 +1061,8 @@ export function actorE2eVerified(actor) {
 }
 
 export function actorExecutionBlocked(actor, settings) {
-  if (!isBuiltinActor(actor)) return !settings?.actorsEnabled;
+  // Browser-actor authoring is gone; only shipped built-ins execute in the
+  // browser, gated on end-to-end verification (experimental escape hatch).
   return !actorE2eVerified(actor) && !settings?.enableExperimentalActors;
 }
 

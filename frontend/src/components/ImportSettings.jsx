@@ -17,7 +17,6 @@ import {
   UploadCloud
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { normalizeActorManifest } from "../lib/actors";
 import { openImportedGraph } from "../lib/graph-navigation";
 import { createSettingsExport, parseSettingsImport } from "../lib/settings-transfer";
 import { applyTheme, THEMES } from "../lib/themes";
@@ -317,21 +316,6 @@ export function ImportPage() {
   );
 }
 
-const ACTOR_TEMPLATE = JSON.stringify(
-  {
-    id: "quasar.actor.example",
-    label: "Example actor",
-    description: "Describe what this actor returns.",
-    version: 1,
-    accepts: ["*"],
-    minSelection: 1,
-    maxSelection: 8,
-    source: `(context) => ({ documents: [], message: "Selected " + context.selection.length + " document(s)" })`
-  },
-  null,
-  2
-);
-
 export function SettingsPage() {
   const {
     settings,
@@ -351,11 +335,9 @@ export function SettingsPage() {
     setNotice
   } = useQuasar();
   const [form, setForm] = useState(settings || {});
-  const [actorText, setActorText] = useState(ACTOR_TEMPLATE);
   const [info, setInfo] = useState(null);
   const [viewStatus, setViewStatus] = useState("");
   const [purgeArmed, setPurgeArmed] = useState(false);
-  const actors = useMemo(() => form.actors || [], [form.actors]);
 
   async function purgeLocalDocuments() {
     if (!purgeArmed) {
@@ -484,37 +466,13 @@ export function SettingsPage() {
     }
   }
 
-  function addActor() {
-    try {
-      const actor = normalizeActorManifest(JSON.parse(actorText));
-      const nextActors = [...actors.filter((item) => item.id !== actor.id), actor];
-      setForm((current) => ({ ...current, actors: nextActors }));
-      setNotice({
-        kind: "success",
-        message: `Actor staged: ${actor.id}. Save settings to persist it.`
-      });
-    } catch (error) {
-      setNotice({ kind: "error", message: error.message });
-    }
-  }
-
-  function removeActor(id) {
-    setForm((current) => ({
-      ...current,
-      actors: (current.actors || []).filter((actor) => actor.id !== id)
-    }));
-  }
-
   return (
     <section>
       <div className="page-heading">
         <div>
           <span className="eyebrow">Configuration</span>
           <h1>Settings</h1>
-          <p>
-            Local storage, StarIntel services, optional queue ingest, synchronization, and browser
-            actors.
-          </p>
+          <p>Local storage, StarIntel services, optional queue ingest, and synchronization.</p>
         </div>
         <button className="button primary" onClick={save}>
           <Save size={16} /> Save settings
@@ -785,57 +743,6 @@ export function SettingsPage() {
             Stop
           </button>
         </div>
-      </section>
-
-      <section className="panel">
-        <div className="section-heading">
-          <h2>Browser actors</h2>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={Boolean(form.actorsEnabled)}
-              onChange={update("actorsEnabled")}
-            />{" "}
-            Enable actor execution
-          </label>
-        </div>
-        <p className="muted">
-          Bundled actors run without enabling custom code. Custom actors run as Web Workers and
-          return StarIntel document batches. Returned documents pass through canonical validation
-          and transaction-level undo.
-        </p>
-        <div className="actor-list">
-          {actors.map((actor) => (
-            <div key={actor.id} className="actor-row">
-              <div>
-                <strong>{actor.label}</strong>
-                <code>
-                  {actor.id} · v{actor.version}
-                </code>
-              </div>
-              <button className="icon-button danger" onClick={() => removeActor(actor.id)}>
-                <Trash2 size={16} />
-              </button>
-            </div>
-          ))}
-          {!actors.length && (
-            <p className="muted">
-              No custom actors configured. The built-in deterministic actor remains available when
-              actors are enabled.
-            </p>
-          )}
-        </div>
-        <label className="field">
-          <span>Custom actor manifest JSON</span>
-          <textarea
-            className="code-editor tall"
-            value={actorText}
-            onChange={(event) => setActorText(event.target.value)}
-          />
-        </label>
-        <button className="button" onClick={addActor}>
-          Stage actor manifest
-        </button>
       </section>
 
       <section className="panel">

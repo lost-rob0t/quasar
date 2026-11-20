@@ -43,7 +43,7 @@ describe("graph local corpus status", () => {
       persistWorkspace: vi.fn(),
       actors: [],
       runActor: vi.fn(),
-      settings: { actorsEnabled: false },
+      settings: {},
       setNotice: vi.fn()
     };
 
@@ -69,7 +69,7 @@ describe("graph local corpus status", () => {
       persistWorkspace: vi.fn(),
       actors: [],
       runActor: vi.fn(),
-      settings: { actorsEnabled: false },
+      settings: {},
       setNotice: vi.fn()
     };
 
@@ -99,7 +99,7 @@ describe("graph local corpus status", () => {
       persistWorkspace: vi.fn(),
       actors: [],
       runActor: vi.fn(),
-      settings: { actorsEnabled: false },
+      settings: {},
       setNotice: vi.fn()
     };
 
@@ -141,7 +141,7 @@ describe("graph local corpus status", () => {
       persistWorkspace: vi.fn(),
       actors: [],
       runActor: vi.fn(),
-      settings: { actorsEnabled: false },
+      settings: {},
       setNotice: vi.fn()
     };
 
@@ -215,7 +215,7 @@ describe("graph local corpus status", () => {
       persistWorkspace: vi.fn(),
       actors: [],
       runActor: vi.fn(),
-      settings: { actorsEnabled: false },
+      settings: {},
       setNotice: vi.fn()
     };
 
@@ -278,7 +278,7 @@ describe("graph local corpus status", () => {
       persistWorkspace: vi.fn(),
       actors: [],
       runActor: vi.fn(),
-      settings: { actorsEnabled: false },
+      settings: {},
       setNotice: vi.fn(),
       switchGraph: vi.fn(),
       renameGraph: vi.fn(),
