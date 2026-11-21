@@ -16,14 +16,51 @@ function authorization(configuration) {
   return null;
 }
 
-async function request(configuration, path, options = {}) {
+// One in-memory login session; credentials and minted keys never enter workflow storage.
+let loginSession = null;
+async function v1Authorization(configuration) {
+  if (configuration?.serverToken) return authorization(configuration);
+  if (!configuration?.serverUsername) return null;
+  const identity = JSON.stringify([
+    serverUrl(configuration),
+    configuration.serverUsername,
+    configuration.serverPassword || ""
+  ]);
+  if (loginSession?.identity !== identity) {
+    const promise = requestStarIntel(configuration, "/auth/login", {
+      public: true,
+      method: "POST",
+      body: JSON.stringify({
+        username: configuration.serverUsername,
+        password: configuration.serverPassword || ""
+      })
+    }).then((body) => {
+      const key = body?.data?.api_key || body?.api_key;
+      if (typeof key !== "string" || !key)
+        throw new Error("StarIntel login did not return an API key");
+      return `Bearer ${key}`;
+    });
+    loginSession = { identity, promise };
+    promise.catch(() => {
+      if (loginSession?.promise === promise) loginSession = null;
+    });
+  }
+  return loginSession.promise;
+}
+
+export async function requestStarIntel(configuration, path, options = {}) {
   const headers = new Headers(options.headers || {});
   headers.set("Accept", "application/json");
   if (options.body != null) headers.set("Content-Type", "application/json");
-  const auth = authorization(configuration);
+  const auth = options.public
+    ? null
+    : options.legacy
+      ? authorization(configuration)
+      : await v1Authorization(configuration);
   if (auth) headers.set("Authorization", auth);
   const response = await fetch(serverUrl(configuration, path), {
     ...options,
+    redirect: "error",
     headers,
     signal: options.signal || AbortSignal.timeout(10_000)
   });
@@ -36,7 +73,10 @@ async function request(configuration, path, options = {}) {
   }
   if (!response.ok) {
     const message = body?.message || body?.msg || `${response.status} ${response.statusText}`;
-    throw new Error(`StarIntel server: ${message}`);
+    const error = new Error(`StarIntel server: ${message}`);
+    error.status = response.status;
+    if (response.status === 401) loginSession = null;
+    throw error;
   }
   return body;
 }
@@ -146,10 +186,13 @@ function normalizeActorRegistryEntry(manifest, index = 0) {
 
 export async function probeStarIntelServer(configuration) {
   try {
-    const capabilities = await request(configuration, "/api/v1/capabilities");
-    return { mode: "v1", capabilities };
+    const capabilities = await requestStarIntel(configuration, "/api/v1/capabilities", {
+      public: true
+    });
+    return { mode: "v1", capabilities: capabilities?.data || capabilities };
   } catch (error) {
-    const legacy = await request(configuration, "/");
+    if (![404, 405].includes(error.status)) throw error;
+    const legacy = await requestStarIntel(configuration, "/", { legacy: true });
     return {
       mode: "legacy",
       capabilities: {
@@ -167,7 +210,7 @@ export async function probeStarIntelServer(configuration) {
 }
 
 export async function listStarIntelActors(configuration) {
-  const response = await request(configuration, "/v1/actors");
+  const response = await requestStarIntel(configuration, "/v1/actors");
   if (response?.data?.schema !== ACTOR_REGISTRY_SCHEMA) {
     throw new Error(`StarIntel server: unsupported actor registry schema`);
   }
@@ -187,34 +230,20 @@ export async function submitTargetToServer(configuration, target) {
     throw new Error("Only target documents can be submitted as targets");
   const actor = document.actor;
   if (!actor) throw new Error("Target actor is required");
-  // The server target command is distinct from a canonical Target document.
-  // 0.10.1 options are a map; v1 currently accepts an array. Only the empty
-  // case has a lossless meaning until the server defines a map adapter.
-  if (document.options && Object.keys(document.options).length) {
-    throw new Error("Target options map has no defined server v1 array mapping");
-  }
   const command = {
     actor,
     target: document.target,
     dataset: document.dataset,
     delay: document.delay ?? 1,
     recurring: document.recurring ?? false,
-    options: [],
+    options: document.options || {},
     idempotency_key: document.id
   };
-  try {
-    return await request(configuration, "/api/v1/targets", {
-      method: "POST",
-      headers: { "Idempotency-Key": document.id },
-      body: JSON.stringify(command)
-    });
-  } catch (error) {
-    if (!/404|not found/i.test(error.message)) throw error;
-    return request(configuration, `/new/target/${encodeURIComponent(actor)}`, {
-      method: "POST",
-      body: JSON.stringify(document)
-    });
-  }
+  // Never fall back to the non-idempotent legacy route after an ambiguous POST.
+  return requestStarIntel(configuration, "/api/v1/targets", {
+    method: "POST",
+    body: JSON.stringify(command)
+  });
 }
 
 export const starIntelServerInternals = Object.freeze({

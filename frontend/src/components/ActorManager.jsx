@@ -4,6 +4,7 @@ import { BUILTIN_ACTORS, actorExecutionBlocked, isBuiltinActor } from "../lib/ac
 import { listStarIntelActors } from "../lib/starintel-server";
 import { useQuasar } from "../store";
 import CodeEditor from "./CodeEditor";
+import ServerActorTarget from "./ServerActorTarget";
 import "../actor-manager.css";
 
 function actorConfig(actor) {
@@ -103,6 +104,7 @@ export default function ActorManager() {
       return undefined;
     }
     let cancelled = false;
+    setServerActors([]);
     setServerActorState({ state: "loading", message: "Discovering StarIntel actors…" });
     listStarIntelActors(currentSettings)
       .then((nextActors) => {
@@ -327,6 +329,10 @@ export default function ActorManager() {
                 </>
               )}
             </div>
+          )}
+
+          {serverManaged && (
+            <ServerActorTarget actor={selectedActor} configuration={currentSettings} />
           )}
 
           <nav className="actor-editor-tabs" aria-label="Actor editor">

@@ -27,7 +27,8 @@
     "check": "node --test scripts/test-bootstrap-lisp-deps.mjs && npm --prefix frontend run check && node scripts/check-control-plane-deps.mjs",
     "benchmark:graph": "npm --prefix frontend run benchmark:graph",
     "benchmark:graph-renderer": "npm --prefix frontend run benchmark:graph-renderer",
-    "bench:logging": "bash scripts/bench-logging"
+    "bench:logging": "bash scripts/bench-logging",
+    "test:actor-workflow": "npm --prefix frontend run test:actor-workflow"
   },
   "devDependencies": {
     "concurrently": "^9.2.0",
