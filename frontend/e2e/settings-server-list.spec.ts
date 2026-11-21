@@ -1,4 +1,6 @@
 import { expect, test } from "./fixtures";
+
+test.use({ crashGuard: true });
 import { configureStarServer } from "./helpers";
 
 // Regression (forgejo #148): the Saved-servers state (serverListName) was
@@ -6,9 +8,6 @@ import { configureStarServer } from "./helpers";
 // /settings with "serverListName is not defined". The page must render and
 // the save-a-connection flow must work end to end.
 test("settings renders and saves the current connection under a name", async ({ page }) => {
-  const pageErrors: string[] = [];
-  page.on("pageerror", (error) => pageErrors.push(String(error)));
-
   await configureStarServer(page);
   await page.goto("/settings");
 
@@ -18,5 +17,4 @@ test("settings renders and saves the current connection under a name", async ({ 
   await page.getByRole("button", { name: "Save current connection" }).click();
 
   await expect(page.getByText("local dev")).toBeVisible();
-  expect(pageErrors).toEqual([]);
 });
