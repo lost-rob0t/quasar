@@ -225,7 +225,7 @@ jobs:
         # facts into the run ledger (.prolog/runs/) for the quasar-ui expert.
         run: |
           set -euo pipefail
-          ./node_modules/.bin/playwright install chromium
+          ./node_modules/.bin/playwright install --with-deps chromium
           node scripts/record-run.mjs e2e \
             e2e/graph-cascade-menu.spec.ts \
             e2e/graph-object-type-picker.spec.ts \
