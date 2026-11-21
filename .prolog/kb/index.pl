@@ -3,6 +3,7 @@
 :- ensure_loaded('websocket_lifecycle.pl').
 :- ensure_loaded('bounded_reads.pl').
 :- ensure_loaded('documents_usability.pl').
+:- ensure_loaded('ui_e2e_harness.pl').
 :- ensure_loaded('datasets_usability.pl').
 :- ensure_loaded('control-plane-cow.pl').
 :- ensure_loaded('tooling.pl').
