@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Braces, Code2, Copy, RotateCcw } from "lucide-react";
 import CodeEditor from "./CodeEditor";
+import FlowEditor from "./FlowEditor";
 import "../code-workbench.css";
 
 const DEFAULT_BUFFERS = Object.freeze({
@@ -142,6 +143,7 @@ export default function CodeWorkbench() {
           </div>
         )}
       </section>
+      <FlowEditor />
     </section>
   );
 }
