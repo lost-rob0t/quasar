@@ -53,16 +53,17 @@ function parsePlaywright(json) {
       for (const t of spec.tests ?? []) {
         const statuses = (t.results ?? []).map((r) => r.status);
         const bad = statuses.some((s) => s === "failed" || s === "timedOut");
-        const expected = statuses.includes("expected");
+        const ok = statuses.includes("passed");
         if (bad) {
           failed += 1;
           failures.push(spec.title);
-        } else if (expected) {
+        } else if (ok) {
           passed += 1;
         }
-        // Skipped-only specs count as neither pass nor fail (skip gates
-        // for live-data journeys keep CI honest without inflating green).
-        total += bad || expected ? 1 : 0;
+        // Never-run/skipped-only specs count as neither pass nor fail
+        // (skip gates for live-data journeys keep CI honest without
+        // inflating green).
+        total += bad || ok ? 1 : 0;
       }
     }
   };
