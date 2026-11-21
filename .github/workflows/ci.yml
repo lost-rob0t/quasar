@@ -218,6 +218,28 @@ jobs:
             frontend/test-results/
             frontend/pr-screenshots/
 
+      - name: Operator journey suite (bounded e2e subset, ledger-recorded)
+        # The full chromium chain stays GitHub-only (the Forgejo box cannot
+        # finish it - runs 72/73/74, 2026-11-16); this bounded subset is the
+        # operator-journey floor that MUST stay green everywhere. Records
+        # facts into the run ledger (.prolog/runs/) for the quasar-ui expert.
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/playwright install chromium
+          node scripts/record-run.mjs e2e \
+            e2e/graph-cascade-menu.spec.ts \
+            e2e/graph-object-type-picker.spec.ts \
+            e2e/settings-server-list.spec.ts
+
+      - name: Upload run ledger
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: quasar-run-ledger-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: .prolog/runs/
+
       - name: Packaged production build, serve, routing, PWA, and security smoke
         run: npm run smoke:production
 

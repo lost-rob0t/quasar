@@ -1,5 +1,7 @@
 import { expect, test } from "./fixtures";
 
+test.use({ crashGuard: true });
+
 // Cascade right-click menus (CascadingMenu.jsx): the stage-level pointerdown
 // close-guard must exempt the menu itself (.cascading-menu) or every item
 // press unmounts the menu before the click can act (operator regression,

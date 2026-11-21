@@ -1,4 +1,6 @@
 import { expect, test } from "./fixtures";
+
+test.use({ crashGuard: true });
 import { STAR_SERVER_URL, configureStarServer, starServerAvailable } from "./helpers";
 
 // Operator journey (forgejo #142, verified live 2026-11-20): with an empty

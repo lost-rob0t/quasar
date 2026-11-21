@@ -1,5 +1,7 @@
 import { expect, test } from "./fixtures";
 
+test.use({ crashGuard: true });
+
 test("searches every known graph object type before opening the compact editor", async ({
   page
 }) => {
