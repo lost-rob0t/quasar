@@ -48,3 +48,14 @@ ui_contract(live_data_skips,
 ui_bug_pattern(class_rename_guard_drift,
     '.graph-context-menu -> .cascading-menu',
     'grep BOTH old and new class names across src/ when renaming menu/container classes; guards, bridges, enhancers all match on them').
+
+%% 2026-11-21: SPAWNED-stack journeys (playwright webServer -> dev.mjs)
+%% collide with the LIVE stack: dev.mjs boots CP AND the bundled MCP
+%% server (port 8083). Live ports: vite 4781, CP 8082/8081, MCP 8083.
+%% Spawn recipe: CI=1 QUASAR_MCP=0 QUASAR_VITE_PORT=5199
+%% QUASAR_HTTP_PORT=8085 QUASAR_WS_PORT=8086 - distinct ports, MCP off.
+%% Zombie spawns hold ports after crashes: free with ss -tlnp + kill
+%% before retrying. The quasar-ui expert (dotfiles) has chains:
+%% spawned_stack_port_collision + fresh_stack_journeys_red.
+harness_fact(spawn_stack_recipe,
+    'CI=1 QUASAR_MCP=0 QUASAR_VITE_PORT=5199 QUASAR_HTTP_PORT=8085 QUASAR_WS_PORT=8086 npx playwright test <specs>').

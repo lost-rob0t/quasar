@@ -46,6 +46,7 @@ function parseVitest(json) {
 function parsePlaywright(json) {
   const d = JSON.parse(json.slice(json.indexOf("{")));
   const failures = [];
+  const errors = [];
   let total = 0, passed = 0, failed = 0;
   const walk = (suite) => {
     for (const s of suite.suites ?? []) walk(s);
@@ -57,6 +58,9 @@ function parsePlaywright(json) {
         if (bad) {
           failed += 1;
           failures.push(spec.title);
+          for (const r of t.results ?? []) {
+            if (r.error?.message) errors.push(`${spec.title}: ${r.error.message.split("\n")[0]}`);
+          }
         } else if (ok) {
           passed += 1;
         }
@@ -67,8 +71,9 @@ function parsePlaywright(json) {
       }
     }
   };
-  walk(d.suites?.[0] ?? {});
-  return { total, passed, failed, failures };
+  // Top-level suites: one entry per project/file - walk them ALL.
+  for (const s of d.suites ?? []) walk(s);
+  return { total, passed, failed, failures, errors };
 }
 
 function plQuote(text) {
@@ -127,4 +132,6 @@ const lines = [
 appendFileSync(ledgerPath, lines.join("\n"));
 
 console.log(`ledger: run-${commit}.pl seq=${seq} ${suiteTerm} -> ${result} (${parsed.passed}/${parsed.total} passed, ${parsed.failed} failed)`);
+for (const e of parsed.errors ?? []) console.error(`journey failure: ${e}`);
+for (const f of parsed.failures ?? []) console.error(`journey failure (no message captured): ${f}`);
 process.exit(exitCode);
