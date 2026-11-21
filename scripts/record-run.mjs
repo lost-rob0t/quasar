@@ -134,4 +134,12 @@ appendFileSync(ledgerPath, lines.join("\n"));
 console.log(`ledger: run-${commit}.pl seq=${seq} ${suiteTerm} -> ${result} (${parsed.passed}/${parsed.total} passed, ${parsed.failed} failed)`);
 for (const e of parsed.errors ?? []) console.error(`journey failure: ${e}`);
 for (const f of parsed.failures ?? []) console.error(`journey failure (no message captured): ${f}`);
+// CI log feeds truncate; the artifact must carry the full detail.
+if (parsed.failures?.length) {
+  const dump = join(dir, `journey-failures-${commit}-seq${seq}.txt`);
+  appendFileSync(dump, [`# ${new Date().toISOString()} ${suiteTerm}`,
+    ...parsed.errors, ...parsed.failures.filter((f) => !parsed.errors.some((e) => e.startsWith(f))), ""
+  ].join("\n"));
+  console.log(`failures written: ${dump}`);
+}
 process.exit(exitCode);
