@@ -949,15 +949,6 @@ export default function GraphPage() {
   }, [activeGraph?.id]);
 
   useEffect(() => {
-    if (!canvasMenu) return undefined;
-    const close = (event) => {
-      if (event.key === "Escape") setCanvasMenu(null);
-    };
-    window.addEventListener("keydown", close);
-    return () => window.removeEventListener("keydown", close);
-  }, [canvasMenu]);
-
-  useEffect(() => {
     const retained = selectedIds.filter((id) => graphDocumentIds.has(id));
     if (retained.length !== selectedIds.length) select(retained);
   }, [graphDocumentIds, select, selectedIds]);
@@ -1141,7 +1132,8 @@ export default function GraphPage() {
   }
 
   function closeCanvasMenu(event) {
-    if (canvasMenu && !event.target.closest(".graph-context-menu")) setCanvasMenu(null);
+    if (canvasMenu && !event.target.closest(".graph-context-menu, .cascading-menu"))
+      setCanvasMenu(null);
   }
 
   function createNamedGraph(name) {
