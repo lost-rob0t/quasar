@@ -32,6 +32,10 @@ export default defineConfig({
   ],
   webServer: {
     command: webServerCommand,
+    // Pipe dev.mjs/vite/CP output into the run log: CI boxes hide the
+    // webServer's fate otherwise (the 5173 EADDRINUSE/exit mystery).
+    stdout: "pipe",
+    stderr: "pipe",
     env: { VITE_BASE_PATH: "/", VITE_CONTROL_PLANE_URL: `ws://${host}:${wsPort}` },
     // CLOG starts after the WebSocket listener, so this readiness probe means
     // both the React server and the durable control plane are available.

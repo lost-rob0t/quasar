@@ -231,12 +231,23 @@ jobs:
           set -uo pipefail
           echo "=== port state BEFORE journeys:"
           (ss -tlnp 2>/dev/null | grep -E ":(5173|8080|8081) " || echo "  5173/8080/8081 free")
-          (ps aux | grep -E "[v]ite|[s]bcl" | head -5 || true)
           ./node_modules/.bin/playwright install --with-deps chromium
+          # Watch 5173 DURING the run: bracket dumps only bracket the whole
+          # step; this shows whether vite ever binds inside it.
+          ( for i in $(seq 1 60); do
+              ts=$(date +%H:%M:%S)
+              bound=$(ss -tln 2>/dev/null | grep -c ":5173 " || true)
+              echo "$ts 5173 bound=$bound" >> /tmp/port-watch.log
+              /bin/sleep 10
+            done & )
+          PORT_WATCH=$!
           node scripts/record-run.mjs e2e \
             e2e/graph-cascade-menu.spec.ts \
             e2e/graph-object-type-picker.spec.ts \
             e2e/settings-server-list.spec.ts || true
+          kill $PORT_WATCH 2>/dev/null || true
+          echo "=== 5173 bind timeline:"
+          cat /tmp/port-watch.log 2>/dev/null | uniq -c -f1 | tail -8
           echo "=== port state AFTER journeys:"
           (ss -tlnp 2>/dev/null | grep -E ":(5173|8080|8081) " || echo "  5173/8080/8081 free")
 
